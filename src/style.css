@@ -66,6 +66,58 @@ button:focus-visible {
   text-align: center;
 }
 
+/* Couleurs de fond */
+.bg-color-grey {
+  background-color: #242424; /* Fond sombre */
+}
+
+.bg-color-beige {
+  background-color: #F5F5DC; /* Beige clair */
+}
+
+.bg-color-blue-grey {
+  background-color: #5A6F7D; /* Gris bleuté */
+}
+
+.bg-color-taupe {
+  background-color: #9E8B7F; /* Taupe */
+}
+
+/* Couleurs de texte */
+.color-grey {
+  color: #D0D0D0; /* Gris clair */
+}
+
+.color-beige {
+  color: #F5F5DC; /* Beige clair */
+}
+
+.color-blue-grey {
+  color: #5A6F7D; /* Gris bleuté */
+}
+
+.color-taupe {
+  color: #9E8B7F; /* Taupe */
+}
+
+/* Bordure */
+
+.bt-white {
+  border-top: 1px solid white;
+}
+
+.bb-white {
+  border-bottom: 1px solid white;
+}
+
+.nav-item a:hover {
+  color: #9E8B7F;
+}
+
+.button:hover {
+  background-color: #9E8B7F;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
