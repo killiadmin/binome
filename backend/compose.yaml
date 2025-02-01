@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  database:
+    image: 'mysql:8'
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: binome
+    ports:
+      - "9090:3306"
+    volumes:
+      - ../database/binome:/var/lib/mysql
+  test_database:
+    image: 'mysql:8'
+    environment:
+      MYSQL_ROOT_PASSWORD: roottest
+      MYSQL_DATABASE: binome
+    ports:
+      - "9070:3306"
+    volumes:
+      - ../database/binometest:/var/lib/mysql
+
+  #mailer:
+  #  container_name: mailer
+  #  image: maildev/maildev:latest
+  #  command: bin/maildev --hide-extensions STARTTLS
+  #  platform: linux/amd64
+  #  restart: unless-stopped
+  #  ports:
+  #    - "2125:1025"
+  #    - "2180:1080"
+  #  environment:
+  #    - MAILDEV_SMTP_PORT=1025
+  #    - MAILDEV_WEB_PORT=1080
+  #    - MAILDEV_INCOMING_USER=maildev_user
+  #    - MAILDEV_INCOMING_PASS=maildev_pass
+  #    - MAILDEV_WEB_USER=maildev_user
+  #    - MAILDEV_WEB_PASS=maildev_pass
