@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
 
-import HomePage from "./pages/HomePage.vue";
-import RoomPage from "./pages/RoomPage.vue";
-import RoomDetailsPage from "./pages/RoomDetailsPage.vue";
-import RulePage from "./pages/RulePage.vue";
+import HomePage from "./pages/Home/HomePage.vue";
+import RoomPage from "./pages/Rooms/RoomPage.vue";
+import RoomDetailsPage from "./pages/Rooms/RoomDetailsPage.vue";
+import RulePage from "./pages/Rules/RulePage.vue";
+import ThemePage from "./pages/Game/ThemePage.vue";
+import RoundPage from "./pages/Game/RoundPage.vue";
 
 const routes = [
     {
@@ -25,6 +27,15 @@ const routes = [
         path: "/rules",
         name: "Rule",
         component: RulePage,
+    },{
+        path: "/game/:id/theme",
+        name: "ThemePage",
+        component: ThemePage,
+    },
+    {
+        path: "/game/:id/round/:id",
+        name: "RoundPage",
+        component: RoundPage,
     },
 ];
 
