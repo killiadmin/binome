@@ -45,6 +45,9 @@ export default {
     this.currentRoom = this.rooms.find(room => room.id === parseInt(roomId));
   },
   methods: {
+    startGame() {
+      this.$router.push({ name: "ThemePage", params: { id: this.currentRoom.id } });
+    },
     leaveRoom() {
       this.$router.push({ path: "/rooms" });
     }
@@ -60,7 +63,7 @@ export default {
       <li v-for="participant in currentRoom.participants" :key="participant">{{ participant }}</li>
     </ul>
     <div class="d-flex flex-column justify-content-between p-3 gap-3">
-      <BButton variant="success">Démarrer</BButton>
+      <BButton variant="success" @click="startGame">Démarrer</BButton>
       <BButton variant="danger" @click="leaveRoom">Quitter</BButton>
     </div>
   </BCard>
