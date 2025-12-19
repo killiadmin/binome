@@ -2,9 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import HomePage from "./pages/Home/HomePage.vue";
 import RoomPage from "./pages/Rooms/RoomPage.vue";
-import RoomDetailsPage from "./pages/Rooms/RoomDetailsPage.vue";
 import RulePage from "./pages/Rules/RulePage.vue";
-import ThemePage from "./pages/Game/ThemePage.vue";
 import RoundPage from "./pages/Game/RoundPage.vue";
 
 const routes = [
@@ -19,18 +17,9 @@ const routes = [
         component: RoomPage,
     },
     {
-        path: "/rooms/:id",
-        name: "RoomDetails",
-        component: RoomDetailsPage,
-    },
-    {
         path: "/rules",
         name: "Rule",
         component: RulePage,
-    },{
-        path: "/game/:id/theme",
-        name: "ThemePage",
-        component: ThemePage,
     },
     {
         path: "/game/:id/round/:id",
