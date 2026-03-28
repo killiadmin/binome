@@ -9,7 +9,7 @@ export default {
 
     onMounted(async () => {
       try {
-        const response = await api.get("/hello");
+        const response = await api.get("/api/welcome");
         message.value = response.data.message;
       } catch (error) {
         console.error("Erreur API", error);

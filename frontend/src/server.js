@@ -1,4 +1,3 @@
-// server.js
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -7,7 +6,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "http://localhost:5173", // Votre URL Vue.js dev
+        origin: '*',
         methods: ["GET", "POST"]
     }
 });
@@ -17,23 +16,32 @@ const games = new Map();
 io.on('connection', (socket) => {
     console.log('Nouveau joueur connecté:', socket.id);
 
+    // ── Créer une partie ────────────────────────────────────────────────────────
     socket.on('create-game', (data) => {
         const gameCode = generateGameCode();
         const game = {
             code: gameCode,
             host: socket.id,
-            players: [{ id: socket.id, name: data.playerName, score: 0 }],
-            status: 'waiting', // waiting, playing, finished
-            currentQuestion: null,
-            questionIndex: 0
+            players: [{
+                id: socket.id,
+                name: data.playerName,
+                score: 0,
+                character: null,
+                found: false
+            }],
+            status: 'waiting',
+            currentTurn: null,
+            turnOrder: [],
+            pendingQuestion: null,
         };
 
         games.set(gameCode, game);
         socket.join(gameCode);
-        socket.emit('game-created', { gameCode, game });
+        socket.emit('game-created', { gameCode, game: sanitize(game, socket.id) });
         console.log(`Partie créée: ${gameCode}`);
     });
 
+    // ── Rejoindre une partie ────────────────────────────────────────────────────
     socket.on('join-game', (data) => {
         const game = games.get(data.gameCode);
 
@@ -47,115 +55,211 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const player = { id: socket.id, name: data.playerName, score: 0 };
-        game.players.push(player);
+        game.players.push({
+            id: socket.id,
+            name: data.playerName,
+            score: 0,
+            character: null,
+            found: false
+        });
         socket.join(data.gameCode);
 
-        // Notifier tous les joueurs
-        io.to(data.gameCode).emit('player-joined', { player, game });
+        broadcastState(game);
         console.log(`${data.playerName} a rejoint la partie ${data.gameCode}`);
+    });
+
+    socket.on('assign-character', (data) => {
+        const game = games.get(data.gameCode);
+        if (!game || game.host !== socket.id) return;
+
+        const target = game.players.find(p => p.id === data.targetId);
+        if (!target) return;
+
+        target.character = data.character;
+
+        io.to(data.targetId).emit('your-character', { character: data.character });
+
+        broadcastState(game);
     });
 
     socket.on('start-game', (data) => {
         const game = games.get(data.gameCode);
+        if (!game || game.host !== socket.id) return;
 
-        if (!game || game.host !== socket.id) {
-            socket.emit('error', { message: 'Action non autorisée' });
+        const missing = game.players.filter(p => !p.character);
+        if (missing.length > 0) {
+            socket.emit('error', { message: 'Tous les joueurs doivent avoir un personnage !' });
             return;
         }
 
         game.status = 'playing';
-        io.to(data.gameCode).emit('game-started', { game });
+        game.turnOrder = game.players.map(p => p.id);
+        game.currentTurn = game.turnOrder[0];
+
+        broadcastState(game);
         console.log(`Partie ${data.gameCode} démarrée`);
     });
 
+    // ── Poser une question ──────────────────────────────────────────────────────
     socket.on('send-question', (data) => {
         const game = games.get(data.gameCode);
+        if (!game || game.status !== 'playing') return;
 
-        if (!game || game.host !== socket.id) {
-            socket.emit('error', { message: 'Action non autorisée' });
-            return;
-        }
+        const fromPlayer = game.players.find(p => p.id === socket.id);
+        const targetPlayer = game.players.find(p => p.id === game.currentTurn);
 
-        game.currentQuestion = data.question;
-        game.questionIndex++;
+        game.pendingQuestion = data.question;
 
+        // Broadcast à tout le monde
         io.to(data.gameCode).emit('new-question', {
+            fromName: fromPlayer?.name,
             question: data.question,
-            questionIndex: game.questionIndex
+            targetName: targetPlayer?.name,
+            targetId: game.currentTurn,
         });
     });
 
-    socket.on('submit-answer', (data) => {
+    // ── Répondre à une question (joueur actif uniquement) ───────────────────────
+    socket.on('send-answer', (data) => {
         const game = games.get(data.gameCode);
+        if (!game || game.currentTurn !== socket.id) return;
 
-        if (!game) return;
+        const player = game.players.find(p => p.id === socket.id);
+        game.pendingQuestion = null;
 
-        io.to(game.host).emit('answer-received', {
-            playerId: socket.id,
-            playerName: data.playerName,
-            answer: data.answer,
-            timestamp: Date.now()
+        io.to(data.gameCode).emit('question-answered', {
+            fromName: player?.name,
+            answer: data.answer,       // 'oui' | 'non' | 'peutetre'
+            question: data.question,
         });
     });
 
-    socket.on('validate-answer', (data) => {
+    // ── Deviner le personnage ───────────────────────────────────────────────────
+    socket.on('submit-guess', (data) => {
         const game = games.get(data.gameCode);
+        if (!game || game.status !== 'playing') return;
 
-        if (!game || game.host !== socket.id) return;
+        const fromPlayer = game.players.find(p => p.id === socket.id);
+        const targetPlayer = game.players.find(p => p.id === game.currentTurn);
 
-        const player = game.players.find(p => p.id === data.playerId);
-        if (player && data.isCorrect) {
-            player.score += data.points || 1;
+        if (!targetPlayer) return;
+
+        const correct = data.guess.toLowerCase().trim() === targetPlayer.character.toLowerCase().trim();
+
+        if (correct) {
+            fromPlayer.score += 1;
+            targetPlayer.found = true;
         }
 
-        io.to(data.gameCode).emit('score-updated', {
-            players: game.players,
-            playerId: data.playerId,
-            isCorrect: data.isCorrect
+        io.to(data.gameCode).emit('guess-result', {
+            fromName: fromPlayer?.name,
+            guess: data.guess,
+            targetName: targetPlayer?.name,
+            correct,
+            revealedCharacter: correct ? targetPlayer.character : null,
         });
+
+        if (correct) nextTurn(game);
     });
 
-    socket.on('end-game', (data) => {
+    // ── Passer au joueur suivant (hôte uniquement) ──────────────────────────────
+    socket.on('next-turn', (data) => {
         const game = games.get(data.gameCode);
+        if (!game || game.host !== socket.id) return;
+        nextTurn(game);
+    });
 
+    // ── Rejouer (hôte uniquement) ───────────────────────────────────────────────
+    socket.on('reset-game', (data) => {
+        const game = games.get(data.gameCode);
         if (!game || game.host !== socket.id) return;
 
-        game.status = 'finished';
-        io.to(data.gameCode).emit('game-ended', {
-            players: game.players.sort((a, b) => b.score - a.score)
+        game.players.forEach(p => {
+            p.character = null;
+            p.score = 0;
+            p.found = false;
         });
+        game.status = 'waiting';
+        game.currentTurn = null;
+        game.turnOrder = [];
+        game.pendingQuestion = null;
+
+        broadcastState(game);
     });
 
+    // ── Déconnexion ─────────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
         console.log('Joueur déconnecté:', socket.id);
 
         games.forEach((game, code) => {
-            const playerIndex = game.players.findIndex(p => p.id === socket.id);
+            const idx = game.players.findIndex(p => p.id === socket.id);
+            if (idx === -1) return;
 
-            if (playerIndex !== -1) {
-                game.players.splice(playerIndex, 1);
+            game.players.splice(idx, 1);
 
-                if (game.host === socket.id && game.players.length > 0) {
-                    game.host = game.players[0].id;
-                    io.to(code).emit('host-changed', { newHost: game.host });
-                }
-
-                if (game.players.length === 0) {
-                    games.delete(code);
-                } else {
-                    io.to(code).emit('player-left', { playerId: socket.id, game });
-                }
+            if (game.players.length === 0) {
+                games.delete(code);
+                return;
             }
+
+            if (game.host === socket.id) {
+                game.host = game.players[0].id;
+                io.to(code).emit('host-changed', { newHost: game.host });
+            }
+
+            broadcastState(game);
         });
     });
 });
+
+function nextTurn(game) {
+    const idx = game.turnOrder.indexOf(game.currentTurn);
+    const next = idx + 1;
+
+    if (next >= game.turnOrder.length) {
+        game.status = 'finished';
+        game.currentTurn = null;
+    } else {
+        game.currentTurn = game.turnOrder[next];
+        game.players.find(p => p.id === game.currentTurn).found = false;
+    }
+
+    broadcastState(game);
+}
+
+function broadcastState(game) {
+    game.players.forEach(player => {
+        const socket = io.sockets.sockets.get(player.id);
+        if (!socket) return;
+
+        socket.emit('game-state', sanitize(game, player.id));
+    });
+}
+
+function sanitize(game, myId) {
+    return {
+        code: game.code,
+        status: game.status,
+        host: game.host,
+        currentTurn: game.currentTurn,
+        isHost: game.host === myId,
+        myId,
+        players: game.players.map(p => ({
+            id: p.id,
+            name: p.name,
+            score: p.score,
+            found: p.found,
+            hasCharacter: !!p.character,
+            character: p.id === myId ? p.character : null,
+        })),
+    };
+}
 
 function generateGameCode() {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Serveur WebSocket démarré sur le port ${PORT}`);
 });
