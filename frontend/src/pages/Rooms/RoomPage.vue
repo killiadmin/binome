@@ -34,6 +34,7 @@ const {
   players,
   gameStatus,
   isHost,
+  hostId,
   error,
   connect,
   createGame,
@@ -127,7 +128,7 @@ const getGameStatusClass = (status) => {
             <h5>Participants:</h5>
             <ul class="list-unstyled">
               <li v-for="player in players" :key="player.id">
-                {{ player.name }} {{ player.id === players[0]?.id ? '(Hôte)' : '' }}
+                {{ player.name }} {{ player.id === hostId.value ? '(Hôte)' : '' }}
               </li>
             </ul>
           </div>
