@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Services;
+
+use App\Events\RoundStarted;
+use App\Models\Game;
+use App\Models\Round;
+use Illuminate\Support\Collection;
+
+class RoundService
+{
+    /**
+     * Crée un nouveau round avec l'ordre des joueurs
+     */
+    public function createRound(Game $game, int $roundNumber): Round
+    {
+        // Récupère tous les joueurs de la partie via les binomes
+        $players = $this->getOrderedPlayers($game, $roundNumber);
+
+        // Le premier joueur à jouer dans ce round
+        $firstPlayer = $players->first();
+
+        $round = Round::create([
+            'game_id'           => $game->id,
+            'number'            => $roundNumber,
+            'current_player_id' => $firstPlayer->id,
+            'is_finished'       => false,
+        ]);
+
+        broadcast(new RoundStarted($round->load('currentPlayer')));
+
+        return $round;
+    }
+
+    /**
+     * Passe au joueur suivant dans le round
+     * Retourne true si le round est terminé (tous ont joué)
+     */
+    public function nextTurn(Round $round): bool
+    {
+        $game    = $round->game;
+        $players = $this->getOrderedPlayers($game, $round->number);
+
+        $currentIndex = $players->search(
+            fn($p) => $p->id === $round->current_player_id
+        );
+
+        $nextIndex = $currentIndex + 1;
+
+        // Tous les joueurs ont joué → round terminé
+        if ($nextIndex >= $players->count()) {
+            $round->update(['is_finished' => true]);
+            return true;
+        }
+
+        // Sinon on passe au suivant
+        $round->update([
+            'current_player_id' => $players[$nextIndex]->id,
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Ordre des joueurs : toujours le même au sein d'une partie
+     * (basé sur l'id pour être déterministe)
+     */
+    private function getOrderedPlayers(Game $game, int $roundNumber): Collection
+    {
+        return $game->binomes
+            ->flatMap(fn($binome) => $binome->players)
+            ->sortBy('id')
+            ->values();
+    }
+}
