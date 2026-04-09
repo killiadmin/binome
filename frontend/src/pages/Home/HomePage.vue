@@ -1,6 +1,6 @@
 <script>
 import { ref, onMounted } from "vue";
-import api from "../../api.js";
+import { api } from "../../services/api.js";
 
 export default {
   name: "HomePage",
@@ -9,7 +9,7 @@ export default {
 
     onMounted(async () => {
       try {
-        const response = await api.get("/api/welcome");
+        const response = await api.get("/welcome");
         message.value = response.data.message;
       } catch (error) {
         console.error("Erreur API", error);
