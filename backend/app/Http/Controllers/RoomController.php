@@ -72,7 +72,6 @@ class RoomController extends Controller
             ['pseudo' => $request->validated('pseudo')]
         );
 
-        // Vérifie que le joueur n'est pas déjà dans le salon
         if ($room->players()->where('player_id', $player->id)->exists()) {
             return response()->json([
                 'message' => 'Tu es déjà dans ce salon.',
@@ -80,6 +79,11 @@ class RoomController extends Controller
         }
 
         $room->players()->attach($player->id, ['is_ready' => false]);
+
+        broadcast(new \App\Events\PlayerJoined(
+            $room->load('players'),
+            $player
+        ));
 
         return response()->json([
             'message' => 'Tu as rejoint le salon.',
@@ -117,16 +121,28 @@ class RoomController extends Controller
             ], 403);
         }
 
-        $room->players()->updateExistingPivot($playerId, ['is_ready' => true]);
+        $currentStatus = $room->players()
+            ->where('player_id', $playerId)
+            ->first()
+            ->pivot
+            ->is_ready;
 
-        $allReady   = $room->players()->wherePivot('is_ready', false)->doesntExist();
+        $newStatus = !$currentStatus;
+
+        $room->players()->updateExistingPivot($playerId, ['is_ready' => $newStatus]);
+
+        $room->load('players');
+        broadcast(new \App\Events\PlayerReady($room, Player::find($playerId)));
+
+        $allReady      = $room->players()->wherePivot('is_ready', false)->doesntExist();
         $enoughPlayers = $room->players()->count() >= 4;
 
         return response()->json([
-            'message'        => 'Statut mis à jour.',
-            'all_ready'      => $allReady,
-            'can_start'      => $allReady && $enoughPlayers,
-            'players'        => $room->players()->get()->map(fn($p) => [
+            'message'   => $newStatus ? 'Tu es prêt !' : 'Tu n\'es plus prêt.',
+            'is_ready'  => $newStatus,
+            'all_ready' => $allReady,
+            'can_start' => $allReady && $enoughPlayers,
+            'players'   => $room->players()->get()->map(fn($p) => [
                 'id'       => $p->id,
                 'pseudo'   => $p->pseudo,
                 'is_ready' => $p->pivot->is_ready,
@@ -163,5 +179,45 @@ class RoomController extends Controller
         } while (Room::where('code', $code)->exists());
 
         return $code;
+    }
+
+    public function leave(Request $request, Room $room): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+        ]);
+
+        $playerId = $request->input('player_id');
+
+        if (!$room->players()->where('player_id', $playerId)->exists()) {
+            return response()->json([
+                'message' => 'Ce joueur n\'est pas dans ce salon.',
+            ], 403);
+        }
+
+        $room->players()->detach($playerId);
+
+        Player::find($playerId)?->delete();
+
+        if ($room->players()->count() === 0) {
+            $room->delete();
+
+            return response()->json([
+                'message' => 'Salon supprimé car vide.',
+            ]);
+        }
+
+        if ($room->created_by === $playerId) {
+            $newHost = $room->players()->first();
+            $room->update(['created_by' => $newHost->id]);
+
+            broadcast(new \App\Events\PlayerLeft($room->load('players'), $newHost));
+        } else {
+            broadcast(new \App\Events\PlayerLeft($room->load('players'), null));
+        }
+
+        return response()->json([
+            'message' => 'Tu as quitté le salon.',
+        ]);
     }
 }
