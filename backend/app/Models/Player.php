@@ -1,40 +1,43 @@
 <?php
 
 namespace App\Models;
-use App\Models\Action;
-use App\Models\Binome;
-use App\Models\Character;
-use App\Models\Game;
-use Illuminate\Database\Eloquent\Model;
-use App\Models\Room;
-use App\Models\Round;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class Player extends Model
+class Player extends Authenticatable
 {
     protected $fillable = ['pseudo'];
 
-    public function rooms()
+    public function rooms(): BelongsToMany
     {
-        return $this->belongsToMany(Room::class)->withPivot('is_ready');
+        return $this->belongsToMany(Room::class, 'room_player')
+        ->withPivot('is_ready')
+            ->withTimestamps();
     }
 
-    public function binomes()
+    public function createdRooms(): HasMany
+    {
+        return $this->hasMany(Room::class, 'created_by');
+    }
+
+    public function binomes(): BelongsToMany
     {
         return $this->belongsToMany(Binome::class)
             ->withPivot('character_id', 'score');
     }
 
-    public function character()
+    public function character(): \Illuminate\Database\Eloquent\Relations\HasOneThrough
     {
         return $this->hasOneThrough(Character::class, Binome::class);
     }
 
-    public function actions()
+    public function actions(): HasMany
     {
         return $this->hasMany(Action::class);
     }
 
-    public function rounds()
+    public function rounds(): HasMany
     {
         return $this->hasMany(Round::class, 'current_player_id');
     }

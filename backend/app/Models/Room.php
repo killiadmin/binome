@@ -1,15 +1,33 @@
 <?php
 
 namespace App\Models;
-use App\Models\Game;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Player;
 
 class Room extends Model
 {
-    public function players()
+    protected $fillable = [
+        'code',
+        'is_private',
+        'is_locked',
+        'max_players',
+        'created_by'
+    ];
+
+    protected $casts = [
+        'is_private' => 'boolean',
+        'is_locked' => 'boolean',
+    ];
+
+    public function creator(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsToMany(Player::class)->withPivot('is_ready');
+        return $this->belongsTo(Player::class, 'created_by');
+    }
+
+    public function players(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Player::class, 'room_player') // 👈 Spécifiez le nom de la table
+        ->withPivot('is_ready')
+            ->withTimestamps();
     }
 
     public function games()

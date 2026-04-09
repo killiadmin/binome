@@ -53,8 +53,35 @@ Deviner le personnage secret des autres joueurs avant que son propre binome soit
 | Framework backend | Laravel 11 |
 | Auth API | Laravel Sanctum |
 | WebSocket | Laravel Reverb (`php artisan install:broadcasting`) |
-| Base de données | MySQL / SQLite |
+| Base de données | MySQL |
 | PHP | ^8.2 |
+
+---
+
+## Lancer le projet
+
+```bash
+# 1. Installer les dépendances
+composer install
+
+# 2. Copier le .env
+cp .env.example .env
+php artisan key:generate
+
+# 3. Lancer les migrations
+php artisan migrate
+
+# 4. Terminal 1 — Serveur Laravel
+php artisan serve --host=0.0.0.0
+
+# 5. Terminal 2 — Reverb WebSocket
+php artisan reverb:start --host=0.0.0.0 --debug
+
+# 6. Terminal 3 — Queue (si ShouldBroadcast utilisé)
+php artisan queue:listen --tries=1
+```
+
+> ⚠️ Tous les events utilisent `ShouldBroadcastNow` (pas de queue requise en dev).
 
 ---
 
@@ -71,10 +98,14 @@ app/
 │   ├── RoundStarted.php
 │   ├── ActionPlayed.php
 │   ├── BinomeDiscovered.php
-│   └── GameEnded.php
+│   ├── GameEnded.php
+│   ├── PlayerJoined.php        # broadcast quand un joueur rejoint le lobby
+│   ├── PlayerReady.php         # broadcast quand un joueur toggle son statut prêt
+│   └── PlayerLeft.php          # broadcast quand un joueur quitte le lobby
 │
 ├── Http/
 │   ├── Controllers/
+│   │   ├── BroadcastAuthController.php  # auth custom PresenceChannel (sans Sanctum)
 │   │   ├── RoomController.php
 │   │   ├── GameController.php
 │   │   └── ActionController.php
@@ -88,7 +119,7 @@ app/
 │   ├── Universe.php
 │   ├── Character.php
 │   ├── Room.php
-│   ├── Player.php
+│   ├── Player.php              # étend Authenticatable (requis pour auth broadcasting)
 │   ├── Game.php
 │   ├── Binome.php
 │   ├── Round.php
@@ -115,7 +146,7 @@ database/
 
 routes/
 ├── api.php                     # endpoints REST
-├── channels.php                # autorisation WebSocket PresenceChannel
+├── channels.php                # autorisation WebSocket PresenceChannel (via X-Player-Id)
 └── web.php
 ```
 
@@ -139,7 +170,7 @@ Room
   └── hasMany → Game
   └── created_by → Player
 
-Player
+Player                          ← étend Authenticatable
   └── belongsToMany → Room    (pivot: is_ready)
   └── belongsToMany → Binome  (pivot: character_id, score)
 
@@ -176,7 +207,7 @@ Action
 |---|---|---|
 | room_id | FK | |
 | player_id | FK | |
-| is_ready | boolean | Le joueur est prêt à démarrer |
+| is_ready | boolean | Toggle — le joueur peut activer/désactiver son statut prêt |
 
 **`binome_player`**
 | Colonne | Type | Description |
@@ -186,11 +217,10 @@ Action
 | character_id | FK | Personnage secret assigné à ce joueur |
 | score | integer | Score du joueur dans cette partie |
 
-### Champ important sur `rooms`
+### Champs importants sur `rooms`
 ```php
-$table->foreignId('created_by')->constrained('players');
+$table->foreignId('created_by')->constrained('players'); // seul l'hôte peut start
 ```
-Seul le créateur du salon peut lancer la partie.
 
 ---
 
@@ -269,12 +299,14 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/rooms` | `RoomController@store` | Créer un salon |
 | `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères |
 | `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs |
-| `PATCH` | `/api/rooms/{room}/ready` | `RoomController@ready` | Se mettre prêt |
+| `PATCH` | `/api/rooms/{room}/ready` | `RoomController@ready` | Toggle prêt/pas prêt |
+| `DELETE` | `/api/rooms/{room}/leave` | `RoomController@leave` | Quitter le salon (supprime le joueur en DB) |
 | `POST` | `/api/rooms/{room}/start` | `GameController@start` | Lancer la partie (créateur uniquement) |
 | `GET` | `/api/games/{game}` | `GameController@show` | État de la partie (sans personnages) |
 | `GET` | `/api/games/{game}/me` | `GameController@myCharacter` | Mon personnage secret + mots interdits |
 | `POST` | `/api/games/{game}/rounds/{round}/question` | `ActionController@question` | Poser une question |
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
+| `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
 
 ### Sécurité des données
 
@@ -286,19 +318,38 @@ Point d'entrée : `start(Room $room): Game`
 
 ## Events WebSocket
 
-Tous les events broadcastent sur le **PresenceChannel** `game.{gameId}`.
+### Channels utilisés
 
-L'autorisation du channel est définie dans `routes/channels.php` : le joueur doit appartenir à la partie (via ses binomes).
-
-### Récapitulatif
-
-| Event | Nom broadcast | Données sensibles |
+| Channel | Type | Usage |
 |---|---|---|
-| `GameStarted` | `game.started` | ❌ Pas de personnages |
-| `RoundStarted` | `round.started` | Qui joue ce round |
-| `ActionPlayed` | `action.played` | Question refusée → contenu masqué / Accusation fausse → personnage masqué |
-| `BinomeDiscovered` | `binome.discovered` | ✅ Personnages révélés (binome découvert) |
-| `GameEnded` | `game.ended` | ✅ Tout révélé, scores finaux |
+| `room.{roomId}` | PresenceChannel | Lobby — joueurs qui rejoignent/quittent/sont prêts |
+| `game.{gameId}` | PresenceChannel | Partie en cours — actions, rounds, fin de partie |
+
+### Auth PresenceChannel
+
+L'authentification ne passe **pas** par Sanctum. Elle utilise un header custom `X-Player-Id` :
+
+```
+POST /broadcasting/auth
+Header: X-Player-Id: {playerId}
+```
+
+Le `BroadcastAuthController` récupère le joueur via ce header et appelle `auth()->setUser($player)` avant `Broadcast::auth($request)`.
+
+La route par défaut de Laravel Broadcasting est désactivée — seule la route custom est enregistrée via `AppServiceProvider`.
+
+### Récapitulatif des events
+
+| Event | Channel | Nom broadcast | Déclencheur |
+|---|---|---|---|
+| `PlayerJoined` | `room.{id}` | `player.joined` | Quelqu'un rejoint le lobby |
+| `PlayerReady` | `room.{id}` | `player.ready` | Toggle prêt/pas prêt |
+| `PlayerLeft` | `room.{id}` | `player.left` | Quelqu'un quitte le lobby |
+| `GameStarted` | `room.{id}` + `game.{id}` | `game.started` | Hôte lance la partie |
+| `RoundStarted` | `game.{id}` | `round.started` | Nouveau round créé |
+| `ActionPlayed` | `game.{id}` | `action.played` | Un joueur joue son tour |
+| `BinomeDiscovered` | `game.{id}` | `binome.discovered` | Accusation correcte |
+| `GameEnded` | `game.{id}` | `game.ended` | Dernier binome découvert |
 
 ### `ActionPlayed` — logique de masquage
 
@@ -318,10 +369,14 @@ type = accusation
 
 ```
 1. LOBBY
-   POST /rooms                     → créer salon (code généré automatiquement)
-   POST /rooms/join                 → rejoindre avec le code
-   PATCH /rooms/{room}/ready        → chaque joueur se met prêt
-   POST /rooms/{room}/start         → créateur lance la partie
+   POST /api/rooms                      → créer salon (code 6 chars généré auto)
+   POST /api/rooms/join                 → rejoindre avec le code
+   → broadcast: PlayerJoined           → tous voient le nouveau joueur
+   PATCH /api/rooms/{room}/ready        → toggle prêt/pas prêt
+   → broadcast: PlayerReady            → tous voient le statut mis à jour
+   DELETE /api/rooms/{room}/leave       → quitter (supprime le joueur en DB)
+   → broadcast: PlayerLeft             → tous voient la liste mise à jour
+   POST /api/rooms/{room}/start         → créateur lance la partie
 
 2. DÉMARRAGE (GameService)
    - Mélange aléatoire des joueurs
@@ -329,14 +384,11 @@ type = accusation
    - Assignation d'un univers par binome
    - Assignation d'un personnage distinct par joueur
    - Création du Round n°1
-   → broadcast: GameStarted
+   → broadcast: GameStarted (sur room.{id} ET game.{id})
    → broadcast: RoundStarted
 
 3. TOUR D'UN JOUEUR
-   Chaque joueur appelle d'abord :
-   GET /games/{game}/me             → récupère son personnage + mots interdits
-
-   Puis joue son action :
+   GET /api/games/{game}/me             → récupère son personnage + mots interdits
 
    [Option A] Question
    POST .../rounds/{round}/question
@@ -371,46 +423,53 @@ type = accusation
 
 ## Points d'attention importants
 
+### `ShouldBroadcastNow` sur tous les events
+Tous les events utilisent `ShouldBroadcastNow` (pas `ShouldBroadcast`) pour bypasser la queue en développement. En production, repasser sur `ShouldBroadcast` avec une queue Redis.
+
+### `Player` étend `Authenticatable`
+```php
+use Illuminate\Foundation\Auth\User as Authenticatable;
+class Player extends Authenticatable { ... }
+```
+Requis pour que `auth()->setUser($player)` fonctionne dans `BroadcastAuthController`.
+
+### Route broadcasting/auth custom
+La route par défaut Laravel est désactivée en retirant `channels:` de `withRouting()` dans `bootstrap/app.php`. Les channels sont chargés manuellement dans `AppServiceProvider::boot()`.
+
+```php
+// AppServiceProvider.php
+public function boot(): void
+{
+    Route::middleware('web')
+        ->post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
+    require base_path('routes/channels.php');
+}
+```
+
+### CSRF désactivé sur `/broadcasting/auth`
+```php
+// bootstrap/app.php
+$middleware->validateCsrfTokens(except: ['broadcasting/auth']);
+```
+
+### Toggle ready
+`PATCH /rooms/{room}/ready` **inverse** le statut actuel du joueur (pas un simple `true`).
+
+### Leave room
+`DELETE /rooms/{room}/leave` supprime le joueur en base + détache le pivot. Si la room est vide → supprime la room. Si l'hôte part → transfère `created_by` au prochain joueur.
+
 ### Enums natifs Laravel 11
 ```php
-// GameStatus.php
 enum GameStatus: string {
     case Waiting    = 'waiting';
     case InProgress = 'in_progress';
     case Finished   = 'finished';
 }
-
-// Dans le Model :
 protected $casts = ['status' => GameStatus::class];
 ```
 
-### Bootstrap Laravel 11
-Plus de `Kernel.php` — les middlewares se déclarent dans `bootstrap/app.php` :
-```php
-->withMiddleware(function (Middleware $middleware) {
-    $middleware->api(append: [
-        \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-    ]);
-})
-```
-
-### Installation de Reverb (WebSocket)
-```bash
-php artisan install:broadcasting
-```
-
-### Contrainte pair sur max_players
-Le nombre de joueurs doit toujours être **pair** (binomes). La validation se fait dans `GameService::validateRoom()` avec `count % 2 !== 0`.
-
 ### Ordre des joueurs
-L'ordre de jeu dans les rounds est toujours **trié par `player.id`** — déterministe et identique à chaque round. Pas de randomisation à chaque round.
+Trié par `player.id` — déterministe et identique à chaque round.
 
 ### Transaction sur le démarrage
-`GameService::start()` est entièrement dans une `DB::transaction()` — si l'assignation des personnages échoue (pas assez de personnages dans un univers), rien n'est persisté.
-
-### Helper clé sur Player
-```php
-// Récupère le personnage d'un joueur dans une partie donnée
-public function getCharacterInGame(Game $game): ?Character
-```
-Utilisé dans `ActionService` pour récupérer les mots interdits et dans `GameController@myCharacter` pour l'endpoint privé.
+`GameService::start()` est entièrement dans une `DB::transaction()`.

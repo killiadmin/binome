@@ -20,6 +20,7 @@ class GameStarted implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
+            new PresenceChannel("room.{$this->game->room_id}"),
             new PresenceChannel("game.{$this->game->id}"),
         ];
     }
@@ -42,8 +43,6 @@ class GameStarted implements ShouldBroadcast
             'binomes' => $this->game->binomes->map(fn($binome) => [
                 'id'          => $binome->id,
                 'universe_id' => $binome->universe_id,
-                // On n'expose PAS les personnages ici — chaque joueur
-                // les récupère via un endpoint privé /me/character
                 'players'     => $binome->players->map(fn($player) => [
                     'id'     => $player->id,
                     'pseudo' => $player->pseudo,
