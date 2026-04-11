@@ -23,7 +23,7 @@ function getEcho(playerId = null) {
             forceTLS: import.meta.env.VITE_REVERB_SCHEME === 'https',
             enabledTransports: ['ws', 'wss'],
             disableStats: true,
-            authEndpoint: `${import.meta.env.VITE_API_URL}/broadcasting/auth`,
+            authEndpoint: `${import.meta.env.VITE_BACKEND_URL}/broadcasting/auth`,
             auth: {
                 headers: {
                     'X-Player-Id': String(playerId),
