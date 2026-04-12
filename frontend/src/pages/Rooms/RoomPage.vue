@@ -14,7 +14,6 @@ const playerName = ref('')
 const showCreateModal = ref(false)
 const showJoinModal = ref(false)
 const codeToJoin = ref('')
-const selectedTheme = ref(null)
 const error = ref(null)
 
 const roomId = ref(null)
@@ -25,16 +24,6 @@ const players = ref([])
 const gameStatus = ref('waiting')
 const isHost = ref(false)
 const hostId = ref(null)
-
-const themes = ref([
-  {
-    id: 1,
-    name: 'Disney',
-    description: "Plongez dans l'univers magique de Disney.",
-    icon: 'fa-solid fa-wand-magic-sparkles'
-  },
-  {id: 2, name: 'Histoire', description: 'Voyagez à travers le temps et les époques.', icon: 'fa-solid fa-landmark'},
-])
 
 // ─── SESSION localStorage ─────────────────────────────────────────────────────
 
@@ -82,21 +71,49 @@ function initLobby(id) {
 
   joinRoom(id, {
     onHere: (members) => {
+      players.value = players.value.map(p => ({
+        ...p,
+        online: members.some(m => m.id === p.id),
+      }))
       members.forEach(member => {
         const exists = players.value.find(p => p.id === member.id)
         if (!exists) {
-          players.value.push({id: member.id, pseudo: member.pseudo, is_ready: false})
+          players.value.push({
+            id: member.id,
+            pseudo: member.pseudo,
+            is_ready: false,
+            online: true,
+          })
         }
       })
     },
     onJoining: (member) => {
-      console.log(`[Lobby] ${member.pseudo} connecté au channel`)
+      const player = players.value.find(p => p.id === member.id)
+      if (player) {
+        if (player._offlineTimeout) {
+          clearTimeout(player._offlineTimeout)
+          player._offlineTimeout = null
+        }
+        player.online = true
+      } else {
+        players.value.push({
+          id: member.id,
+          pseudo: member.pseudo,
+          is_ready: false,
+          online: true,
+        })
+      }
     },
     onLeaving: (member) => {
-      players.value = players.value.filter(p => p.id !== member.id)
+      const player = players.value.find(p => p.id === member.id)
+      if (player) {
+        player._offlineTimeout = setTimeout(() => {
+          player.online = false
+        }, 2000)
+      }
     },
     onPlayerJoined: (data) => {
-      players.value = data.players
+      players.value = data.players.map(p => ({ ...p, online: true }))
     },
     onPlayerReady: (data) => {
       players.value = data.players
@@ -182,10 +199,6 @@ const handleReady = async () => {
 }
 
 const handleStartGame = async () => {
-  if (!selectedTheme.value) {
-    error.value = 'Veuillez sélectionner un thème.'
-    return
-  }
   error.value = null
 
   try {
@@ -238,10 +251,6 @@ onUnmounted(() => {
 })
 
 // ─── UI HELPERS ───────────────────────────────────────────────────────────────
-
-const selectTheme = (theme) => {
-  selectedTheme.value = theme
-}
 const getGameStatusText = (s) => s === 'in_progress' ? 'En cours' : 'En attente'
 const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-success'
 </script>
@@ -282,6 +291,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
             <h5>Participants :</h5>
             <ul class="list-unstyled">
               <li v-for="player in players" :key="player.id" class="mb-1">
+                <span class="me-2" :class="player.online === false ? 'text-muted' : 'text-success'">●</span>
                 {{ player.pseudo }}
                 <span v-if="player.id === hostId" class="badge bg-warning text-dark ms-2">Hôte</span>
                 <span v-if="player.is_ready" class="badge bg-success ms-2">Prêt</span>
@@ -322,46 +332,13 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
             </div>
           </BModal>
 
-          <!-- Sélection du thème (hôte uniquement) -->
-          <div v-if="isHost && gameStatus === 'waiting'" class="mb-3">
-            <h5 class="text-center mb-3">Choisir un thème</h5>
-            <BRow>
-              <BCol v-for="theme in themes" :key="theme.id" cols="12" class="mb-3">
-                <BCard
-                    class="border shadow p-3"
-                    :class="selectedTheme?.id === theme.id ? 'border-primary bg-light' : 'bg-white'"
-                    @click="selectTheme(theme)"
-                    style="cursor: pointer;"
-                >
-                  <div class="d-flex align-items-center">
-                    <i :class="[theme.icon, 'me-3', 'fa-2x', selectedTheme?.id === theme.id ? 'text-primary' : 'text-secondary']"></i>
-                    <div>
-                      <h6 class="m-0">{{ theme.name }}</h6>
-                      <p class="m-0 small text-muted">{{ theme.description }}</p>
-                    </div>
-                    <i v-if="selectedTheme?.id === theme.id" class="fa-solid fa-check text-primary ms-auto fs-4"></i>
-                  </div>
-                </BCard>
-              </BCol>
-            </BRow>
-          </div>
-
-          <!-- Thème affiché pour les non-hôtes -->
-          <div v-if="!isHost && selectedTheme" class="mb-3 text-center">
-            <h5>Thème sélectionné par l'hôte :</h5>
-            <div class="d-flex align-items-center justify-content-center">
-              <i :class="[selectedTheme.icon, 'me-2', 'fa-2x', 'text-primary']"></i>
-              <span class="fs-5 fw-bold">{{ selectedTheme.name }}</span>
-            </div>
-          </div>
-
           <!-- Bouton démarrer (hôte uniquement) -->
           <div class="text-center">
             <BButton
                 v-if="isHost && gameStatus === 'waiting'"
                 @click="handleStartGame"
                 class="bg-color-blue-grey border"
-                :disabled="players.length < 2 || !selectedTheme"
+                :disabled="players.length < 2"
             >
               Démarrer la partie
             </BButton>
