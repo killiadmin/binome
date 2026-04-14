@@ -4,10 +4,50 @@ export default {
   data() {
     return {
       rules: [
-        { title: "Objectif du jeu", description: "En cours d'écriture ..." },
-        { title: "Déroulement d'un tour", description: "En cours d'écriture ..." },
-        { title: "Conditions de victoire", description: "En cours d'écriture ..." },
-      ],
+        {
+          title: "🎯 Objectif du jeu",
+          description:
+              "Deviner le personnage secret des autres joueurs avant que ton propre binôme soit découvert.",
+        },
+        {
+          title: "👥 Mise en place",
+          description:
+              "• Nombre de joueurs : pair, minimum 4\n" +
+              "• Chaque joueur reçoit un personnage secret\n" +
+              "• Les joueurs sont regroupés en binômes partageant le même univers (sans le savoir)\n" +
+              "• Chaque personnage possède 3 mots interdits",
+        },
+        {
+          title: "🔄 Déroulement d’un tour",
+          description:
+              "À ton tour, tu peux faire UNE seule action :\n\n" +
+              "1. Poser une question à un joueur (réponse libre : oui/non)\n" +
+              "2. Faire une accusation : deviner le personnage d’un joueur\n\n" +
+              "Les joueurs jouent chacun leur tour dans le même ordre à chaque round.",
+        },
+        {
+          title: "🚫 Mots interdits",
+          description:
+              "• Chaque joueur a 3 mots interdits liés à son personnage\n" +
+              "• Si tu utilises un de TES mots interdits dans une question :\n" +
+              "  → La question est refusée\n" +
+              "  → Tu perds ton tour\n\n" +
+              "⚠️ Seuls TES mots sont vérifiés, pas ceux de l’autre joueur.",
+        },
+        {
+          title: "🎯 Accusation",
+          description:
+              "• Tu choisis un joueur et annonces son personnage\n" +
+              "• Si tu as raison : son binôme est révélé\n" +
+              "• Sinon : rien ne se passe, le jeu continue",
+        },
+        {
+          title: "🏆 Conditions de victoire",
+          description:
+              "• La partie se termine quand tous les binômes sauf un sont découverts\n" +
+              "• Le dernier binôme non découvert gagne la partie",
+        },
+      ]
     };
   },
 };
@@ -47,5 +87,6 @@ export default {
 .rule-description {
   color: #333;
   font-size: 1.1em;
+  white-space: pre-line;
 }
 </style>

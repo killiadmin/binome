@@ -24,8 +24,10 @@ const players = ref([])
 const gameStatus = ref('waiting')
 const isHost = ref(false)
 const hostId = ref(null)
-const startingGame = ref(false)  // ← hôte : en cours de démarrage
-const gameStarting = ref(false)  // ← autres joueurs : animation d'attente
+const startingGame = ref(false)
+const gameStarting = ref(false)
+const showRejoinModal = ref(false)
+const pendingGameId   = ref(null)
 
 // ─── SESSION localStorage ─────────────────────────────────────────────────────
 
@@ -50,14 +52,23 @@ async function restoreSession() {
 
   try {
     const session = JSON.parse(raw)
+
+    if (session.gameId) {
+      pendingGameId.value = session.gameId
+      playerId.value  = session.playerId
+      gameCode.value  = session.gameCode
+      showRejoinModal.value = true
+      return
+    }
+
     const res = await roomService.get(session.roomId)
 
-    roomId.value = session.roomId
+    roomId.value   = session.roomId
     gameCode.value = session.gameCode
     playerId.value = session.playerId
-    hostId.value = session.hostId
-    isHost.value = session.isHost
-    players.value = res.data.room.players
+    hostId.value   = session.hostId
+    isHost.value   = session.isHost
+    players.value  = res.data.room.players
 
     resetEcho()
     initLobby(session.roomId)
@@ -65,6 +76,19 @@ async function restoreSession() {
   } catch {
     clearSession()
   }
+}
+
+function handleRejoinGame() {
+  showRejoinModal.value = false
+  router.push({ name: 'RoundPage', params: { gameId: pendingGameId.value } })
+}
+
+function handleAbandonGame() {
+  clearSession()
+  showRejoinModal.value = false
+  pendingGameId.value   = null
+  playerId.value        = null
+  gameCode.value        = null
 }
 
 // ─── WEBSOCKET LOBBY ──────────────────────────────────────────────────────────
@@ -403,6 +427,24 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
       <div class="text-center">
         <BButton @click="handleJoinGame" class="bg-color-blue-grey border m-2">Rejoindre</BButton>
         <BButton variant="secondary" @click="showJoinModal = false" class="m-2">Annuler</BButton>
+      </div>
+    </BModal>
+
+    <!-- Modal rejoindre partie en cours -->
+    <BModal v-model="showRejoinModal" title="Partie en cours" hide-footer no-close-on-backdrop no-close-on-esc>
+      <div class="text-center py-2">
+        <p class="fs-5 mb-1">Tu as une partie en cours !</p>
+        <p class="text-muted small mb-4">
+          Code : <strong>{{ gameCode }}</strong>
+        </p>
+        <div class="d-flex justify-content-center gap-3">
+          <BButton variant="success" class="fw-bold" @click="handleRejoinGame">
+            <i class="fa-solid fa-play me-2"></i> Reprendre la partie
+          </BButton>
+          <BButton variant="outline-danger" @click="handleAbandonGame">
+            <i class="fa-solid fa-trash me-2"></i> Abandonner
+          </BButton>
+        </div>
       </div>
     </BModal>
   </BContainer>
