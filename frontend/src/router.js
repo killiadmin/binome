@@ -22,10 +22,10 @@ const routes = [
         component: RulePage,
     },
     {
-        path: "/game/:id/round/:id",
-        name: "RoundPage",
-        component: RoundPage,
-    },
+        path: '/game/:gameId',
+        name: 'RoundPage',
+        component: RoundPage
+    }
 ];
 
 const router = createRouter({

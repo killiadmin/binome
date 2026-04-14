@@ -8,6 +8,13 @@ use App\Models\Universe;
 
 class Binome extends Model
 {
+    protected $fillable = [
+        'game_id',
+        'universe_id',
+        'discovered_by_player_id',
+        'is_discovered', // si présent en DB
+    ];
+
     public function game()
     {
         return $this->belongsTo(Game::class);
@@ -20,7 +27,8 @@ class Binome extends Model
 
     public function players()
     {
-        return $this->belongsToMany(Player::class)->withPivot('character_id', 'score');
+        return $this->belongsToMany(Player::class)
+            ->withPivot('character_id', 'score');
     }
 
     public function discoveredBy()

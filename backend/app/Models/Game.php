@@ -8,6 +8,15 @@ use App\Models\Round;
 
 class Game extends Model
 {
+    protected $fillable = [
+        'room_id',
+        'status',
+    ];
+
+    protected $casts = [
+        'status' => \App\Enums\GameStatus::class,
+    ];
+
     public function room()
     {
         return $this->belongsTo(Room::class);
@@ -25,6 +34,8 @@ class Game extends Model
 
     public function currentRound()
     {
-        return $this->hasOne(Round::class)->where('is_finished', false)->latest();
+        return $this->hasOne(Round::class)
+            ->where('is_finished', false)
+            ->latest();
     }
 }
