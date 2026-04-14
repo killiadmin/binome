@@ -29,6 +29,6 @@ Route::prefix('games/{game}')->group(function () {
     });
 });
 
-Broadcast::channel('game.{gameId}', function ($player, $gameId) {
-    return Game::find($gameId)?->players->contains($player->id);
-});
+//Broadcast::channel('game.{gameId}', function ($player, $gameId) {
+//    return Game::find($gameId)?->players->contains($player->id);
+//});
