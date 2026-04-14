@@ -98,19 +98,25 @@ export function useReverb(playerId = null) {
                 callbacks.onError?.(error)
             })
 
-        // Events métier — on vérifie que le callback existe avant d'écouter
         if (callbacks.onGameStarted) {
-            channel.listen('.game.started', callbacks.onGameStarted)
+            channel.listen('.game.started', (data) => {
+                console.log('[WS] game.started reçu', data)
+                callbacks.onGameStarted(data)
+            })
         }
+
         if (callbacks.onRoundStarted) {
             channel.listen('.round.started', callbacks.onRoundStarted)
         }
+
         if (callbacks.onActionPlayed) {
             channel.listen('.action.played', callbacks.onActionPlayed)
         }
+
         if (callbacks.onBinomeDiscovered) {
             channel.listen('.binome.discovered', callbacks.onBinomeDiscovered)
         }
+
         if (callbacks.onGameEnded) {
             channel.listen('.game.ended', callbacks.onGameEnded)
         }

@@ -3,7 +3,7 @@ import {ref, onMounted, onUnmounted, computed} from 'vue'
 import {useRouter} from 'vue-router'
 import {roomService} from '../../services/roomService'
 import {useReverb} from '../../sockets/useReverb'
-import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput} from 'bootstrap-vue-next'
+import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput, BAlert, BSpinner, BBadge} from 'bootstrap-vue-next'
 import {resetEcho} from "../../sockets/useReverb.js";
 
 const router = useRouter()
@@ -24,6 +24,8 @@ const players = ref([])
 const gameStatus = ref('waiting')
 const isHost = ref(false)
 const hostId = ref(null)
+const startingGame = ref(false)  // ← hôte : en cours de démarrage
+const gameStarting = ref(false)  // ← autres joueurs : animation d'attente
 
 // ─── SESSION localStorage ─────────────────────────────────────────────────────
 
@@ -34,6 +36,7 @@ function saveSession() {
     playerId: playerId.value,
     hostId: hostId.value,
     isHost: isHost.value,
+    gameId: gameId.value,
   }))
 }
 
@@ -119,10 +122,11 @@ function initLobby(id) {
       players.value = data.players
     },
     onGameStarted: (data) => {
+      console.log('[GameStarted] data reçu :', data)
       gameStatus.value = 'in_progress'
       gameId.value = data.game_id
       saveSession()
-      router.push({name: 'RoundPage', params: {gameId: data.game_id}})
+      router.push({ name: 'RoundPage', params: { gameId: data.game_id } })
     },
     onError: () => {
       error.value = 'Connexion WebSocket perdue. Recharge la page.'
@@ -200,13 +204,21 @@ const handleReady = async () => {
 
 const handleStartGame = async () => {
   error.value = null
+  startingGame.value = true
 
   try {
     const res = await roomService.start(roomId.value, playerId.value)
     gameId.value = res.data.game_id
     saveSession()
+
+    await router.push({
+      name: 'RoundPage',
+      params: {gameId: res.data.game_id}
+    })
+
   } catch (e) {
     error.value = e.response?.data?.message || 'Erreur lors du démarrage.'
+    startingGame.value = false
   }
 }
 
@@ -239,7 +251,6 @@ const isCurrentPlayerReady = computed(() => {
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
 onMounted(() => {
-  // Tente de restaurer une session existante au refresh
   restoreSession()
 })
 
@@ -335,13 +346,22 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
           <!-- Bouton démarrer (hôte uniquement) -->
           <div class="text-center">
             <BButton
-                v-if="isHost && gameStatus === 'waiting'"
+                v-if="isHost && gameStatus === 'waiting' && !startingGame"
                 @click="handleStartGame"
                 class="bg-color-blue-grey border"
                 :disabled="players.length < 2"
             >
               Démarrer la partie
             </BButton>
+
+            <BAlert
+                v-if="!isHost && gameStarting"
+                variant="warning"
+                class="text-center mb-0"
+            >
+              <BSpinner small class="me-2" />
+              La partie démarre …
+            </BAlert>
           </div>
         </BCard>
       </BCol>

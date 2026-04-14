@@ -8,6 +8,13 @@ use App\Models\Player;
 
 class Round extends Model
 {
+    protected $fillable = [
+        'game_id',
+        'number',
+        'current_player_id',
+        'is_finished',
+    ];
+
     public function game()
     {
         return $this->belongsTo(Game::class);
