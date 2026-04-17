@@ -98,7 +98,6 @@ class GameService
                 'universe_id' => $universe->id,
             ]);
 
-            // Récupère 2 personnages distincts de cet univers
             $characters = Character::where('universe_id', $universe->id)
                 ->inRandomOrder()
                 ->take(2)

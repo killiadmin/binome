@@ -23,6 +23,7 @@ class PlayQuestionRequest extends FormRequest
     {
         return [
             'player_id' => ['required', 'integer', 'exists:players,id'],
+            'target_player_id' => ['required', 'integer', 'exists:players,id'],
             'question'  => ['required', 'string', 'min:5', 'max:500'],
         ];
     }

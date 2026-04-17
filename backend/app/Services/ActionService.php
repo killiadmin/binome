@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ActionType;
 use App\Events\ActionPlayed;
+use App\Events\AnswerGiven;
 use App\Events\GameEnded;
 use App\Models\Action;
 use App\Models\Character;
@@ -24,7 +25,7 @@ class ActionService
     // QUESTION
     // -------------------------------------------------------------------------
 
-    public function playQuestion(Round $round, Player $player, string $question): Action
+    public function playQuestion(Round $round, Player $player, string $question, Player $targetPlayer): Action
     {
         $game = $round->game;
 
@@ -60,11 +61,10 @@ class ActionService
             type:    ActionType::Question,
             content: $question,
             isValid: true,
+            targetPlayer: $targetPlayer,
         );
 
         broadcast(new ActionPlayed($action));
-
-        $this->advanceRound($round, $game);
 
         return $action;
     }
@@ -154,7 +154,7 @@ class ActionService
         ?Player    $targetPlayer      = null,
         ?bool      $accusationCorrect = null,
     ): Action {
-        return Action::create([
+        $action = Action::create([
             'round_id'            => $round->id,
             'player_id'           => $player->id,
             'type'                => $type,
@@ -163,6 +163,10 @@ class ActionService
             'target_player_id'    => $targetPlayer?->id,
             'accusation_correct'  => $accusationCorrect,
         ]);
+
+        $action->load(['player', 'targetPlayer', 'round']);
+
+        return $action;
     }
 
     /**
@@ -195,7 +199,6 @@ class ActionService
         $roundFinished = $this->roundService->nextTurn($round);
 
         if ($roundFinished) {
-            // Vérifie que la partie n'est pas terminée avant de créer un round
             $game->refresh();
             if ($game->status === \App\Enums\GameStatus::InProgress) {
                 $this->roundService->createRound($game, $round->number + 1);
@@ -208,7 +211,6 @@ class ActionService
      */
     private function endGame(Game $game, int $losingBinomeId): void
     {
-        // Les binomes gagnants = tous sauf le dernier découvert
         $winningBinomes = $game->binomes
             ->where('id', '!=', $losingBinomeId)
             ->values();
@@ -216,5 +218,26 @@ class ActionService
         $game->update(['status' => \App\Enums\GameStatus::Finished]);
 
         broadcast(new GameEnded($game, $winningBinomes));
+    }
+
+    public function playAnswer(Action $action, Player $player, string $answer): Action
+    {
+        if ($action->target_player_id !== $player->id) {
+            throw new \RuntimeException("Tu n'es pas le joueur ciblé par cette question.");
+        }
+
+        if ($action->answer !== null) {
+            throw new \RuntimeException("Cette question a déjà reçu une réponse.");
+        }
+
+        $action->update(['answer' => $answer]);
+        $action->load(['player', 'targetPlayer', 'round']);
+
+        broadcast(new AnswerGiven($action));
+
+        $round = $action->round;
+        $this->advanceRound($round, $round->game);
+
+        return $action;
     }
 }

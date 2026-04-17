@@ -18,7 +18,6 @@ Broadcast::channel('game.{gameId}', function ($user, int $gameId) {
 
     if (!$player || !$game) return false;
 
-    // ✅ Vérifie d'abord dans les binomes (partie en cours)
     $isInGame = $game->binomes
         ->flatMap(fn($b) => $b->players)
         ->contains('id', $player->id);
@@ -27,8 +26,6 @@ Broadcast::channel('game.{gameId}', function ($user, int $gameId) {
         return ['id' => $player->id, 'pseudo' => $player->pseudo];
     }
 
-    // ✅ Fallback — vérifie que le joueur est dans la room associée à la game
-    // (cas où la game vient d'être créée et les binomes pas encore assignés)
     $isInRoom = $game->room->players->contains('id', $player->id);
 
     if (!$isInRoom) return false;

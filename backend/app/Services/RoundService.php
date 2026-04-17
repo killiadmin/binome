@@ -27,7 +27,7 @@ class RoundService
             'is_finished'       => false,
         ]);
 
-        broadcast(new RoundStarted($round->load('currentPlayer')));
+        broadcast(new RoundStarted($round->load('currentPlayer'), isNewRound: true));
 
         return $round;
     }
@@ -47,16 +47,17 @@ class RoundService
 
         $nextIndex = $currentIndex + 1;
 
-        // Tous les joueurs ont joué → round terminé
         if ($nextIndex >= $players->count()) {
             $round->update(['is_finished' => true]);
             return true;
         }
 
-        // Sinon on passe au suivant
         $round->update([
             'current_player_id' => $players[$nextIndex]->id,
         ]);
+
+        $round->refresh();
+        broadcast(new RoundStarted($round->load('currentPlayer'), isNewRound: false));
 
         return false;
     }

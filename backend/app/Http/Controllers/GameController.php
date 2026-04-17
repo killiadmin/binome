@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ActionType;
+use App\Models\Action;
 use App\Models\Game;
 use App\Models\Room;
 use App\Models\Player;
@@ -59,19 +61,33 @@ class GameController extends Controller
         $game->load([
             'binomes.universe',
             'binomes.players',
-            'rounds' => fn($q) => $q->where('is_finished', false)->latest(),
+            'rounds' => fn($q) => $q->orderBy('number'),
         ]);
 
-        $currentRound = $game->rounds->first();
+        $currentRound = $game->rounds
+            ->where('is_finished', false)
+            ->sortByDesc('number')
+            ->first();
+
+        // ── Charge les actions du round courant ──────────────────────────────
+        $actions = collect();
+        foreach ($game->rounds as $round) {
+            $roundActions = $round->actions()
+                ->with(['player', 'targetPlayer'])
+                ->orderBy('created_at')
+                ->get()
+                ->map(fn($action) => $this->formatAction($action));
+            $actions = $actions->merge($roundActions);
+        }
 
         return response()->json([
             'game_id' => $game->id,
             'status'  => $game->status,
             'binomes' => $game->binomes->map(fn($binome) => [
-                'id'           => $binome->id,
-                'universe'     => $binome->universe->name,
-                'is_discovered'=> $binome->is_discovered,
-                'players'      => $binome->players->map(fn($player) => [
+                'id'            => $binome->id,
+                'universe'      => $binome->universe->name,
+                'is_discovered' => $binome->is_discovered,
+                'players'       => $binome->players->map(fn($player) => [
                     'id'     => $player->id,
                     'pseudo' => $player->pseudo,
                 ]),
@@ -81,6 +97,45 @@ class GameController extends Controller
                 'number'            => $currentRound->number,
                 'current_player_id' => $currentRound->current_player_id,
             ] : null,
+            'actions' => $actions->values()->toArray(),
+        ]);
+    }
+
+    private function formatAction(Action $action): array
+    {
+        $base = [
+            'action_id'  => $action->id,
+            'id'         => $action->id,
+            'round_id'   => $action->round_id,
+            'round_number' => $action->round->number,
+            'player'     => [
+                'id'     => $action->player->id,
+                'pseudo' => $action->player->pseudo,
+            ],
+            'type'       => $action->type,
+            'is_valid'   => $action->is_valid,
+            'answer'     => $action->answer,
+            'created_at' => $action->created_at->toIso8601String(),
+        ];
+
+        if ($action->type === ActionType::Question) {
+            return array_merge($base, [
+                'question'       => $action->is_valid ? $action->content : null,
+                'refused_reason' => !$action->is_valid ? 'Mot interdit détecté.' : null,
+                'target_player'  => $action->targetPlayer ? [
+                    'id'     => $action->targetPlayer->id,
+                    'pseudo' => $action->targetPlayer->pseudo,
+                ] : null,
+            ]);
+        }
+
+        return array_merge($base, [
+            'target_player' => $action->targetPlayer ? [
+                'id'     => $action->targetPlayer->id,
+                'pseudo' => $action->targetPlayer->pseudo,
+            ] : null,
+            'accusation_correct' => $action->accusation_correct,
+            'character_name'     => $action->accusation_correct ? $action->content : null,
         ]);
     }
 
