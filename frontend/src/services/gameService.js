@@ -40,9 +40,10 @@ export const gameService = {
      * POST /games/{game}/rounds/{round}/question
      * Poser une question à un joueur
      */
-    async playQuestion(gameId, roundId, playerId, question) {
+    async playQuestion(gameId, roundId, playerId, targetPlayerId, question) {
         const res = await api.post(`/games/${gameId}/rounds/${roundId}/question`, {
             player_id: playerId,
+            target_player_id: targetPlayerId,
             question,
         })
         return res.data
@@ -58,6 +59,23 @@ export const gameService = {
             target_player_id: targetPlayerId,
             character_id:     characterId,
         })
+        return res.data
+    },
+
+    /**
+     *
+     * @param gameId
+     * @param roundId
+     * @param actionId
+     * @param playerId
+     * @param answer
+     * @returns {Promise<any>}
+     */
+    async playAnswer(gameId, roundId, actionId, playerId, answer) {
+        const res = await api.post(
+            `/games/${gameId}/rounds/${roundId}/actions/${actionId}/answer`,
+            { player_id: playerId, answer }
+        )
         return res.data
     },
 }
