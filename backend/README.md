@@ -196,8 +196,10 @@ Action
   └── belongsTo → Player      (qui joue)
   └── belongsTo → Player      (target_player_id, nullable)
   └── enum type: question | accusation
+  └── text: content            (contenu de la question ou nom du personnage accusé)
   └── bool: is_valid           (false si mot interdit)
   └── bool: accusation_correct (nullable, uniquement pour les accusations)
+  └── string: answer           (nullable — 'yes' | 'no' | 'dont_know')
 ```
 
 ### Tables pivots
@@ -256,13 +258,19 @@ Point d'entrée : `start(Room $room): Game`
 
 ### `ActionService`
 
-**`playQuestion(Round, Player, string $question): Action`**
+**`playQuestion(Round, Player, Player $target, string $question): Action`**
 1. Vérifie que c'est le tour du joueur (`current_player_id`)
 2. Vérifie que le joueur n'a pas déjà joué ce round (action valide existante)
 3. Récupère le personnage du joueur et vérifie les mots interdits
-4. Si mot interdit → enregistre l'action `is_valid: false`, broadcast, **tour perdu**
-5. Sinon → enregistre `is_valid: true`, broadcast
-6. Dans tous les cas → appelle `advanceRound()`
+4. Si mot interdit → enregistre `is_valid: false`, broadcast, **tour perdu**, appelle `advanceRound()`
+5. Sinon → enregistre `is_valid: true`, broadcast — **attend la réponse avant d'avancer**
+
+**`playAnswer(Action, Player, string $answer): Action`**
+1. Vérifie que c'est bien le joueur ciblé qui répond
+2. Vérifie que la question n'a pas déjà une réponse
+3. Enregistre la réponse (`yes` | `no` | `dont_know`)
+4. Broadcast `AnswerGiven`
+5. Appelle `advanceRound()` — c'est ici que le tour avance
 
 **`playAccusation(Round, Player, Player $target, Character $guessed): Action`**
 1. Mêmes validations que la question
@@ -307,6 +315,7 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/games/{game}/rounds/{round}/question` | `ActionController@question` | Poser une question |
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
 | `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
+| `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/answer` | `ActionController@answer` | Répondre à une question (oui/non/je ne sais pas) |
 
 ### Sécurité des données
 
@@ -324,6 +333,7 @@ Point d'entrée : `start(Room $room): Game`
 |---|---|---|
 | `room.{roomId}` | PresenceChannel | Lobby — joueurs qui rejoignent/quittent/sont prêts |
 | `game.{gameId}` | PresenceChannel | Partie en cours — actions, rounds, fin de partie |
+| `AnswerGiven` | `game.{id}` | `answer.given` | Le joueur ciblé répond à une question |
 
 ### Auth PresenceChannel
 
@@ -391,11 +401,13 @@ type = accusation
    GET /api/games/{game}/me             → récupère son personnage + mots interdits
 
    [Option A] Question
-   POST .../rounds/{round}/question
-   body: { player_id, question }
-     ├── mot interdit → is_valid: false, tour perdu
-     └── valide       → is_valid: true
-   → broadcast: ActionPlayed
+    POST .../rounds/{round}/question
+    body: { player_id, target_player_id, question }
+    ├── mot interdit → is_valid: false, tour perdu, advanceRound()
+    └── valide       → is_valid: true, broadcast ActionPlayed
+                     → joueur ciblé répond via POST .../actions/{action}/answer
+                     → broadcast AnswerGiven
+                     → advanceRound() déclenché après la réponse
 
    [Option B] Accusation
    POST .../rounds/{round}/accusation
@@ -473,3 +485,10 @@ Trié par `player.id` — déterministe et identique à chaque round.
 
 ### Transaction sur le démarrage
 `GameService::start()` est entièrement dans une `DB::transaction()`.
+
+### `is_new_round` dans `RoundStarted`
+L'event `RoundStarted` est broadcasté dans deux cas :
+- Changement de joueur en cours de round (`is_new_round: false`)
+- Création d'un nouveau round (`is_new_round: true`)
+
+Le front utilise ce flag pour ne déclencher l'animation de transition que lors d'un vrai changement de round.

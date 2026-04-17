@@ -26,9 +26,6 @@ Route::prefix('games/{game}')->group(function () {
     Route::prefix('rounds/{round}')->group(function () {
         Route::post('question',   [ActionController::class, 'question']);
         Route::post('accusation', [ActionController::class, 'accusation']);
+        Route::post('actions/{action}/answer', [ActionController::class, 'answer']);
     });
 });
-
-//Broadcast::channel('game.{gameId}', function ($player, $gameId) {
-//    return Game::find($gameId)?->players->contains($player->id);
-//});

@@ -5,16 +5,17 @@ namespace App\Events;
 use App\Models\Round;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class RoundStarted implements ShouldBroadcast
+class RoundStarted implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public function __construct(
-        public readonly Round $round
+        public readonly Round $round,
+        public readonly bool  $isNewRound = false,
     ) {}
 
     public function broadcastOn(): array
@@ -34,6 +35,7 @@ class RoundStarted implements ShouldBroadcast
         return [
             'round_id'          => $this->round->id,
             'number'            => $this->round->number,
+            'is_new_round'   => $this->isNewRound,
             'current_player'    => [
                 'id'     => $this->round->currentPlayer->id,
                 'pseudo' => $this->round->currentPlayer->pseudo,
