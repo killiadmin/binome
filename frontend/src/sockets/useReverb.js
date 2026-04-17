@@ -121,6 +121,10 @@ export function useReverb(playerId = null) {
             channel.listen('.game.ended', callbacks.onGameEnded)
         }
 
+        if (callbacks.onAnswerGiven) {
+            channel.listen('.answer.given', callbacks.onAnswerGiven)
+        }
+
         return channel
     }
 

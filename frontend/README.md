@@ -173,6 +173,7 @@ joinGame(gameId, {
     onLeaving:           (member)  => {},
     onRoundStarted:      (data)    => {},
     onActionPlayed:      (data)    => {},
+    onAnswerGiven:       (data)    => {},
     onBinomeDiscovered:  (data)    => {},
     onGameEnded:         (data)    => {},
     onError:             (error)   => {},
@@ -256,10 +257,17 @@ Page principale du lobby. Gère :
 
 ### `RoundPage.vue`
 
-Page de jeu — en cours de développement. Affiche pour l'instant :
-- Le personnage assigné au joueur
-- Les mots interdits
-- Les boutons "Poser une question" et "Faire une accusation"
+Page de jeu principale. Gère :
+
+- Affichage du personnage secret assigné au joueur (avec toggle flou)
+- Mots interdits du joueur
+- Bannière de tour en cours (temps réel)
+- Actions : poser une question ou faire une accusation
+- Modale de réponse oui/non/je ne sais pas (s'ouvre automatiquement chez le joueur ciblé)
+- Historique complet des actions groupées par round
+- Animation de transition entre les rounds
+- Notifications de binôme découvert
+- Modale de fin de partie
 
 ---
 
@@ -282,8 +290,9 @@ Page de jeu — en cours de développement. Affiche pour l'instant :
 |---|---|---|---|
 | `show(gameId)` | GET | `/games/{id}` | — |
 | `myCharacter(gameId, playerId)` | GET | `/games/{id}/me` | `?player_id=X` |
-| `playQuestion(gameId, roundId, playerId, question)` | POST | `/games/{id}/rounds/{id}/question` | `{ player_id, question }` |
+| `playQuestion(gameId, roundId, playerId, targetPlayerId, question)` | POST | `/games/{id}/rounds/{id}/question` | `{ player_id, target_player_id, question }` |
 | `playAccusation(gameId, roundId, playerId, targetId, characterId)` | POST | `/games/{id}/rounds/{id}/accusation` | `{ player_id, target_player_id, character_id }` |
+| `playAnswer(gameId, roundId, actionId, playerId, answer)` | POST | `/games/{id}/rounds/{id}/actions/{id}/answer` | `{ player_id, answer }` |
 
 ---
 
