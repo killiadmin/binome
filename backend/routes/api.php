@@ -27,5 +27,6 @@ Route::prefix('games/{game}')->group(function () {
         Route::post('question',   [ActionController::class, 'question']);
         Route::post('accusation', [ActionController::class, 'accusation']);
         Route::post('actions/{action}/answer', [ActionController::class, 'answer']);
+        Route::post('actions/{action}/confirm', [ActionController::class, 'confirmAccusation']);
     });
 });

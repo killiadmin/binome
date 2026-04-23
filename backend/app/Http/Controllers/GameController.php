@@ -88,8 +88,9 @@ class GameController extends Controller
                 'universe'      => $binome->universe->name,
                 'is_discovered' => $binome->is_discovered,
                 'players'       => $binome->players->map(fn($player) => [
-                    'id'     => $player->id,
-                    'pseudo' => $player->pseudo,
+                    'id'           => $player->id,
+                    'pseudo'       => $player->pseudo,
+                    'is_eliminated' => (bool) $player->pivot->is_eliminated,
                 ]),
             ]),
             'current_round' => $currentRound ? [

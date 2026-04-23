@@ -68,8 +68,11 @@ class RoundService
      */
     private function getOrderedPlayers(Game $game, int $roundNumber): Collection
     {
+        $game->load(['binomes.players']);
+
         return $game->binomes
             ->flatMap(fn($binome) => $binome->players)
+            ->filter(fn($player) => !$player->pivot->is_eliminated)
             ->sortBy('id')
             ->values();
     }

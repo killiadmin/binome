@@ -32,10 +32,9 @@ class PlayAccusationRequest extends FormRequest
                 'required',
                 'integer',
                 'exists:players,id',
-                // Ne peut pas s'accuser soi-même
                 'different:player_id',
             ],
-            'character_id'     => ['required', 'integer', 'exists:characters,id'],
+            'character_name'   => ['required', 'string', 'max:100'],
         ];
     }
 
@@ -47,8 +46,8 @@ class PlayAccusationRequest extends FormRequest
             'target_player_id.required' => 'La cible est requise.',
             'target_player_id.exists'   => 'Ce joueur cible n\'existe pas.',
             'target_player_id.different'=> 'Tu ne peux pas t\'accuser toi-même.',
-            'character_id.required'     => 'Le personnage accusé est requis.',
-            'character_id.exists'       => 'Ce personnage n\'existe pas.',
+            'character_name.required'   => 'Le nom du personnage est requis.',
+            'character_name.max'        => 'Le nom du personnage est trop long.',
         ];
     }
 }

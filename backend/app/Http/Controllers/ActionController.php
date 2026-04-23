@@ -45,23 +45,38 @@ class ActionController extends Controller
      */
     public function accusation(PlayAccusationRequest $request, Game $game, Round $round): JsonResponse
     {
-        $player          = Player::findOrFail($request->validated('player_id'));
-        $targetPlayer    = Player::findOrFail($request->validated('target_player_id'));
-        $guessedCharacter = Character::findOrFail($request->validated('character_id'));
+        $player        = Player::findOrFail($request->validated('player_id'));
+        $targetPlayer  = Player::findOrFail($request->validated('target_player_id'));
+        $characterName = $request->validated('character_name');
 
         $action = $this->actionService->playAccusation(
             $round,
             $player,
             $targetPlayer,
-            $guessedCharacter,
+            $characterName,
         );
 
         return response()->json([
-            'action'             => $action->load('player', 'targetPlayer'),
-            'accusation_correct' => $action->accusation_correct,
-            'message'            => $action->accusation_correct
-                ? 'Bonne accusation ! Le personnage est découvert.'
-                : 'Mauvaise accusation.',
+            'action'  => $action->load('player', 'targetPlayer'),
+            'message' => 'Accusation envoyée — en attente de confirmation.',
+        ]);
+    }
+
+    public function confirmAccusation(Request $request, Game $game, Round $round, Action $action): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+            'confirmed' => ['required', 'boolean'],
+        ]);
+
+        $player    = Player::findOrFail($request->input('player_id'));
+        $confirmed = $request->boolean('confirmed');
+
+        $action = $this->actionService->confirmAccusation($action, $player, $confirmed);
+
+        return response()->json([
+            'action'  => $action,
+            'message' => $confirmed ? 'Accusation confirmée.' : 'Accusation niée.',
         ]);
     }
 

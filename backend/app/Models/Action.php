@@ -13,15 +13,18 @@ class Action extends Model
         'target_player_id',
         'type',
         'content',
+        'character_name',
         'is_valid',
         'accusation_correct',
+        'accusation_confirmed',
         'answer',
     ];
 
     protected $casts = [
-        'type'               => ActionType::class,
-        'is_valid'           => 'boolean',
-        'accusation_correct' => 'boolean',
+        'type'                 => ActionType::class,
+        'is_valid'             => 'boolean',
+        'accusation_correct'   => 'boolean',
+        'accusation_confirmed' => 'boolean',
     ];
 
     public function round(): \Illuminate\Database\Eloquent\Relations\BelongsTo
