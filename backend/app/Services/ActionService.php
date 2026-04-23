@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ActionType;
+use App\Events\AccusationConfirmed;
 use App\Events\ActionPlayed;
 use App\Events\AnswerGiven;
 use App\Events\GameEnded;
@@ -74,37 +75,31 @@ class ActionService
     // -------------------------------------------------------------------------
 
     public function playAccusation(
-        Round    $round,
-        Player   $player,
-        Player   $targetPlayer,
-        Character $guessedCharacter,
+        Round  $round,
+        Player $player,
+        Player $targetPlayer,
+        string $characterName,
     ): Action {
         $game = $round->game;
 
         $this->validateTurn($round, $player);
         $this->validateHasNotPlayedThisRound($round, $player);
 
-        // Vérifie si le personnage accusé est bien celui du joueur ciblé
-        $realCharacter   = $targetPlayer->getCharacterInGame($game);
-        $isCorrect       = $realCharacter?->id === $guessedCharacter->id;
-
+        // Enregistre l'accusation sans vérifier — on attend la confirmation
         $action = $this->storeAction(
-            round:              $round,
-            player:             $player,
-            type:               ActionType::Accusation,
-            content:            $guessedCharacter->name,
-            isValid:            true,
-            targetPlayer:       $targetPlayer,
-            accusationCorrect:  $isCorrect,
+            round:        $round,
+            player:       $player,
+            type:         ActionType::Accusation,
+            content:      $characterName,
+            isValid:      true,
+            targetPlayer: $targetPlayer,
         );
 
+        // Stocke le nom du personnage accusé
+        $action->update(['character_name' => $characterName]);
+        $action->load(['player', 'targetPlayer', 'round']);
+
         broadcast(new ActionPlayed($action));
-
-        if ($isCorrect) {
-            $this->handleCorrectAccusation($game, $player, $targetPlayer);
-        }
-
-        $this->advanceRound($round, $game);
 
         return $action;
     }
@@ -179,14 +174,15 @@ class ActionService
         Player $target,
     ): void {
         DB::transaction(function () use ($game, $accuser, $target) {
-            $binome = $this->binomeService->discoverBinome($game, $target, $accuser);
 
-            // Vérifie si c'était le dernier binome non découvert
-            $allDiscovered = $game->binomes()->where('is_discovered', false)->doesntExist();
+            // Élimine le joueur ciblé (sans toucher au binôme)
+            $this->binomeService->eliminatePlayer($game, $target, $accuser);
 
-            if ($allDiscovered) {
-                // Le dernier binome découvert PERD : les autres gagnent
-                $this->endGame($game, losingBinomeId: $binome->id);
+            // Vérifie si la partie est terminée
+            $winners = $this->binomeService->checkGameOver($game);
+
+            if ($winners !== null) {
+                $this->endGame($game, $winners);
             }
         });
     }
@@ -209,15 +205,10 @@ class ActionService
     /**
      * Clôture la partie
      */
-    private function endGame(Game $game, int $losingBinomeId): void
+    private function endGame(Game $game, array $winners): void
     {
-        $winningBinomes = $game->binomes
-            ->where('id', '!=', $losingBinomeId)
-            ->values();
-
         $game->update(['status' => \App\Enums\GameStatus::Finished]);
-
-        broadcast(new GameEnded($game, $winningBinomes));
+        broadcast(new GameEnded($game, collect($winners)));
     }
 
     public function playAnswer(Action $action, Player $player, string $answer): Action
@@ -237,6 +228,46 @@ class ActionService
 
         $round = $action->round;
         $this->advanceRound($round, $round->game);
+
+        return $action;
+    }
+
+    public function confirmAccusation(Action $action, Player $player, bool $confirmed): Action
+    {
+        if ($action->target_player_id !== $player->id) {
+            throw new \RuntimeException("Tu n'es pas le joueur accusé.");
+        }
+
+        if ($action->accusation_confirmed !== null) {
+            throw new \RuntimeException("Cette accusation a déjà été confirmée.");
+        }
+
+        $round = $action->round;
+        $game  = $round->game;
+
+        if ($confirmed) {
+            $action->update([
+                'accusation_confirmed' => true,
+                'accusation_correct'   => true,
+            ]);
+
+            $action->load(['player', 'targetPlayer', 'round']);
+            broadcast(new AccusationConfirmed($action));
+
+            $this->handleCorrectAccusation($game, $action->player, $player);
+
+        } else {
+            $action->update([
+                'accusation_confirmed' => false,
+                'accusation_correct'   => false,
+            ]);
+
+            $action->load(['player', 'targetPlayer', 'round']);
+            broadcast(new AccusationConfirmed($action));
+        }
+
+        // Dans tous les cas on avance le round après confirmation
+        $this->advanceRound($round, $game);
 
         return $action;
     }

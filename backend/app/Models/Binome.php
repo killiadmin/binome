@@ -28,7 +28,7 @@ class Binome extends Model
     public function players()
     {
         return $this->belongsToMany(Player::class)
-            ->withPivot('character_id', 'score');
+            ->withPivot('character_id', 'score', 'is_eliminated');
     }
 
     public function discoveredBy()

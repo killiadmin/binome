@@ -64,12 +64,9 @@ class ActionPlayed implements ShouldBroadcastNow
                 'id'     => $this->action->targetPlayer->id,
                 'pseudo' => $this->action->targetPlayer->pseudo,
             ],
-            'accusation_correct' => $this->action->accusation_correct,
-            // On n'expose le nom du personnage accusé que si c'est correct
-            // pour ne pas donner trop d'indices aux autres joueurs
-            'character_name' => $this->action->accusation_correct
-                ? $this->action->content
-                : null,
+            'character_name'       => $this->action->character_name,
+            'accusation_confirmed' => null,
+            'accusation_correct'   => null,
         ]);
     }
 }
