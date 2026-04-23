@@ -59,9 +59,16 @@ const transitionRoundNumber = ref(1)
 
 const transitionCanvas = ref(null)
 
+const pendingAccusation    = ref(null)
+const showAccusationConfirmModal = ref(false)
+const submittingConfirm    = ref(false)
+
 // ─── COMPUTED ─────────────────────────────────────────────────────────────────
 
-const isMyTurn = computed(() => currentPlayerId.value === myPlayerId.value)
+const isMyTurn = computed(() =>
+    currentPlayerId.value === myPlayerId.value &&
+    !eliminatedPlayerIds.value.has(myPlayerId.value)
+)
 
 const currentPlayerName = computed(() => {
   const p = players.value.find(p => p.id === currentPlayerId.value)
@@ -69,7 +76,10 @@ const currentPlayerName = computed(() => {
 })
 
 const otherPlayers = computed(() =>
-    players.value.filter(p => p.id !== myPlayerId.value)
+    players.value.filter(p =>
+        p.id !== myPlayerId.value &&
+        !p.is_eliminated
+    )
 )
 
 const discoveredPlayerIds = computed(() => {
@@ -96,6 +106,12 @@ const actionsByRound = computed(() => {
     groups[roundId].actions.push(action)
   })
   return Object.values(groups)
+})
+
+const eliminatedPlayerIds = computed(() => {
+  const ids = new Set()
+  players.value.forEach(p => { if (p.is_eliminated) ids.add(p.id) })
+  return ids
 })
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -127,7 +143,9 @@ onMounted(async () => {
       showAnswerModal.value = true
     }
 
-    players.value = game.binomes.flatMap(b => b.players)
+    players.value = game.binomes.flatMap(b =>
+        b.players.map(p => ({ ...p, is_eliminated: p.is_eliminated ?? false }))
+    )
     currentRound.value = game.current_round ?? null
     currentPlayerId.value = game.current_round?.current_player_id ?? null
     availableCharacters.value = game.characters ?? []
@@ -149,14 +167,14 @@ onMounted(async () => {
   resetEcho()
   const {joinGame} = useReverb(myPlayerId.value)
   joinGame(gameId, {
-    onRoundStarted: handleRoundStarted,
-    onActionPlayed: handleActionPlayed,
-    onAnswerGiven: handleAnswerGiven,
-    onBinomeDiscovered: handleBinomeDiscovered,
-    onGameEnded: handleGameEnded,
-    onError: () => {
-      error.value = 'Connexion WebSocket perdue.'
-    },
+    onRoundStarted:       handleRoundStarted,
+    onActionPlayed:       handleActionPlayed,
+    onAnswerGiven:        handleAnswerGiven,
+    onAccusationConfirmed: handleAccusationConfirmed,
+    onBinomeDiscovered:   handleBinomeDiscovered,
+    onGameEnded:          handleGameEnded,
+    onPlayerEliminated: handlePlayerEliminated,
+    onError: () => { error.value = 'Connexion WebSocket perdue.' },
   })
 })
 
@@ -249,17 +267,28 @@ async function handleRoundStarted(data) {
   resetForms()
 }
 
+function handlePlayerEliminated(data) {
+  const idx = players.value.findIndex(p => p.id === data.eliminated_player.id)
+  if (idx !== -1) {
+    players.value[idx] = { ...players.value[idx], is_eliminated: true }
+  }
+}
+
 function handleActionPlayed(data) {
   actions.value.push(data)
   if (data.player?.id === myPlayerId.value) hasPlayed.value = true
 
-  if (
-      data.type === 'question' &&
-      data.is_valid &&
-      data.target_player?.id === myPlayerId.value
-  ) {
+  if (data.type === 'question' && data.is_valid &&
+      data.target_player?.id === myPlayerId.value) {
     pendingQuestion.value = data
     showAnswerModal.value = true
+  }
+
+  if (data.type === 'accusation' &&
+      data.target_player?.id === myPlayerId.value &&
+      data.accusation_confirmed === null) {
+    pendingAccusation.value = data
+    showAccusationConfirmModal.value = true
   }
 }
 
@@ -320,6 +349,37 @@ function handleGameEnded(data) {
   gameOverMsg.value = iWon
       ? "Votre binôme n'a jamais été découvert. Bien joué !"
       : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+}
+
+function handleAccusationConfirmed(data) {
+  const idx = actions.value.findIndex(a => (a.action_id ?? a.id) === data.action_id)
+  if (idx !== -1) {
+    actions.value[idx] = {
+      ...actions.value[idx],
+      accusation_confirmed: data.accusation_confirmed,
+      accusation_correct:   data.accusation_correct,
+    }
+  }
+}
+
+async function submitConfirmAccusation(confirmed) {
+  if (submittingConfirm.value || !pendingAccusation.value) return
+  submittingConfirm.value = true
+  try {
+    await gameService.confirmAccusation(
+        gameId,
+        pendingAccusation.value.round_id,
+        pendingAccusation.value.action_id,
+        myPlayerId.value,
+        confirmed
+    )
+    showAccusationConfirmModal.value = false
+    pendingAccusation.value = null
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Erreur lors de la confirmation.'
+  } finally {
+    submittingConfirm.value = false
+  }
 }
 
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
@@ -484,7 +544,6 @@ function backToHome() {
       </div>
 
       <!-- ── HISTORIQUE DES ACTIONS ─────────────────────────────────────────── -->
-      <!-- ── HISTORIQUE DES ACTIONS ─────────────────────────────────────────── -->
       <div v-if="actions.length" class="actions-history">
         <p class="history-title">📜 Historique de la partie</p>
         <div class="history-list">
@@ -513,11 +572,12 @@ function backToHome() {
         }"
             >
         <span class="history-icon">
-          <template v-if="action.type === 'question' && !action.is_valid">❌</template>
-          <template v-else-if="action.type === 'question'">💬</template>
-          <template v-else-if="action.accusation_correct">🎯</template>
-          <template v-else>❌</template>
-        </span>
+  <template v-if="action.type === 'question' && !action.is_valid">❌</template>
+  <template v-else-if="action.type === 'question'">💬</template>
+  <template v-else-if="action.type === 'accusation' && action.accusation_confirmed === null">⏳</template>
+  <template v-else-if="action.type === 'accusation' && action.accusation_correct">🎯</template>
+  <template v-else>❌</template>
+</span>
               <div class="history-content">
                 <span class="history-actor">{{ action.player?.pseudo }}</span>
 
@@ -528,12 +588,12 @@ function backToHome() {
                   : <em>« {{ action.question }} »</em>
                   <span v-if="action.answer !== null && action.answer !== undefined"
                         :class="{
-                    'answer-yes':       action.answer === 'yes',
-                    'answer-no':        action.answer === 'no',
-                    'answer-dont-know': action.answer === 'dont_know',
-                  }">
-              → {{ action.answer === 'yes' ? 'Oui ✅' : action.answer === 'no' ? 'Non ❌' : 'Je ne sais pas 🤷' }}
-            </span>
+            'answer-yes':       action.answer === 'yes',
+            'answer-no':        action.answer === 'no',
+            'answer-dont-know': action.answer === 'dont_know',
+          }">
+      → {{ action.answer === 'yes' ? 'Oui ✅' : action.answer === 'no' ? 'Non ❌' : 'Je ne sais pas 🤷' }}
+    </span>
                   <span v-else class="history-muted"> → en attente de réponse…</span>
                 </template>
 
@@ -542,14 +602,30 @@ function backToHome() {
                   &nbsp;<span class="history-muted">a utilisé un mot interdit — tour perdu.</span>
                 </template>
 
-                <!-- Accusation correcte -->
-                <template v-else-if="action.accusation_correct">
-                  &nbsp;a correctement accusé
+                <!-- Accusation en attente ← EN PREMIER avant les autres cas accusation -->
+                <template v-else-if="action.type === 'accusation' && action.accusation_confirmed === null">
+                  &nbsp;accuse
                   <span class="history-target">{{ action.target_player?.pseudo }}</span>
-                  d'être <em>{{ action.character_name }}</em> !
+                  d'être <em>« {{ action.character_name }} »</em>
+                  <span class="history-muted"> → en attente de confirmation…</span>
                 </template>
 
-                <!-- Mauvaise accusation -->
+                <!-- Accusation correcte -->
+                <template v-else-if="action.type === 'accusation' && action.accusation_correct">
+                  &nbsp;a correctement accusé
+                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  d'être <em>{{ action.character_name }}</em> ! 🎯
+                </template>
+
+                <!-- Accusation niée ou incorrecte -->
+                <template v-else-if="action.type === 'accusation' && action.accusation_confirmed === false">
+                  &nbsp;a accusé
+                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  d'être <em>{{ action.character_name }}</em>
+                  — <span class="history-muted">nié par le joueur.</span>
+                </template>
+
+                <!-- Fallback -->
                 <template v-else>
                   &nbsp;a accusé
                   <span class="history-target">{{ action.target_player?.pseudo }}</span>
@@ -571,8 +647,8 @@ function backToHome() {
               :key="player.id"
               class="player-row"
               :class="{
-                'player-row-active': player.id === currentPlayerId,
-                'player-row-discovered': discoveredPlayerIds.has(player.id),
+                'player-row-active':     player.id === currentPlayerId,
+                'player-row-eliminated': eliminatedPlayerIds.has(player.id),
               }"
           >
             <div class="player-avatar" :class="player.id === myPlayerId ? 'avatar-me' : 'avatar-other'">
@@ -583,6 +659,9 @@ function backToHome() {
               <span v-if="player.id === myPlayerId" class="badge-pill badge-me">moi</span>
               <span v-if="player.id === currentPlayerId" class="badge-pill badge-active">joue</span>
               <span v-if="discoveredPlayerIds.has(player.id)" class="badge-pill badge-discovered">découvert</span>
+              <span v-if="eliminatedPlayerIds.has(player.id)" class="badge-pill badge-eliminated">
+                💀 éliminé
+              </span>
             </div>
           </div>
         </div>
@@ -601,7 +680,7 @@ function backToHome() {
           <label class="form-label">Ta question :</label>
           <BFormInput
               v-model="questionText"
-              placeholder="Ex : Est-ce un homme ?"
+              placeholder="Pose ta question !"
               maxlength="200"
               @keyup.enter="submitQuestion"
           />
@@ -615,36 +694,6 @@ function backToHome() {
             Poser la question
           </BButton>
           <BButton variant="secondary" class="m-2" @click="showQuestionModal = false">Annuler</BButton>
-        </div>
-      </BModal>
-
-      <!-- ── MODAL : Faire une accusation ──────────────────────────────── -->
-      <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" hide-footer>
-        <BAlert variant="warning" class="small">
-          ⚠️ Une accusation incorrecte ne te fait pas perdre ton tour, mais révèle ta stratégie !
-        </BAlert>
-        <div class="mb-3">
-          <label class="form-label">Qui accuses-tu ?</label>
-          <BFormSelect v-model="accusationTarget" :options="[
-            { value: '', text: 'Choisir un joueur…', disabled: true },
-            ...otherPlayers.map(p => ({ value: p.id, text: p.pseudo }))
-          ]"/>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Son personnage selon toi :</label>
-          <BFormSelect v-model="accusationCharacter" :options="[
-            { value: '', text: 'Choisir un personnage…', disabled: true },
-            ...availableCharacters.map(c => ({ value: c.id, text: `${c.name} (${c.universe})` }))
-          ]" :disabled="!accusationTarget"/>
-        </div>
-        <div class="text-center">
-          <BButton variant="warning" class="fw-bold m-2"
-                   :disabled="!accusationTarget || !accusationCharacter || submitting"
-                   @click="submitAccusation">
-            <BSpinner v-if="submitting" small class="me-1"/>
-            Accuser
-          </BButton>
-          <BButton variant="secondary" class="m-2" @click="showAccusationModal = false">Annuler</BButton>
         </div>
       </BModal>
 
@@ -714,6 +763,73 @@ function backToHome() {
                     :disabled="submittingAnswer"
                     @click="submitAnswer('dont_know')">
               🤷 Je ne sais pas
+            </button>
+          </div>
+        </div>
+      </BModal>
+
+      <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" hide-footer centered>
+        <BAlert variant="warning" class="small">
+          ⚠️ Si le joueur confirme, son binôme est éliminé !
+        </BAlert>
+        <div class="mb-3">
+          <label class="form-label">Qui accuses-tu ?</label>
+          <BFormSelect v-model="accusationTarget" :options="[
+      { value: '', text: 'Choisir un joueur…', disabled: true },
+      ...otherPlayers.map(p => ({ value: p.id, text: p.pseudo }))
+    ]"/>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Son personnage selon toi :</label>
+          <BFormInput
+              v-model="accusationCharacter"
+              placeholder="Ex : Simba, Iron Man…"
+              maxlength="100"
+              :disabled="!accusationTarget"
+              @keyup.enter="submitAccusation"
+          />
+        </div>
+        <div class="text-center">
+          <BButton variant="warning" class="fw-bold m-2"
+                   :disabled="!accusationTarget || !accusationCharacter.trim() || submitting"
+                   @click="submitAccusation">
+            <BSpinner v-if="submitting" small class="me-1"/>
+            Accuser
+          </BButton>
+          <BButton variant="secondary" class="m-2" @click="showAccusationModal = false">Annuler</BButton>
+        </div>
+      </BModal>
+
+      <BModal v-model="showAccusationConfirmModal"
+              title="⚔️ Tu es accusé !"
+              hide-footer
+              no-close-on-backdrop
+              no-close-on-esc
+              centered>
+        <div class="answer-modal-body">
+          <div class="answer-question-box">
+            <p class="answer-from">
+              <span class="history-actor">{{ pendingAccusation?.player?.pseudo }}</span>
+              t'accuse d'être :
+            </p>
+            <p class="answer-question-text">« {{ pendingAccusation?.character_name }} »</p>
+          </div>
+
+          <BAlert variant="danger" class="small mb-0">
+            ⚠️ Si tu confirmes, ton binôme sera éliminé de la partie !
+          </BAlert>
+
+          <div class="answer-buttons">
+            <button class="answer-btn answer-btn-yes"
+                    :disabled="submittingConfirm"
+                    @click="submitConfirmAccusation(true)">
+              <BSpinner v-if="submittingConfirm" small class="me-1"/>
+              ✅ Oui, c'est moi
+            </button>
+            <button class="answer-btn answer-btn-no"
+                    :disabled="submittingConfirm"
+                    @click="submitConfirmAccusation(false)">
+              ❌ Non, ce n'est pas moi
             </button>
           </div>
         </div>
@@ -1572,5 +1688,16 @@ function backToHome() {
   white-space: nowrap;
   font-family: sans-serif;
   font-weight: bold;
+}
+
+.badge-eliminated {
+  background: rgba(100,30,30,0.3);
+  color: #e09090;
+  border: 1px solid rgba(180,60,60,0.4);
+}
+
+.player-row-eliminated {
+  opacity: 0.4;
+  text-decoration: line-through;
 }
 </style>

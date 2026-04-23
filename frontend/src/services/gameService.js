@@ -53,12 +53,29 @@ export const gameService = {
      * POST /games/{game}/rounds/{round}/accusation
      * Accuser un joueur d'être un personnage
      */
-    async playAccusation(gameId, roundId, playerId, targetPlayerId, characterId) {
+    async playAccusation(gameId, roundId, playerId, targetPlayerId, characterName) {
         const res = await api.post(`/games/${gameId}/rounds/${roundId}/accusation`, {
             player_id:        playerId,
             target_player_id: targetPlayerId,
-            character_id:     characterId,
+            character_name:   characterName,
         })
+        return res.data
+    },
+
+    /**
+     *
+     * @param gameId
+     * @param roundId
+     * @param actionId
+     * @param playerId
+     * @param confirmed
+     * @returns {Promise<any>}
+     */
+    async confirmAccusation(gameId, roundId, actionId, playerId, confirmed) {
+        const res = await api.post(
+            `/games/${gameId}/rounds/${roundId}/actions/${actionId}/confirm`,
+            { player_id: playerId, confirmed }
+        )
         return res.data
     },
 
