@@ -125,6 +125,14 @@ export function useReverb(playerId = null) {
             channel.listen('.answer.given', callbacks.onAnswerGiven)
         }
 
+        if (callbacks.onAccusationConfirmed) {
+            channel.listen('.accusation.confirmed', callbacks.onAccusationConfirmed)
+        }
+
+        if (callbacks.onPlayerEliminated) {
+            channel.listen('.player.eliminated', callbacks.onPlayerEliminated)
+        }
+
         return channel
     }
 
