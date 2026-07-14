@@ -88,12 +88,18 @@ VITE_REVERB_SCHEME=http
 
 ## Lancer le projet
 
+### Avec Docker (recommandé)
+
+Voir le README à la racine du repo — `./start.sh` détecte l'IP LAN de la machine, met à jour `frontend/.env`, puis lance toute la stack (dont ce service) via Docker Compose. Le front est alors servi sur `http://<IP LAN>:5173`, accessible depuis n'importe quel appareil connecté au même Wi-Fi.
+
+### Sans Docker (legacy)
+
 ```bash
 npm install
 npm run dev -- --host
 ```
 
-Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost).
+Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost). Il faut alors éditer manuellement `.env` avec l'IP LAN de la machine (voir [Variables d'environnement](#variables-denvironnement)).
 
 ---
 
