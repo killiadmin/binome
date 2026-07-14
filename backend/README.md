@@ -55,10 +55,24 @@ Deviner le personnage secret des autres joueurs avant que son propre binome soit
 | WebSocket | Laravel Reverb (`php artisan install:broadcasting`) |
 | Base de données | MySQL |
 | PHP | ^8.2 |
+| Conteneurisation | Docker Compose (voir README racine) |
 
 ---
 
 ## Lancer le projet
+
+### Avec Docker (recommandé)
+
+Toute la stack (MySQL, backend, Reverb, queue, frontend) est orchestrée depuis la racine du repo via `docker-compose.yml`. Voir le README à la racine pour le détail — en résumé :
+
+```bash
+# Depuis la racine du repo
+./start.sh
+```
+
+Le backend est alors servi sur `http://localhost:8000`, Reverb sur le port `8080`, MySQL exposé sur `9090`. Les migrations tournent automatiquement au démarrage du container `backend`.
+
+### Sans Docker (legacy)
 
 ```bash
 # 1. Installer les dépendances

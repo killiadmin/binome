@@ -1,0 +1,102 @@
+services:
+
+  database:
+    image: mysql:8
+    container_name: binome_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: binome
+    ports:
+      - "9090:3306"
+    volumes:
+      - ./backend/database/binome:/var/lib/mysql
+    networks:
+      - binome
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: binome_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    env_file:
+      - ./backend/.env
+    depends_on:
+      database:
+        condition: service_healthy
+    command: >
+      sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+    networks:
+      - binome
+
+  reverb:
+    build:
+      context: ./backend
+    container_name: binome_reverb
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    env_file:
+      - ./backend/.env
+    depends_on:
+      database:
+        condition: service_healthy
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
+    networks:
+      - binome
+
+  queue:
+    build:
+      context: ./backend
+    container_name: binome_queue
+    restart: unless-stopped
+    volumes:
+      - ./backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    env_file:
+      - ./backend/.env
+    depends_on:
+      database:
+        condition: service_healthy
+    command: php artisan queue:listen --tries=1
+    networks:
+      - binome
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: binome_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    networks:
+      - binome
+
+networks:
+  binome:
+    driver: bridge
+
+volumes:
+  backend_vendor:
+  frontend_node_modules:
