@@ -20,6 +20,7 @@ class ActionService
     public function __construct(
         private readonly RoundService  $roundService,
         private readonly BinomeService $binomeService,
+        private readonly ScoreService  $scoreService,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -208,7 +209,12 @@ class ActionService
     private function endGame(Game $game, array $winners): void
     {
         $game->update(['status' => \App\Enums\GameStatus::Finished]);
-        broadcast(new GameEnded($game, collect($winners)));
+
+        $winnerIds = collect($winners)->pluck('id')->toArray();
+
+        $stats = $this->scoreService->computeAndStore($game, $winnerIds);
+
+        broadcast(new GameEnded($game, collect($winners), $stats));
     }
 
     public function playAnswer(Action $action, Player $player, string $answer): Action
