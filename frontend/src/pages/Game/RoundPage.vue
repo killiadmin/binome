@@ -63,6 +63,10 @@ const pendingAccusation    = ref(null)
 const showAccusationConfirmModal = ref(false)
 const submittingConfirm    = ref(false)
 
+const gameStats       = ref([])
+const showScoreBoard  = ref(false)
+const gameWinners     = ref([])
+
 // ─── COMPUTED ─────────────────────────────────────────────────────────────────
 
 const isMyTurn = computed(() =>
@@ -341,14 +345,19 @@ function handleBinomeDiscovered(data) {
   }, 6000)
 }
 
-function handleGameEnded(data) {
-  gameEnded.value = true
-  winners.value = data.winning_binome?.players ?? []
-  const iWon = winners.value.some(w => w.id === myPlayerId.value)
+async function handleGameEnded(data) {
+  gameEnded.value  = true
+  gameStats.value  = data.stats ?? []
+  gameWinners.value = data.winners ?? []
+
+  const iWon = data.winners?.some(w => w.id === myPlayerId.value)
   gameOverTitle.value = iWon ? '🏆 Victoire !' : '💀 Défaite'
-  gameOverMsg.value = iWon
+  gameOverMsg.value   = iWon
       ? "Votre binôme n'a jamais été découvert. Bien joué !"
       : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+
+  await new Promise(r => setTimeout(r, 4000))
+  showScoreBoard.value = true
 }
 
 function handleAccusationConfirmed(data) {
@@ -698,19 +707,62 @@ function backToHome() {
       </BModal>
 
       <!-- ── MODAL : Fin de partie ──────────────────────────────────────── -->
-      <BModal v-model="gameEnded" title="Fin de partie" hide-footer no-close-on-backdrop no-close-on-esc>
-        <div class="text-center py-3">
-          <h2 class="mb-3">{{ gameOverTitle }}</h2>
-          <p class="text-muted mb-4">{{ gameOverMsg }}</p>
-          <div v-if="winners.length" class="mb-4">
-            <h6 class="mb-2">Binôme gagnant :</h6>
-            <BBadge v-for="w in winners" :key="w.id" variant="success" class="me-2 fs-6 p-2">
-              🏆 {{ w.pseudo }}
-            </BBadge>
+      <!-- ── MODAL : Fin de partie ──────────────────────────────────────── -->
+      <BModal v-model="gameEnded" title="Fin de partie" hide-footer
+              no-close-on-backdrop no-close-on-esc centered size="lg">
+        <div class="text-center py-2">
+
+          <!-- Animation avant le tableau -->
+          <div v-if="!showScoreBoard" class="gameover-animation">
+            <div class="gameover-title">{{ gameOverTitle }}</div>
+            <p class="gameover-sub">{{ gameOverMsg }}</p>
+            <div class="gameover-orb"></div>
           </div>
-          <BButton variant="primary" class="fw-bold" @click="backToHome">
-            Retour à l'accueil
-          </BButton>
+
+          <!-- Tableau des scores -->
+          <div v-else class="scoreboard">
+            <h4 class="scoreboard-title">📊 Tableau des scores</h4>
+
+            <div class="scoreboard-list">
+              <div
+                  v-for="(stat, i) in gameStats"
+                  :key="stat.player_pseudo"
+                  class="scoreboard-row"
+                  :class="{
+            'scoreboard-winner':   stat.is_winner,
+            'scoreboard-eliminated': stat.is_eliminated,
+          }"
+              >
+                <!-- Rang -->
+                <span class="scoreboard-rank">
+            {{ i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}` }}
+          </span>
+
+                <!-- Infos joueur -->
+                <div class="scoreboard-player">
+                  <span class="scoreboard-pseudo">{{ stat.player_pseudo }}</span>
+                  <span class="scoreboard-character">{{ stat.character_name }}</span>
+                </div>
+
+                <!-- Stats détaillées -->
+                <div class="scoreboard-details">
+                  <span class="stat-chip">⚔️ {{ stat.eliminations }} élim.</span>
+                  <span class="stat-chip">🛡️ {{ stat.rounds_survived }} rounds</span>
+                  <span v-if="stat.survived_full_game" class="stat-chip stat-chip-gold">
+              ⭐ Survie complète
+            </span>
+                </div>
+
+                <!-- Score total -->
+                <span class="scoreboard-score">{{ stat.score }} pts</span>
+              </div>
+            </div>
+
+            <BButton variant="primary" class="fw-bold mt-4" @click="backToHome">
+              Retour à l'accueil
+            </BButton>
+          </div>
+
         </div>
       </BModal>
 
@@ -1699,5 +1751,105 @@ function backToHome() {
 .player-row-eliminated {
   opacity: 0.4;
   text-decoration: line-through;
+}
+
+/* ─── FIN DE PARTIE ANIMATION ───────────────────────────────────────────────── */
+.gameover-animation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 0;
+}
+.gameover-title {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #c9a84c;
+  animation: titlePulse 1s ease infinite alternate;
+}
+@keyframes titlePulse {
+  from { text-shadow: 0 0 20px rgba(201,168,76,0.4); }
+  to   { text-shadow: 0 0 60px rgba(201,168,76,0.9); }
+}
+.gameover-sub {
+  color: #a09080;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+.gameover-orb {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  border: 2px solid #c9a84c;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+}
+
+/* ─── TABLEAU DES SCORES ────────────────────────────────────────────────────── */
+.scoreboard { text-align: left; }
+.scoreboard-title {
+  text-align: center;
+  color: #c9a84c;
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+}
+.scoreboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.scoreboard-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.scoreboard-winner {
+  background: rgba(201,168,76,0.1);
+  border-color: rgba(201,168,76,0.4);
+}
+.scoreboard-eliminated {
+  opacity: 0.5;
+}
+.scoreboard-rank   { font-size: 1.2rem; flex-shrink: 0; }
+.scoreboard-player { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.scoreboard-pseudo {
+  font-weight: bold;
+  color: #e8d898;
+  font-size: 0.9rem;
+}
+.scoreboard-character {
+  font-size: 0.7rem;
+  color: #7a6e58;
+  font-style: italic;
+}
+.scoreboard-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.stat-chip {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #a09080;
+  font-family: sans-serif;
+  white-space: nowrap;
+}
+.stat-chip-gold {
+  background: rgba(201,168,76,0.15);
+  border-color: rgba(201,168,76,0.4);
+  color: #c9a84c;
+}
+.scoreboard-score {
+  font-weight: bold;
+  color: #c9a84c;
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 </style>
