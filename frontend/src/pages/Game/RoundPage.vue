@@ -4,8 +4,8 @@ import {useRoute, useRouter} from 'vue-router'
 import {gameService} from '../../services/gameService'
 import {useReverb, resetEcho} from '../../sockets/useReverb.js'
 import {
-  BButton, BContainer, BModal, BFormInput,
-  BFormSelect, BAlert, BBadge, BSpinner
+  BModal, BFormInput,
+  BFormSelect, BAlert, BSpinner
 } from 'bootstrap-vue-next'
 
 const route = useRoute()
@@ -199,8 +199,8 @@ function startWaveAnimation(canvas) {
 
   // Deux vagues décalées
   const waves = [
-    {color: 'rgba(201, 168, 76, 0.18)', speed: 1, delay: 0},
-    {color: 'rgba(201, 168, 76, 0.10)', speed: 0.85, delay: 180},
+    {color: 'rgba(224, 163, 28, 0.18)', speed: 1, delay: 0},
+    {color: 'rgba(224, 163, 28, 0.10)', speed: 0.85, delay: 180},
     {color: 'rgba(255, 255, 255, 0.06)', speed: 1.1, delay: 80},
   ]
 
@@ -437,7 +437,7 @@ function backToHome() {
 </script>
 
 <template>
-  <div class="round-page mt-5">
+  <div class="round-page arcade-bg mt-5">
 
     <!-- ── ANIMATION TRANSITION ROUND ─────────────────────────────────────── -->
     <div v-if="showRoundTransition" class="round-transition-overlay">
@@ -677,7 +677,7 @@ function backToHome() {
       </div>
 
       <!-- ── MODAL : Poser une question ─────────────────────────────────── -->
-      <BModal v-model="showQuestionModal" title="💬 Poser une question" hide-footer>
+      <BModal v-model="showQuestionModal" title="💬 Poser une question" no-footer class="arcade-modal">
         <div class="mb-3">
           <label class="form-label">À qui poses-tu la question ?</label>
           <BFormSelect v-model="questionTarget" :options="[
@@ -693,22 +693,21 @@ function backToHome() {
               maxlength="200"
               @keyup.enter="submitQuestion"
           />
-          <small class="text-muted">Attention à tes mots interdits !</small>
+          <small class="text-muted">Attention aux mots interdits du personnage de tes adversaires !</small>
         </div>
         <div class="text-center">
-          <BButton variant="info" class="fw-bold m-2"
+          <button type="button" class="cabinet-btn cabinet-btn--sm"
                    :disabled="!questionTarget || !questionText.trim() || submitting"
                    @click="submitQuestion">
             <BSpinner v-if="submitting" small class="me-1"/>
             Poser la question
-          </BButton>
-          <BButton variant="secondary" class="m-2" @click="showQuestionModal = false">Annuler</BButton>
+          </button>
+          <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="showQuestionModal = false">Annuler</button>
         </div>
       </BModal>
 
       <!-- ── MODAL : Fin de partie ──────────────────────────────────────── -->
-      <!-- ── MODAL : Fin de partie ──────────────────────────────────────── -->
-      <BModal v-model="gameEnded" title="Fin de partie" hide-footer
+      <BModal v-model="gameEnded" title="Fin de partie" no-footer class="arcade-modal"
               no-close-on-backdrop no-close-on-esc centered size="lg">
         <div class="text-center py-2">
 
@@ -758,9 +757,9 @@ function backToHome() {
               </div>
             </div>
 
-            <BButton variant="primary" class="fw-bold mt-4" @click="backToHome">
+            <button type="button" class="cabinet-btn mt-4" @click="backToHome">
               Retour à l'accueil
-            </BButton>
+            </button>
           </div>
 
         </div>
@@ -770,7 +769,8 @@ function backToHome() {
       <BModal
           v-model="showAnswerModal"
           title="❓ On te pose une question !"
-          hide-footer
+          no-footer
+          class="arcade-modal"
           no-close-on-backdrop
           no-close-on-esc
           centered
@@ -820,7 +820,7 @@ function backToHome() {
         </div>
       </BModal>
 
-      <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" hide-footer centered>
+      <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" no-footer class="arcade-modal" centered>
         <BAlert variant="warning" class="small">
           ⚠️ Si le joueur confirme, son binôme est éliminé !
         </BAlert>
@@ -842,19 +842,20 @@ function backToHome() {
           />
         </div>
         <div class="text-center">
-          <BButton variant="warning" class="fw-bold m-2"
+          <button type="button" class="play-btn play-btn--sm"
                    :disabled="!accusationTarget || !accusationCharacter.trim() || submitting"
                    @click="submitAccusation">
             <BSpinner v-if="submitting" small class="me-1"/>
             Accuser
-          </BButton>
-          <BButton variant="secondary" class="m-2" @click="showAccusationModal = false">Annuler</BButton>
+          </button>
+          <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="showAccusationModal = false">Annuler</button>
         </div>
       </BModal>
 
       <BModal v-model="showAccusationConfirmModal"
               title="⚔️ Tu es accusé !"
-              hide-footer
+              no-footer
+              class="arcade-modal"
               no-close-on-backdrop
               no-close-on-esc
               centered>
@@ -895,10 +896,9 @@ function backToHome() {
 /* ─── BASE ──────────────────────────────────────────────────────────────────── */
 .round-page {
   min-height: 100vh;
-  background: #0f0c1a;
   padding: 0 0 6rem;
-  font-family: 'Georgia', serif;
-  color: #e8e0d0;
+  font-family: 'Baloo 2', sans-serif;
+  color: var(--arcade-beige);
   max-width: 430px;
   margin: 0 auto;
   position: relative;
@@ -919,13 +919,13 @@ function backToHome() {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 2px solid #c9a84c;
+  border: 2px solid var(--arcade-gold);
   border-top-color: transparent;
   animation: spin 1s linear infinite;
 }
 
 .loading-text {
-  color: #a89060;
+  color: var(--arcade-taupe);
   font-size: 0.9rem;
   letter-spacing: 0.1em;
 }
@@ -938,8 +938,8 @@ function backToHome() {
 
 /* ─── ERROR ─────────────────────────────────────────────────────────────────── */
 .error-banner {
-  background: #3d1515;
-  color: #f5a0a0;
+  background: var(--arcade-danger-dark);
+  color: #ffd7d7;
   text-align: center;
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
@@ -951,15 +951,20 @@ function backToHome() {
   top: 0;
   z-index: 10;
   padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid rgba(201, 168, 76, 0.2);
+  border-bottom: 3px solid var(--arcade-blue-grey-dark);
 }
 
 .turn-mine {
-  background: linear-gradient(135deg, #1a1200, #2a1e00);
+  background: linear-gradient(135deg, #ffd876, var(--arcade-gold));
+}
+
+.turn-mine .turn-main,
+.turn-mine .turn-sub {
+  color: #4a2f00;
 }
 
 .turn-other {
-  background: linear-gradient(135deg, #0d0d1a, #151528);
+  background: var(--arcade-blue-grey-dark);
 }
 
 .turn-inner {
@@ -980,13 +985,14 @@ function backToHome() {
 .turn-main {
   font-size: 1rem;
   font-weight: bold;
-  color: #c9a84c;
+  color: var(--arcade-gold);
   letter-spacing: 0.03em;
+  font-family: 'Baloo 2', sans-serif;
 }
 
 .turn-sub {
   font-size: 0.75rem;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   letter-spacing: 0.08em;
 }
 
@@ -994,13 +1000,14 @@ function backToHome() {
 .character-card {
   position: relative;
   margin: 1.25rem 1rem;
-  background: linear-gradient(160deg, #1c1530 0%, #120d22 100%);
-  border: 1px solid rgba(201, 168, 76, 0.35);
+  background: var(--arcade-beige);
+  border: 3px solid var(--arcade-blue-grey);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
   gap: 1rem;
   padding: 1rem;
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.25), 0 12px 18px rgba(0, 0, 0, 0.3);
 }
 
 .character-card-glow {
@@ -1009,7 +1016,7 @@ function backToHome() {
   left: -40px;
   width: 180px;
   height: 180px;
-  background: radial-gradient(circle, rgba(201, 168, 76, 0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(224, 163, 28, 0.18) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -1024,7 +1031,7 @@ function backToHome() {
   height: 140px;
   object-fit: cover;
   border-radius: 10px;
-  border: 1px solid rgba(201, 168, 76, 0.4);
+  border: 2px solid var(--arcade-blue-grey);
   display: block;
 }
 
@@ -1032,13 +1039,13 @@ function backToHome() {
   width: 110px;
   height: 140px;
   border-radius: 10px;
-  background: #2a1e3d;
-  border: 1px solid rgba(201, 168, 76, 0.3);
+  background: #e5ddc8;
+  border: 2px solid var(--arcade-blue-grey);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 3rem;
-  color: rgba(201, 168, 76, 0.3);
+  color: var(--arcade-taupe);
 }
 
 .character-universe-badge {
@@ -1046,8 +1053,8 @@ function backToHome() {
   bottom: -8px;
   left: 50%;
   transform: translateX(-50%);
-  background: #c9a84c;
-  color: #1a1200;
+  background: var(--arcade-gold);
+  color: #4a2f00;
   font-size: 0.6rem;
   font-weight: bold;
   letter-spacing: 0.1em;
@@ -1069,13 +1076,13 @@ function backToHome() {
   font-size: 0.65rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   margin: 0;
 }
 
 .character-name {
   font-size: 1.4rem;
-  color: #e8d898;
+  color: var(--arcade-blue-grey-dark);
   margin: 0;
   line-height: 1.2;
   font-style: italic;
@@ -1089,7 +1096,7 @@ function backToHome() {
   font-size: 0.65rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #8b3a3a;
+  color: var(--arcade-danger-dark);
   margin: 0 0 0.4rem;
 }
 
@@ -1100,9 +1107,9 @@ function backToHome() {
 }
 
 .forbidden-word {
-  background: rgba(139, 58, 58, 0.25);
-  border: 1px solid rgba(200, 80, 80, 0.4);
-  color: #e89090;
+  background: rgba(179, 69, 63, 0.12);
+  border: 1px solid var(--arcade-danger);
+  color: var(--arcade-danger-dark);
   font-size: 0.75rem;
   padding: 3px 10px;
   border-radius: 20px;
@@ -1113,8 +1120,8 @@ function backToHome() {
 /* ─── NOTIFICATION BINÔME ───────────────────────────────────────────────────── */
 .binome-notif {
   margin: 0 1rem 1rem;
-  background: rgba(30, 80, 50, 0.5);
-  border: 1px solid rgba(80, 180, 100, 0.4);
+  background: rgba(63, 122, 78, 0.25);
+  border: 1px solid var(--arcade-success);
   border-radius: 12px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -1131,13 +1138,13 @@ function backToHome() {
 .binome-notif-title {
   font-size: 0.85rem;
   font-weight: bold;
-  color: #80e0a0;
+  color: #a9dab5;
   margin: 0 0 0.2rem;
 }
 
 .binome-notif-sub {
   font-size: 0.75rem;
-  color: #60b080;
+  color: #8ac298;
   margin: 0;
 }
 
@@ -1146,33 +1153,6 @@ function backToHome() {
     opacity: 0;
     transform: translateY(-8px);
   }
-}
-
-/* ─── DERNIÈRE ACTION ───────────────────────────────────────────────────────── */
-.last-action {
-  margin: 0 1rem 1rem;
-  padding: 0.65rem 1rem;
-  border-radius: 10px;
-  font-size: 0.82rem;
-  border-left: 3px solid;
-}
-
-.last-action-info {
-  background: rgba(30, 60, 100, 0.4);
-  border-color: #4a90d9;
-  color: #90bff0;
-}
-
-.last-action-success {
-  background: rgba(30, 80, 50, 0.4);
-  border-color: #4db870;
-  color: #80d090;
-}
-
-.last-action-danger {
-  background: rgba(100, 30, 30, 0.4);
-  border-color: #d94a4a;
-  color: #f09090;
 }
 
 /* ─── BOUTONS D'ACTION ──────────────────────────────────────────────────────── */
@@ -1184,12 +1164,13 @@ function backToHome() {
 }
 
 .action-btn {
+  font-family: 'Baloo 2', sans-serif;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   width: 100%;
   padding: 1rem 1.25rem;
-  border: 1px solid;
+  border: 2px solid;
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
@@ -1202,21 +1183,21 @@ function backToHome() {
 }
 
 .action-btn-question {
-  border-color: rgba(74, 144, 217, 0.5);
-  background: rgba(20, 40, 80, 0.5);
+  border-color: var(--arcade-blue-grey);
+  background: rgba(90, 111, 125, 0.25);
 }
 
 .action-btn-question:hover {
-  background: rgba(20, 40, 80, 0.8);
+  background: rgba(90, 111, 125, 0.4);
 }
 
 .action-btn-accuse {
-  border-color: rgba(201, 168, 76, 0.5);
-  background: rgba(40, 30, 10, 0.5);
+  border-color: var(--arcade-gold);
+  background: rgba(224, 163, 28, 0.15);
 }
 
 .action-btn-accuse:hover {
-  background: rgba(40, 30, 10, 0.8);
+  background: rgba(224, 163, 28, 0.28);
 }
 
 .action-btn-icon {
@@ -1226,19 +1207,20 @@ function backToHome() {
 
 .action-btn-label {
   font-size: 0.95rem;
-  color: #c8c0a8;
+  color: var(--arcade-beige);
   letter-spacing: 0.02em;
+  font-weight: 700;
 }
 
 .action-waiting {
   text-align: center;
   padding: 1rem;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   font-size: 0.85rem;
   font-style: italic;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(245, 245, 220, 0.04);
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(245, 245, 220, 0.08);
 }
 
 /* ─── JOUEURS ───────────────────────────────────────────────────────────────── */
@@ -1250,7 +1232,7 @@ function backToHome() {
   font-size: 0.65rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   margin: 0 0 0.75rem;
 }
 
@@ -1265,15 +1247,15 @@ function backToHome() {
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(245, 245, 220, 0.05);
+  border: 1px solid rgba(245, 245, 220, 0.1);
   border-radius: 10px;
   transition: all 0.15s;
 }
 
 .player-row-active {
-  background: rgba(201, 168, 76, 0.08);
-  border-color: rgba(201, 168, 76, 0.3);
+  background: rgba(224, 163, 28, 0.14);
+  border-color: var(--arcade-gold);
 }
 
 .player-row-discovered {
@@ -1290,25 +1272,25 @@ function backToHome() {
   font-size: 0.65rem;
   font-weight: bold;
   flex-shrink: 0;
-  font-family: sans-serif;
+  font-family: 'Baloo 2', sans-serif;
 }
 
 .avatar-me {
-  background: rgba(74, 144, 217, 0.3);
-  color: #90bff0;
-  border: 1px solid rgba(74, 144, 217, 0.5);
+  background: rgba(90, 111, 125, 0.4);
+  color: var(--arcade-beige);
+  border: 1px solid var(--arcade-blue-grey);
 }
 
 .avatar-other {
-  background: rgba(255, 255, 255, 0.08);
-  color: #a09080;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(158, 139, 127, 0.25);
+  color: var(--arcade-taupe);
+  border: 1px solid var(--arcade-taupe);
 }
 
 .player-name {
   flex: 1;
   font-size: 0.9rem;
-  color: #c8c0a8;
+  color: var(--arcade-beige);
 }
 
 .player-badges {
@@ -1320,28 +1302,28 @@ function backToHome() {
   font-size: 0.6rem;
   padding: 2px 7px;
   border-radius: 20px;
-  font-family: sans-serif;
+  font-family: 'Baloo 2', sans-serif;
   letter-spacing: 0.05em;
   font-weight: bold;
   text-transform: uppercase;
 }
 
 .badge-me {
-  background: rgba(74, 144, 217, 0.2);
-  color: #90bff0;
-  border: 1px solid rgba(74, 144, 217, 0.4);
+  background: rgba(90, 111, 125, 0.3);
+  color: var(--arcade-beige);
+  border: 1px solid var(--arcade-blue-grey);
 }
 
 .badge-active {
-  background: rgba(201, 168, 76, 0.2);
-  color: #c9a84c;
-  border: 1px solid rgba(201, 168, 76, 0.4);
+  background: rgba(224, 163, 28, 0.25);
+  color: var(--arcade-gold);
+  border: 1px solid var(--arcade-gold);
 }
 
 .badge-discovered {
-  background: rgba(180, 60, 60, 0.2);
-  color: #e09090;
-  border: 1px solid rgba(180, 60, 60, 0.4);
+  background: rgba(179, 69, 63, 0.25);
+  color: #f0b8b5;
+  border: 1px solid var(--arcade-danger);
 }
 
 /* ─── FLOU ──────────────────────────────────────────────────────────────────── */
@@ -1356,10 +1338,11 @@ function backToHome() {
   top: 0.6rem;
   right: 0.6rem;
   z-index: 2;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(201, 168, 76, 0.4);
+  font-family: 'Baloo 2', sans-serif;
+  background: rgba(36, 36, 36, 0.7);
+  border: 1px solid var(--arcade-gold);
   border-radius: 20px;
-  color: #c9a84c;
+  color: var(--arcade-gold);
   font-size: 0.7rem;
   padding: 4px 10px;
   cursor: pointer;
@@ -1368,7 +1351,7 @@ function backToHome() {
 }
 
 .blur-toggle:hover {
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(36, 36, 36, 0.9);
 }
 
 /* ─── HISTORIQUE DES ACTIONS ────────────────────────────────────────────────── */
@@ -1380,7 +1363,7 @@ function backToHome() {
   font-size: 0.65rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   margin: 0 0 0.6rem;
 }
 
@@ -1402,44 +1385,45 @@ function backToHome() {
 }
 
 .history-list::-webkit-scrollbar-thumb {
-  background: rgba(201, 168, 76, 0.3);
+  background: var(--arcade-taupe);
   border-radius: 2px;
 }
 
 .history-item {
+  font-family: 'Baloo 2', sans-serif;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
   font-size: 0.8rem;
-  border-left: 2px solid;
+  border-left: 3px solid;
   line-height: 1.4;
   min-width: 0;
 }
 
 .history-question-valid {
-  background: rgba(30, 60, 100, 0.35);
-  border-color: #4a90d9;
-  color: #a0c4f0;
+  background: rgba(90, 111, 125, 0.25);
+  border-color: var(--arcade-blue-grey);
+  color: #cdd9e0;
 }
 
 .history-question-invalid {
-  background: rgba(100, 30, 30, 0.35);
-  border-color: #d94a4a;
-  color: #f09090;
+  background: rgba(179, 69, 63, 0.25);
+  border-color: var(--arcade-danger);
+  color: #f0b8b5;
 }
 
 .history-accusation-ok {
-  background: rgba(30, 80, 50, 0.35);
-  border-color: #4db870;
-  color: #80d090;
+  background: rgba(63, 122, 78, 0.25);
+  border-color: var(--arcade-success);
+  color: #b9e6c4;
 }
 
 .history-accusation-ko {
-  background: rgba(100, 30, 30, 0.35);
-  border-color: #d94a4a;
-  color: #f09090;
+  background: rgba(179, 69, 63, 0.25);
+  border-color: var(--arcade-danger);
+  color: #f0b8b5;
 }
 
 .history-icon {
@@ -1450,12 +1434,12 @@ function backToHome() {
 
 .history-actor {
   font-weight: bold;
-  color: #c9a84c;
+  color: var(--arcade-gold);
 }
 
 .history-target {
   font-weight: bold;
-  color: #e8d898;
+  color: var(--arcade-beige);
 }
 
 .history-muted {
@@ -1473,106 +1457,7 @@ function backToHome() {
 
 /* ─── MODALE RÉPONSE ────────────────────────────────────────────────────────── */
 .answer-modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.answer-question-box {
-  background: rgba(74, 144, 217, 0.1);
-  border: 1px solid rgba(74, 144, 217, 0.3);
-  border-radius: 10px;
-  padding: 1rem;
-}
-
-.answer-from {
-  font-size: 0.8rem;
-  color: #7a6e58;
-  margin: 0 0 0.4rem;
-}
-
-.answer-question-text {
-  font-size: 1.1rem;
-  color: #e8d898;
-  font-style: italic;
-  margin: 0;
-}
-
-.answer-forbidden {
-  background: rgba(139, 58, 58, 0.15);
-  border: 1px solid rgba(200, 80, 80, 0.25);
-  border-radius: 10px;
-  padding: 0.75rem 1rem;
-}
-
-.answer-buttons {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.answer-btn {
-  flex: 1;
-  padding: 0.9rem;
-  border-radius: 12px;
-  border: 1px solid;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.15s;
-  background: transparent;
-}
-
-.answer-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.answer-btn-yes {
-  border-color: rgba(77, 184, 112, 0.6);
-  color: #80d090;
-}
-
-.answer-btn-yes:hover:not(:disabled) {
-  background: rgba(77, 184, 112, 0.15);
-}
-
-.answer-btn-no {
-  border-color: rgba(217, 74, 74, 0.6);
-  color: #f09090;
-}
-
-.answer-btn-no:hover:not(:disabled) {
-  background: rgba(217, 74, 74, 0.15);
-}
-
-/* ─── RÉPONSE DANS L'HISTORIQUE ─────────────────────────────────────────────── */
-.answer-yes {
-  color: #80d090;
-  font-weight: bold;
-}
-
-.answer-no {
-  color: #f09090;
-  font-weight: bold;
-}
-
-.answer-btn-dont-know {
-  border-color: rgba(201, 168, 76, 0.6);
-  color: #c9a84c;
-}
-
-.answer-btn-dont-know:hover:not(:disabled) {
-  background: rgba(201, 168, 76, 0.15);
-}
-
-.answer-dont-know {
-  color: #c9a84c;
-  font-weight: bold;
-}
-
-
-/* ─── MODALE RÉPONSE ────────────────────────────────────────────────────────── */
-.answer-modal-body {
+  font-family: 'Baloo 2', sans-serif;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -1581,21 +1466,21 @@ function backToHome() {
 }
 
 .answer-question-box {
-  background: rgba(74, 144, 217, 0.1);
-  border: 1px solid rgba(74, 144, 217, 0.3);
+  background: rgba(90, 111, 125, 0.1);
+  border: 1px solid var(--arcade-blue-grey);
   border-radius: 10px;
   padding: 0.75rem;
 }
 
 .answer-from {
   font-size: 0.8rem;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   margin: 0 0 0.4rem;
 }
 
 .answer-question-text {
-  font-size: 1rem; /* ← réduit légèrement */
-  color: #e8d898;
+  font-size: 1rem;
+  color: var(--arcade-blue-grey-dark);
   font-style: italic;
   margin: 0;
   word-break: break-word; /* ← empêche le texte long de casser le layout */
@@ -1604,8 +1489,8 @@ function backToHome() {
 }
 
 .answer-forbidden {
-  background: rgba(139, 58, 58, 0.15);
-  border: 1px solid rgba(200, 80, 80, 0.25);
+  background: rgba(179, 69, 63, 0.1);
+  border: 1px solid var(--arcade-danger);
   border-radius: 10px;
   padding: 0.65rem 0.75rem;
 }
@@ -1616,10 +1501,11 @@ function backToHome() {
 }
 
 .answer-btn {
+  font-family: 'Baloo 2', sans-serif;
   flex: 1;
   padding: 0.75rem 0.25rem;
   border-radius: 12px;
-  border: 1px solid;
+  border: 2px solid;
   font-size: 0.85rem;
   font-weight: bold;
   cursor: pointer;
@@ -1628,12 +1514,60 @@ function backToHome() {
   white-space: nowrap;
 }
 
+.answer-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.answer-btn-yes {
+  border-color: var(--arcade-success);
+  color: var(--arcade-success-dark);
+}
+
+.answer-btn-yes:hover:not(:disabled) {
+  background: rgba(63, 122, 78, 0.12);
+}
+
+.answer-btn-no {
+  border-color: var(--arcade-danger);
+  color: var(--arcade-danger-dark);
+}
+
+.answer-btn-no:hover:not(:disabled) {
+  background: rgba(179, 69, 63, 0.12);
+}
+
+.answer-btn-dont-know {
+  border-color: var(--arcade-taupe);
+  color: var(--arcade-taupe);
+}
+
+.answer-btn-dont-know:hover:not(:disabled) {
+  background: rgba(158, 139, 127, 0.15);
+}
+
+/* ─── RÉPONSE DANS L'HISTORIQUE ─────────────────────────────────────────────── */
+.answer-yes {
+  color: #8fdb9f;
+  font-weight: bold;
+}
+
+.answer-no {
+  color: #ef9a96;
+  font-weight: bold;
+}
+
+.answer-dont-know {
+  color: var(--arcade-gold);
+  font-weight: bold;
+}
+
 /* ─── TRANSITION ROUND ──────────────────────────────────────────────────────── */
 .round-transition-overlay {
   position: absolute;
   inset: 0;
   z-index: 1000;
-  background: rgba(10, 6, 20, 0.92);
+  background: rgba(36, 36, 36, 0.94);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1698,8 +1632,8 @@ function backToHome() {
 .round-transition-label {
   font-size: 0.75rem;
   letter-spacing: 0.4em;
-  color: #c9a84c;
-  font-family: sans-serif;
+  color: var(--arcade-gold);
+  font-family: 'Baloo 2', sans-serif;
   font-weight: bold;
   text-transform: uppercase;
 }
@@ -1707,11 +1641,11 @@ function backToHome() {
 .round-transition-number {
   font-size: 6rem;
   font-weight: bold;
-  color: #e8d898;
-  font-family: 'Georgia', serif;
+  color: var(--arcade-beige);
+  font-family: 'Press Start 2P', cursive;
   line-height: 1;
-  text-shadow: 0 0 40px rgba(201, 168, 76, 0.6),
-  0 0 80px rgba(201, 168, 76, 0.3);
+  text-shadow: 0 0 40px rgba(224, 163, 28, 0.6),
+  0 0 80px rgba(224, 163, 28, 0.3);
 }
 
 /* ─── SÉPARATEUR DE ROUND ───────────────────────────────────────────────────── */
@@ -1725,27 +1659,27 @@ function backToHome() {
 .history-round-line {
   flex: 1;
   height: 1px;
-  background: rgba(201, 168, 76, 0.2);
+  background: rgba(224, 163, 28, 0.25);
 }
 
 .history-round-badge {
   font-size: 0.6rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #c9a84c;
-  background: rgba(201, 168, 76, 0.1);
-  border: 1px solid rgba(201, 168, 76, 0.25);
+  color: var(--arcade-gold);
+  background: rgba(224, 163, 28, 0.12);
+  border: 1px solid var(--arcade-gold);
   padding: 2px 10px;
   border-radius: 20px;
   white-space: nowrap;
-  font-family: sans-serif;
+  font-family: 'Baloo 2', sans-serif;
   font-weight: bold;
 }
 
 .badge-eliminated {
-  background: rgba(100,30,30,0.3);
-  color: #e09090;
-  border: 1px solid rgba(180,60,60,0.4);
+  background: rgba(179, 69, 63, 0.25);
+  color: #f0b8b5;
+  border: 1px solid var(--arcade-danger);
 }
 
 .player-row-eliminated {
@@ -1762,33 +1696,35 @@ function backToHome() {
   padding: 2rem 0;
 }
 .gameover-title {
-  font-size: 2.5rem;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 1.6rem;
   font-weight: bold;
-  color: #c9a84c;
+  color: var(--arcade-gold);
   animation: titlePulse 1s ease infinite alternate;
 }
 @keyframes titlePulse {
-  from { text-shadow: 0 0 20px rgba(201,168,76,0.4); }
-  to   { text-shadow: 0 0 60px rgba(201,168,76,0.9); }
+  from { text-shadow: 0 0 20px rgba(224, 163, 28, 0.4); }
+  to   { text-shadow: 0 0 60px rgba(224, 163, 28, 0.9); }
 }
 .gameover-sub {
-  color: #a09080;
+  font-family: 'Baloo 2', sans-serif;
+  color: var(--arcade-taupe);
   font-size: 0.9rem;
   font-style: italic;
 }
 .gameover-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  border: 2px solid #c9a84c;
+  border: 2px solid var(--arcade-gold);
   border-top-color: transparent;
   animation: spin 1s linear infinite;
 }
 
 /* ─── TABLEAU DES SCORES ────────────────────────────────────────────────────── */
-.scoreboard { text-align: left; }
+.scoreboard { text-align: left; font-family: 'Baloo 2', sans-serif; }
 .scoreboard-title {
   text-align: center;
-  color: #c9a84c;
+  color: var(--arcade-gold);
   margin-bottom: 1rem;
   letter-spacing: 0.05em;
 }
@@ -1802,14 +1738,14 @@ function backToHome() {
   align-items: center;
   gap: 0.75rem;
   padding: 0.65rem 0.75rem;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(245, 245, 220, 0.05);
+  border: 1px solid rgba(245, 245, 220, 0.12);
   border-radius: 10px;
   flex-wrap: wrap;
 }
 .scoreboard-winner {
-  background: rgba(201,168,76,0.1);
-  border-color: rgba(201,168,76,0.4);
+  background: rgba(224, 163, 28, 0.15);
+  border-color: var(--arcade-gold);
 }
 .scoreboard-eliminated {
   opacity: 0.5;
@@ -1818,12 +1754,12 @@ function backToHome() {
 .scoreboard-player { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .scoreboard-pseudo {
   font-weight: bold;
-  color: #e8d898;
+  color: var(--arcade-beige);
   font-size: 0.9rem;
 }
 .scoreboard-character {
   font-size: 0.7rem;
-  color: #7a6e58;
+  color: var(--arcade-taupe);
   font-style: italic;
 }
 .scoreboard-details {
@@ -1835,20 +1771,20 @@ function backToHome() {
   font-size: 0.65rem;
   padding: 2px 8px;
   border-radius: 20px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: #a09080;
-  font-family: sans-serif;
+  background: rgba(245, 245, 220, 0.08);
+  border: 1px solid rgba(245, 245, 220, 0.15);
+  color: var(--arcade-taupe);
+  font-family: 'Baloo 2', sans-serif;
   white-space: nowrap;
 }
 .stat-chip-gold {
-  background: rgba(201,168,76,0.15);
-  border-color: rgba(201,168,76,0.4);
-  color: #c9a84c;
+  background: rgba(224, 163, 28, 0.18);
+  border-color: var(--arcade-gold);
+  color: var(--arcade-gold);
 }
 .scoreboard-score {
   font-weight: bold;
-  color: #c9a84c;
+  color: var(--arcade-gold);
   font-size: 1rem;
   flex-shrink: 0;
 }

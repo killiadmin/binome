@@ -1,0 +1,442 @@
+/*
+  Thème "arcade / jeu de société" partagé par toute l'appli Binome.
+  Palette strictement identique aux classes historiques de style.css
+  (bg-color-beige, bg-color-blue-grey, bg-color-taupe, bg-color-grey).
+*/
+
+:root {
+  --arcade-beige: #F5F5DC;
+  --arcade-blue-grey: #5A6F7D;
+  --arcade-blue-grey-dark: #47575F;
+  --arcade-taupe: #9E8B7F;
+  --arcade-dark: #242424;
+  --arcade-dark-2: #1c2226;
+  --arcade-success: #3f7a4e;
+  --arcade-success-dark: #2c5637;
+  --arcade-danger: #b3453f;
+  --arcade-danger-dark: #7a2f2b;
+  --arcade-gold: #e0a31c;
+}
+
+.font-arcade {
+  font-family: 'Press Start 2P', cursive;
+}
+
+.font-board {
+  font-family: 'Baloo 2', system-ui, sans-serif;
+}
+
+/* ── Fond "plateau" commun ─────────────────────────────────────── */
+.arcade-bg {
+  background:
+      radial-gradient(circle at 50% 0%, rgba(90, 111, 125, 0.35), transparent 55%),
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 24px),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 24px),
+      var(--arcade-dark);
+}
+
+/* ── Titre "enseigne d'arcade" ─────────────────────────────────── */
+.arcade-title {
+  font-family: 'Press Start 2P', cursive;
+  color: var(--arcade-beige);
+  text-shadow:
+      3px 3px 0 var(--arcade-taupe),
+      6px 6px 0 rgba(0, 0, 0, 0.35);
+  letter-spacing: 1px;
+}
+
+.arcade-subtitle {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 600;
+  color: var(--arcade-taupe);
+}
+
+.arcade-alert {
+  font-family: 'Baloo 2', sans-serif;
+  background: #4a1f1f;
+  border: 2px solid #a33;
+  color: #ffd7d7;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* ── Boutons "borne d'arcade" ──────────────────────────────────── */
+.cabinet-btn {
+  font-family: 'Baloo 2', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.1rem 1.5rem;
+  background: var(--arcade-blue-grey);
+  color: var(--arcade-beige);
+  border: 3px solid #34424a;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 6px 0 var(--arcade-blue-grey-dark), 0 10px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+  text-decoration: none;
+}
+
+.cabinet-btn.stacked {
+  flex-direction: column;
+  min-width: 170px;
+}
+
+.cabinet-btn__icon {
+  font-size: 1.5rem;
+}
+
+.cabinet-btn:hover {
+  filter: brightness(1.08);
+  color: var(--arcade-beige);
+}
+
+.cabinet-btn:active {
+  transform: translateY(6px);
+  box-shadow: 0 0 0 var(--arcade-blue-grey-dark), 0 4px 6px rgba(0, 0, 0, 0.35);
+}
+
+.cabinet-btn--sm {
+  min-width: auto;
+  padding: 0.6rem 1.25rem;
+  margin: 0.35rem;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 0 var(--arcade-blue-grey-dark), 0 6px 10px rgba(0, 0, 0, 0.3);
+}
+
+.cabinet-btn--sm:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--arcade-blue-grey-dark), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.cabinet-btn--danger {
+  background: var(--arcade-danger);
+  border-color: var(--arcade-danger-dark);
+  box-shadow: 0 6px 0 var(--arcade-danger-dark), 0 10px 14px rgba(0, 0, 0, 0.35);
+}
+
+.cabinet-btn--danger.cabinet-btn--sm,
+.cabinet-btn--danger:active {
+  box-shadow: 0 4px 0 var(--arcade-danger-dark), 0 6px 10px rgba(0, 0, 0, 0.3);
+}
+
+.cabinet-btn--ghost {
+  background: transparent;
+  color: var(--arcade-taupe);
+  border-color: var(--arcade-taupe);
+  box-shadow: none;
+}
+
+.cabinet-btn--ghost:hover {
+  color: var(--arcade-taupe);
+}
+
+.cabinet-btn--ghost:active {
+  transform: translateY(2px);
+}
+
+.cabinet-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
+/* ── Bouton PLAY doré ──────────────────────────────────────────── */
+.play-btn {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.75rem;
+  background: linear-gradient(180deg, #ffd876, var(--arcade-gold));
+  color: #4a2f00;
+  border: 3px solid #a8720f;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #a8720f, 0 10px 16px rgba(0, 0, 0, 0.35);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  animation: arcade-play-pulse 2s ease-in-out infinite;
+}
+
+.play-btn:active {
+  transform: translateY(6px);
+  box-shadow: 0 0 0 #a8720f, 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.play-btn:disabled {
+  animation: none;
+  background: #cfcfcf;
+  color: #7a7a7a;
+  border-color: #9a9a9a;
+  box-shadow: 0 6px 0 #9a9a9a, 0 10px 16px rgba(0, 0, 0, 0.2);
+  cursor: not-allowed;
+}
+
+.play-btn--sm {
+  font-size: 0.7rem;
+  padding: 0.65rem 1.2rem;
+}
+
+@keyframes arcade-play-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.12); }
+}
+
+/* ── Carte "plateau de jeu" ────────────────────────────────────── */
+.board-card {
+  position: relative;
+  background: var(--arcade-beige);
+  border: 3px dashed var(--arcade-taupe);
+  border-radius: 18px;
+  padding: 1.75rem 1.5rem;
+  box-shadow: 0 12px 0 rgba(0, 0, 0, 0.25), 0 16px 24px rgba(0, 0, 0, 0.35);
+}
+
+.board-card__rivet {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--arcade-taupe);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.board-card__rivet--tl { top: 12px; left: 12px; }
+.board-card__rivet--tr { top: 12px; right: 12px; }
+.board-card__rivet--bl { bottom: 12px; left: 12px; }
+.board-card__rivet--br { bottom: 12px; right: 12px; }
+
+.board-card__title {
+  text-align: center;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 1rem;
+  color: var(--arcade-blue-grey-dark);
+  margin-bottom: 1.5rem;
+}
+
+/* ── Écran LCD (codes, scores) ─────────────────────────────────── */
+.lcd-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lcd-label {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--arcade-taupe);
+  font-weight: 700;
+}
+
+.lcd-code {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--arcade-dark-2);
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 2px solid var(--arcade-blue-grey-dark);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.lcd-char {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 1.15rem;
+  color: #7CFF9E;
+  text-shadow: 0 0 6px rgba(124, 255, 158, 0.7);
+}
+
+/* ── Pastilles de statut ───────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Baloo 2', sans-serif;
+  background: var(--arcade-blue-grey);
+  color: var(--arcade-beige);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  border: 2px solid var(--arcade-blue-grey-dark);
+}
+
+.pill--success {
+  background: var(--arcade-success);
+  border-color: var(--arcade-success-dark);
+}
+
+.pill--danger {
+  background: var(--arcade-danger);
+  border-color: var(--arcade-danger-dark);
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+/* ── Jetons de joueur ──────────────────────────────────────────── */
+.player-token {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  background: #fff;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 12px;
+  padding: 0.75rem 0.5rem 0.6rem;
+  transition: opacity 0.2s ease;
+  font-family: 'Baloo 2', sans-serif;
+}
+
+.player-token.is-offline {
+  opacity: 0.5;
+}
+
+.player-token.is-ready,
+.player-token.is-active {
+  border-color: var(--arcade-success);
+  background: #eefaf0;
+}
+
+.player-token.is-eliminated {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+
+.player-token__avatar {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--arcade-taupe);
+  color: #fff;
+  font-weight: 800;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.player-token__online {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.player-token__online.is-on { background: #3fd166; }
+.player-token__online.is-off { background: #9a9a9a; }
+
+.player-token__name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--arcade-blue-grey-dark);
+  text-align: center;
+  word-break: break-word;
+}
+
+.player-token__crown {
+  position: absolute;
+  top: -8px;
+  left: -6px;
+  color: var(--arcade-gold);
+  font-size: 0.9rem;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+}
+
+.player-token__stamp {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  background: var(--arcade-success);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  border: 2px solid #eefaf0;
+}
+
+.player-token__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.player-token__badge {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--arcade-blue-grey);
+  color: var(--arcade-beige);
+}
+
+.player-token__badge--active { background: var(--arcade-gold); color: #4a2f00; }
+.player-token__badge--danger { background: var(--arcade-danger); color: #fff; }
+
+/* ── Bouton "tampon" (ex: prêt) ────────────────────────────────── */
+.stamp-toggle {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  border: 3px solid var(--arcade-success);
+  background: transparent;
+  color: var(--arcade-success);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.stamp-toggle:hover {
+  transform: scale(1.03);
+}
+
+.stamp-toggle.is-active {
+  background: var(--arcade-success);
+  color: #fff;
+  transform: rotate(-2deg) scale(1.05);
+}
+
+/* ── Modales (BModal téléporte son DOM : styles globaux non-scoped) ── */
+.arcade-modal .modal-content {
+  border-radius: 16px;
+  border: 3px solid var(--arcade-blue-grey);
+  font-family: 'Baloo 2', sans-serif;
+}
+
+.arcade-modal .modal-header {
+  background: var(--arcade-blue-grey);
+  color: var(--arcade-beige);
+  border-bottom: 3px solid var(--arcade-blue-grey-dark);
+}
+
+.arcade-modal .modal-title {
+  font-weight: 800;
+}
