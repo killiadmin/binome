@@ -9,6 +9,7 @@ import 'bootstrap/dist/css/bootstrap.css';
 import 'bootstrap-vue-next/dist/bootstrap-vue-next.css';
 import '@fortawesome/fontawesome-free/css/all.css';
 import './style.css';
+import './assets/arcade-theme.css';
 
 const app = createApp(App);
 const pinia = createPinia();

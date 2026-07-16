@@ -54,12 +54,22 @@ export default {
 </script>
 
 <template>
-  <div class="rule-page d-flex flex-column rounded text-center shadow p-5 bg-color-beige">
-    <h1 class="title color-taupe fs-3 mb-5">📜 Règles du jeu</h1>
-    <div class="text-start">
-      <div v-for="(rule, index) in rules" :key="index" class="rule">
-        <h2 class="rule-title">{{ rule.title }}</h2>
-        <p class="rule-description">{{ rule.description }}</p>
+  <div class="rule-page arcade-bg">
+    <div class="rule-page-inner">
+      <div class="arcade-title-wrap">
+        <h1 class="arcade-title">Règles du jeu</h1>
+        <p class="arcade-subtitle">Tout ce qu'il faut savoir avant de jouer</p>
+      </div>
+
+      <div class="rules-grid">
+        <div v-for="(rule, index) in rules" :key="index" class="board-card rule-card">
+          <div class="board-card__rivet board-card__rivet--tl"></div>
+          <div class="board-card__rivet board-card__rivet--tr"></div>
+          <div class="board-card__rivet board-card__rivet--bl"></div>
+          <div class="board-card__rivet board-card__rivet--br"></div>
+          <h2 class="rule-title">{{ rule.title }}</h2>
+          <p class="rule-description">{{ rule.description }}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -67,26 +77,40 @@ export default {
 
 <style scoped>
 .rule-page {
-  margin: 50px auto;
-  max-width: 800px;
+  min-height: 100vh;
+  padding: 1.5rem 1rem 3rem;
 }
 
-.rule {
-  background: white;
-  padding: 15px;
-  margin: 10px 0;
-  border-radius: 8px;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+.rule-page-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.rule-card {
+  text-align: left;
+  padding: 1.5rem 1.35rem;
 }
 
 .rule-title {
-  color: #5e3b1f;
-  font-size: 1.5em;
+  font-family: 'Baloo 2', sans-serif;
+  color: var(--arcade-blue-grey-dark);
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin-bottom: 0.6rem;
 }
 
 .rule-description {
-  color: #333;
-  font-size: 1.1em;
+  font-family: 'Baloo 2', sans-serif;
+  color: #4a4438;
+  font-size: 0.95rem;
   white-space: pre-line;
+  line-height: 1.5;
+  margin: 0;
 }
 </style>
