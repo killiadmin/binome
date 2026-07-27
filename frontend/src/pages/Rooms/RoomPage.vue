@@ -370,24 +370,30 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
               </div>
             </div>
 
-            <div v-if="gameStatus === 'waiting'" class="text-center mb-3">
+            <div class="btn-actions-row mb-3">
               <button
+                  v-if="gameStatus === 'waiting'"
                   type="button"
-                  class="stamp-toggle"
+                  class="stamp-toggle stamp-toggle--icon-only"
                   :class="{ 'is-active': isCurrentPlayerReady }"
+                  :aria-label="isCurrentPlayerReady ? 'Je ne suis plus prêt' : 'Je suis prêt !'"
+                  :title="isCurrentPlayerReady ? 'Je ne suis plus prêt' : 'Je suis prêt !'"
                   @click="handleReady"
               >
                 <i :class="isCurrentPlayerReady
                   ? 'fa-solid fa-circle-xmark'
                   : 'fa-solid fa-circle-check'">
                 </i>
-                {{ isCurrentPlayerReady ? 'Je ne suis plus prêt' : 'Je suis prêt !' }}
               </button>
-            </div>
 
-            <div class="text-center mt-3 btn-quit-room">
-              <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" @click="showLeaveModal = true">
-                <i class="fa-solid fa-right-from-bracket"></i> Quitter le salon
+              <button
+                  type="button"
+                  class="cabinet-btn cabinet-btn--danger cabinet-btn--sm cabinet-btn--icon-only"
+                  aria-label="Quitter le salon"
+                  title="Quitter le salon"
+                  @click="showLeaveModal = true"
+              >
+                <i class="fa-solid fa-right-from-bracket"></i>
               </button>
             </div>
 
@@ -551,10 +557,23 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   margin-bottom: 1.5rem;
 }
 
-.btn-quit-room {
+.btn-actions-row {
   display: flex;
   justify-content: center;
-  margin-bottom: 1rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.stamp-toggle--icon-only,
+.cabinet-btn--icon-only {
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  margin: 0;
+  font-size: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-modal {
