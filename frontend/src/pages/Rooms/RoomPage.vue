@@ -185,6 +185,7 @@ const handleCreateGame = async () => {
     players.value = [{id: res.data.player.id, pseudo: res.data.player.pseudo, is_ready: false}]
 
     saveSession()
+    resetEcho()
     initLobby(roomId.value)
 
     showCreateModal.value = false
@@ -207,6 +208,7 @@ const handleJoinGame = async () => {
     isHost.value = false
 
     saveSession()
+    resetEcho()
     initLobby(roomId.value)
 
     showJoinModal.value = false
@@ -256,6 +258,7 @@ const handleLeaveRoom = async () => {
   } finally {
     const {leaveRoom} = useReverb(playerId.value)
     leaveRoom(roomId.value)
+    resetEcho()
     clearSession()
     roomId.value = null
     gameCode.value = null
