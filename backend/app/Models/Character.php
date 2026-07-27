@@ -3,13 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Universe;
 
 class Character extends Model
 {
-    protected $fillable = ['universe_id', 'name', 'slug', 'image', 'forbidden_words'];
+    protected $fillable = ['universe_id', 'name', 'slug', 'image', 'forbidden_words', 'level_affectation'];
 
-    protected $casts = ['forbidden_words' => 'array'];
+    protected $casts = [
+        'forbidden_words' => 'array',
+        'level_affectation' => 'integer',
+    ];
 
     public function universe(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
@@ -23,6 +25,7 @@ class Character extends Model
                 return true;
             }
         }
+
         return false;
     }
 }

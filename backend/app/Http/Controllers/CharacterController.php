@@ -23,12 +23,13 @@ class CharacterController extends Controller
     {
         return response()->json([
             'characters' => Character::with('universe:id,name')->orderBy('name')->get()->map(fn($c) => [
-                'id'              => $c->id,
-                'universe_id'     => $c->universe_id,
-                'universe_name'   => $c->universe->name,
-                'name'            => $c->name,
-                'image'           => $c->image,
-                'forbidden_words' => $c->forbidden_words,
+                'id'                => $c->id,
+                'universe_id'       => $c->universe_id,
+                'universe_name'     => $c->universe->name,
+                'name'              => $c->name,
+                'image'             => $c->image,
+                'forbidden_words'   => $c->forbidden_words,
+                'level_affectation' => $c->level_affectation,
             ]),
         ]);
     }
@@ -40,21 +41,23 @@ class CharacterController extends Controller
     public function store(StoreCharacterRequest $request, Universe $universe): JsonResponse
     {
         $character = Character::create([
-            'universe_id'     => $universe->id,
-            'name'            => $request->validated('name'),
-            'slug'            => $this->generateUniqueSlug($universe, $request->validated('name')),
-            'image'           => $this->encodeImage($request->file('image')),
-            'forbidden_words' => $request->validated('forbidden_words'),
+            'universe_id'       => $universe->id,
+            'name'              => $request->validated('name'),
+            'slug'              => $this->generateUniqueSlug($universe, $request->validated('name')),
+            'image'             => $this->encodeImage($request->file('image')),
+            'forbidden_words'   => $request->validated('forbidden_words'),
+            'level_affectation' => $request->validated('level_affectation'),
         ]);
 
         return response()->json([
             'message'   => 'Personnage créé avec succès.',
             'character' => [
-                'id'              => $character->id,
-                'universe_id'     => $character->universe_id,
-                'name'            => $character->name,
-                'image'           => $character->image,
-                'forbidden_words' => $character->forbidden_words,
+                'id'                => $character->id,
+                'universe_id'       => $character->universe_id,
+                'name'              => $character->name,
+                'image'             => $character->image,
+                'forbidden_words'   => $character->forbidden_words,
+                'level_affectation' => $character->level_affectation,
             ],
         ], 201);
     }
@@ -73,6 +76,7 @@ class CharacterController extends Controller
 
         $character->name = $name;
         $character->forbidden_words = $request->validated('forbidden_words');
+        $character->level_affectation = $request->validated('level_affectation');
 
         if ($request->hasFile('image')) {
             $character->image = $this->encodeImage($request->file('image'));
@@ -83,11 +87,12 @@ class CharacterController extends Controller
         return response()->json([
             'message'   => 'Personnage modifié avec succès.',
             'character' => [
-                'id'              => $character->id,
-                'universe_id'     => $character->universe_id,
-                'name'            => $character->name,
-                'image'           => $character->image,
-                'forbidden_words' => $character->forbidden_words,
+                'id'                => $character->id,
+                'universe_id'       => $character->universe_id,
+                'name'              => $character->name,
+                'image'             => $character->image,
+                'forbidden_words'   => $character->forbidden_words,
+                'level_affectation' => $character->level_affectation,
             ],
         ]);
     }

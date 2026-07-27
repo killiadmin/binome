@@ -25,15 +25,16 @@ export const characterService = {
     /**
      * Créer un personnage rattaché à un univers
      * POST /api/universes/{universe}/characters
-     * body (multipart): name, image? (File), forbidden_words[]
+     * body (multipart): name, image? (File), forbidden_words[], level_affectation
      */
-    createCharacter(universeId, { name, imageFile = null, forbiddenWords }) {
+    createCharacter(universeId, { name, imageFile = null, forbiddenWords, levelAffectation }) {
         const formData = new FormData()
         formData.append('name', name)
         if (imageFile) {
             formData.append('image', imageFile)
         }
         forbiddenWords.forEach(word => formData.append('forbidden_words[]', word))
+        formData.append('level_affectation', levelAffectation)
 
         return api.post(`/universes/${universeId}/characters`, formData, multipart)
     },
@@ -49,9 +50,9 @@ export const characterService = {
     /**
      * Modifier un personnage (l'image n'est remplacée que si un nouveau fichier est fourni)
      * PUT /api/characters/{character} (envoyé en POST + _method=PUT pour supporter l'upload de fichier)
-     * body (multipart): name, image? (File), forbidden_words[]
+     * body (multipart): name, image? (File), forbidden_words[], level_affectation
      */
-    updateCharacter(characterId, { name, imageFile = null, forbiddenWords }) {
+    updateCharacter(characterId, { name, imageFile = null, forbiddenWords, levelAffectation }) {
         const formData = new FormData()
         formData.append('_method', 'PUT')
         formData.append('name', name)
@@ -59,6 +60,7 @@ export const characterService = {
             formData.append('image', imageFile)
         }
         forbiddenWords.forEach(word => formData.append('forbidden_words[]', word))
+        formData.append('level_affectation', levelAffectation)
 
         return api.post(`/characters/${characterId}`, formData, multipart)
     },
