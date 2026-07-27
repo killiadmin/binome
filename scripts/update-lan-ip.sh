@@ -44,13 +44,13 @@ update_var() {
     fi
 }
 
-update_var "VITE_API_URL" "http://${IP}:8000/api"
-update_var "VITE_BACKEND_URL" "http://${IP}:8000"
+update_var "VITE_API_URL" "http://${IP}:8001/api"
+update_var "VITE_BACKEND_URL" "http://${IP}:8001"
 update_var "VITE_REVERB_HOST" "${IP}"
 
 echo "frontend/.env mis à jour :"
-echo "  VITE_API_URL=http://${IP}:8000/api"
-echo "  VITE_BACKEND_URL=http://${IP}:8000"
+echo "  VITE_API_URL=http://${IP}:8001/api"
+echo "  VITE_BACKEND_URL=http://${IP}:8001"
 echo "  VITE_REVERB_HOST=${IP}"
 echo
 echo "Tes amis pourront rejoindre la partie via : http://${IP}:5173"

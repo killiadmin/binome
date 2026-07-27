@@ -7,6 +7,8 @@ use App\Models\Universe;
 
 class Character extends Model
 {
+    protected $fillable = ['universe_id', 'name', 'slug', 'image', 'forbidden_words'];
+
     protected $casts = ['forbidden_words' => 'array'];
 
     public function universe(): \Illuminate\Database\Eloquent\Relations\BelongsTo

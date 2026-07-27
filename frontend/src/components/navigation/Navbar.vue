@@ -13,6 +13,9 @@ import {BNav, BNavItem} from 'bootstrap-vue-next';
     <BNavItem to="/rules" class="arcade-nav-link">
       <i class="fa-solid fa-book"></i> Règles
     </BNavItem>
+    <BNavItem to="/characters" class="arcade-nav-link">
+      <i class="fa-solid fa-user-astronaut"></i> Personnages
+    </BNavItem>
   </BNav>
 </template>
 
