@@ -20,6 +20,7 @@ const characterName = ref('')
 const characterImageFile = ref(null)
 const characterImagePreview = ref(null)
 const forbiddenWords = ref(['', '', ''])
+const levelAffectation = ref(null)
 
 const characters = ref([])
 const loadingCharacters = ref(true)
@@ -28,6 +29,7 @@ const showEditModal = ref(false)
 const editingCharacterId = ref(null)
 const editName = ref('')
 const editForbiddenWords = ref(['', '', ''])
+const editLevelAffectation = ref(null)
 const editImageFile = ref(null)
 const editImagePreview = ref(null)
 const editCurrentImage = ref(null)
@@ -144,6 +146,7 @@ function resetCharacterForm() {
   characterImageFile.value = null
   characterImagePreview.value = null
   forbiddenWords.value = ['', '', '']
+  levelAffectation.value = null
 }
 
 const handleSubmit = async () => {
@@ -159,6 +162,11 @@ const handleSubmit = async () => {
 
   if (words.length !== 3) {
     error.value = 'Il faut exactement 3 mots interdits.'
+    return
+  }
+
+  if (!levelAffectation.value || levelAffectation.value < 1) {
+    error.value = "Le niveau d'affectation est requis."
     return
   }
 
@@ -186,6 +194,7 @@ const handleSubmit = async () => {
       name: characterName.value.trim(),
       imageFile: characterImageFile.value,
       forbiddenWords: words,
+      levelAffectation: levelAffectation.value,
     })
 
     success.value = 'Personnage créé avec succès !'
@@ -212,6 +221,7 @@ function openEditModal(character) {
   editingCharacterId.value = character.id
   editName.value = character.name
   editForbiddenWords.value = [...character.forbidden_words]
+  editLevelAffectation.value = character.level_affectation
   editImageFile.value = null
   editImagePreview.value = null
   editCurrentImage.value = character.image
@@ -242,6 +252,11 @@ const handleUpdateCharacter = async () => {
     return
   }
 
+  if (!editLevelAffectation.value || editLevelAffectation.value < 1) {
+    editError.value = "Le niveau d'affectation est requis."
+    return
+  }
+
   editSubmitting.value = true
 
   try {
@@ -249,6 +264,7 @@ const handleUpdateCharacter = async () => {
       name: editName.value.trim(),
       imageFile: editImageFile.value,
       forbiddenWords: words,
+      levelAffectation: editLevelAffectation.value,
     })
 
     success.value = 'Personnage modifié avec succès !'
@@ -378,6 +394,19 @@ const handleDeleteCharacter = async () => {
           </div>
         </div>
 
+        <div class="mb-3">
+          <label class="form-label">Niveau d'affectation :</label>
+          <BFormInput
+              v-model.number="levelAffectation"
+              type="number"
+              min="1"
+              placeholder="Ex : 1"
+          />
+          <small class="form-text text-muted">
+            Relie ce personnage à un autre personnage du même univers partageant le même niveau (2 max par niveau) : ensemble, ils formeront un binome en jeu.
+          </small>
+        </div>
+
         <div class="text-center mt-4">
           <button type="button" class="play-btn" :disabled="submitting" @click="handleSubmit">
             <i class="fa-solid fa-floppy-disk"></i> Créer le personnage
@@ -408,6 +437,7 @@ const handleDeleteCharacter = async () => {
             <div class="character-row__universe">{{ character.universe_name }}</div>
             <div class="character-row__words">
               <span v-for="word in character.forbidden_words" :key="word" class="word-badge">{{ word }}</span>
+              <span class="word-badge word-badge--level">Niveau {{ character.level_affectation }}</span>
             </div>
           </div>
           <div class="character-row__actions">
@@ -456,6 +486,16 @@ const handleDeleteCharacter = async () => {
                 :placeholder="`Mot interdit ${index + 1}`"
             />
           </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Niveau d'affectation :</label>
+          <BFormInput
+              v-model.number="editLevelAffectation"
+              type="number"
+              min="1"
+              placeholder="Ex : 1"
+          />
         </div>
 
         <div class="text-center">
@@ -607,6 +647,10 @@ const handleDeleteCharacter = async () => {
   color: var(--arcade-beige);
   padding: 0.15rem 0.5rem;
   border-radius: 6px;
+}
+
+.word-badge--level {
+  background: var(--arcade-taupe);
 }
 
 .character-row__actions {

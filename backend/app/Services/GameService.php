@@ -98,16 +98,20 @@ class GameService
                 'universe_id' => $universe->id,
             ]);
 
-            $characters = Character::where('universe_id', $universe->id)
-                ->inRandomOrder()
-                ->take(2)
-                ->get();
+            // Un binome ne peut être formé qu'entre 2 personnages partageant le même
+            // niveau d'affectation au sein de l'univers (ex : Luke + Leia = niveau 1)
+            $levelGroups = Character::where('universe_id', $universe->id)
+                ->get()
+                ->groupBy('level_affectation')
+                ->filter(fn($group) => $group->count() >= 2);
 
-            if ($characters->count() < 2) {
+            if ($levelGroups->isEmpty()) {
                 throw new Exception(
-                    "L'univers {$universe->name} n'a pas assez de personnages."
+                    "L'univers {$universe->name} n'a pas de binome de personnages valide (niveau d'affectation)."
                 );
             }
+
+            $characters = $levelGroups->random()->shuffle()->take(2)->values();
 
             // Attache chaque joueur au binome avec son personnage
             $pair->values()->each(function ($player, $i) use ($binome, $characters) {
