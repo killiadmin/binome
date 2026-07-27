@@ -1,0 +1,7 @@
+{
+  "name": "Binome",
+  "description": "Jeu multijoueur pour deviner son duo caché et son personnage assigné aléatoirement",
+  "port": 5173,
+  "healthcheck": "/",
+  "icon": "🎮"
+}

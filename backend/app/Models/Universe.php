@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Universe extends Model
 {
+    protected $fillable = ['name', 'slug'];
+
     public function characters(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Character::class);

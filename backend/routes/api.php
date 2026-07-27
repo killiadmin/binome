@@ -1,13 +1,27 @@
 <?php
 
 use App\Http\Controllers\ActionController;
+use App\Http\Controllers\CharacterController;
 use App\Http\Controllers\GameController;
 use App\Http\Controllers\RoomController;
+use App\Http\Controllers\UniverseController;
 use App\Models\Game;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/welcome', function () {
     return 'Welcome to laravel !';
+});
+
+Route::prefix('universes')->group(function () {
+    Route::get('/',  [UniverseController::class, 'index']);
+    Route::post('/', [UniverseController::class, 'store']);
+    Route::post('{universe}/characters', [CharacterController::class, 'store']);
+});
+
+Route::prefix('characters')->group(function () {
+    Route::get('/',    [CharacterController::class, 'index']);
+    Route::put('{character}',    [CharacterController::class, 'update']);
+    Route::delete('{character}', [CharacterController::class, 'destroy']);
 });
 
 Route::prefix('rooms')->group(function () {
