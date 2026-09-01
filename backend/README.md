@@ -99,6 +99,89 @@ php artisan queue:listen --tries=1
 
 ---
 
+## Import de personnages en masse
+
+Plutôt que de créer les personnages un par un dans l'interface, on peut les
+importer depuis un fichier JSON.
+
+```bash
+# Import ponctuel depuis n'importe quel fichier
+php artisan characters:import chemin/vers/personnages.json
+
+# Options
+php artisan characters:import fichier.json --images-dir=/chemin/images
+php artisan characters:import fichier.json --skip-existing   # ne touche pas aux persos déjà en base
+
+# Via le seeder (utilise database/data/characters.json)
+php artisan db:seed --class=CharacterSeeder
+php artisan db:seed                                          # inclut CharacterSeeder
+```
+
+Format du fichier — un tableau d'objets :
+
+```json
+[
+  {
+    "name": "Pikachu",
+    "universe": "Pokémon",
+    "cosmos": "Animé Japonais",
+    "forbidden_words": ["souris", "éclair", "jaune"],
+    "level_affectation": 1,
+    "image": "pikachu.png"
+  }
+]
+```
+
+- **Idempotent** : un personnage est identifié par `(univers, nom)`. Relancer
+  l'import met à jour les personnages existants au lieu de les dupliquer. Un
+  personnage déjà **refusé** (`hidden = true`) est ignoré, jamais recréé.
+- Les personnages importés sont créés avec **`verif_manual = false`** : ce sont
+  des propositions à valider à la main (voir *Validation manuelle* ci-dessous).
+  Ils apparaissent dans `/characters` avec un badge « à valider » mais ne sont
+  **pas jouables** tant qu'ils ne sont pas validés.
+- L'**univers** et le **cosmos** (facultatif) sont créés automatiquement s'ils
+  n'existent pas ; un univers déjà présent sans cosmos se voit rattacher celui du
+  fichier.
+- La règle « 2 personnages max par niveau d'affectation dans un univers » est
+  vérifiée : une ligne en trop est signalée en erreur, les autres passent.
+- **Images** (`app/Support/CharacterImporter.php`) — le champ `image` accepte :
+  un nom de fichier présent dans `database/data/images/` (ou `--images-dir`), un
+  chemin absolu, une URL `http(s)` (téléchargée à l'import), ou une data URI déjà
+  encodée. Si le champ est absent, l'import cherche par **convention** un fichier
+  `<slug-du-nom>.(png|jpg|jpeg|webp|gif)` dans le dossier d'images. Formats
+  jpeg/png/gif/webp, 4 Mo max ; l'image est encodée en base64 comme l'upload
+  manuel (pas de recadrage automatique — fournir des images ~carrées).
+
+### Validation manuelle des propositions
+
+Tout personnage avec `verif_manual = false` (import, génération) doit être relu
+avant d'entrer en jeu. Le champ `hidden` sert à archiver les refus.
+
+| État | `verif_manual` | `hidden` | Visible `/characters` | Jouable | Dans `/characters/pending` |
+|---|---|---|---|---|---|
+| Proposé | false | false | oui (badge « à valider ») | non | oui |
+| Validé | true | false | oui | oui | non |
+| Refusé | false | true | non | non | non (jamais reproposé) |
+
+Front : à l'ouverture de `/characters`, si des binômes sont en attente, une popup
+les présente un par un (univers, cosmos, noms, mots interdits, niveau). Les **3
+mots interdits de chaque personnage sont éditables directement dans la popup**
+(champ + bouton « vider ») ; les changements sont enregistrés via
+`PATCH /characters/{id}/forbidden-words` au moment du clic sur *Accepter*.
+**Refuser** → `hidden = true`. **Accepter** → (sauvegarde des mots interdits
+modifiés puis) import d'image obligatoire pour les 2 personnages, puis
+`verif_manual = true`. Fermer la popup en cours de route laisse le binôme en
+attente (il réapparaîtra ; les mots interdits déjà sauvegardés sont conservés).
+
+Import d'image (partout dans l'app : fiche, édition, popup de validation) : même
+composant `ImageDropzone` (glisser-déposer **ou** clic) → `ImageCropperModal`
+(recadrage carré imposé) → sortie normalisée **512×512 JPEG q0.9**. Toutes les
+images du jeu ont donc le même format.
+
+Un personnage créé via la fiche de perso classique est directement `verif_manual = true`.
+
+---
+
 ## Architecture du projet
 
 ```
@@ -117,19 +200,29 @@ app/
 │   ├── PlayerReady.php         # broadcast quand un joueur toggle son statut prêt
 │   └── PlayerLeft.php          # broadcast quand un joueur quitte le lobby
 │
+├── Console/
+│   └── Commands/
+│       └── ImportCharacters.php         # `php artisan characters:import`
+│
 ├── Http/
 │   ├── Controllers/
 │   │   ├── BroadcastAuthController.php  # auth custom PresenceChannel (sans Sanctum)
+│   │   ├── CosmosController.php
+│   │   ├── UniverseController.php
+│   │   ├── CharacterController.php
 │   │   ├── RoomController.php
 │   │   ├── GameController.php
 │   │   └── ActionController.php
 │   └── Requests/
+│       ├── StoreCosmosRequest.php / UpdateUniverseRequest.php / StoreUniverseRequest.php
+│       ├── StoreCharacterRequest.php
 │       ├── StoreRoomRequest.php
 │       ├── JoinRoomRequest.php
 │       ├── PlayQuestionRequest.php
 │       └── PlayAccusationRequest.php
 │
 ├── Models/
+│   ├── Cosmos.php              # sur-catégorie regroupant plusieurs univers (table `cosmos`, invariable)
 │   ├── Universe.php
 │   ├── Character.php
 │   ├── Room.php
@@ -139,15 +232,25 @@ app/
 │   ├── Round.php
 │   └── Action.php
 │
-└── Services/
-    ├── GameService.php         # orchestration démarrage de partie
-    ├── RoundService.php        # gestion des tours
-    ├── ActionService.php       # validation questions + accusations
-    └── BinomeService.php       # découverte binome + fin de partie
+├── Services/
+│   ├── GameService.php         # orchestration démarrage de partie
+│   ├── RoundService.php        # gestion des tours
+│   ├── ActionService.php       # validation questions + accusations
+│   └── BinomeService.php       # découverte binome + fin de partie
+│
+└── Support/
+    └── CharacterImporter.php   # import JSON en masse (partagé commande + seeder)
 
 database/
+├── data/
+│   ├── characters.json         # jeu de personnages importé par CharacterSeeder
+│   └── images/                 # images référencées à l'import
+├── seeders/
+│   ├── DatabaseSeeder.php
+│   └── CharacterSeeder.php
 └── migrations/
-    ├── create_universes_table.php
+    ├── create_cosmos_table.php
+    ├── create_universes_table.php   # + add_cosmos_id_to_universes_table
     ├── create_characters_table.php
     ├── create_rooms_table.php
     ├── create_players_table.php
@@ -171,13 +274,21 @@ routes/
 ### Vue d'ensemble des relations
 
 ```
+Cosmos                          ← sur-catégorie (ex : « Disney », « Animé Japonais »)
+  └── hasMany → Universe
+
 Universe
+  └── belongsTo → Cosmos       (cosmos_id, nullable)
   └── hasMany → Character
   └── hasMany → Binome
 
 Character
   └── belongsTo → Universe
   └── json: forbidden_words[]
+  └── bool: verif_manual   (relu/confirmé par un humain — défaut false ; true si créé via la fiche)
+  └── bool: hidden         (proposition refusée — conservée mais jamais affichée ni jouée)
+  (le cosmos d'un personnage est celui de son univers : Character → Universe → Cosmos)
+  scopes : Character::playable()  (verif_manual && !hidden) / Character::pendingValidation() (!verif_manual && !hidden)
 
 Room
   └── belongsToMany → Player  (pivot: is_ready)
@@ -249,6 +360,7 @@ Point d'entrée : `start(Room $room): Game`
 1. Valide que le nombre de joueurs est pair et ≥ 4, et que tous sont `is_ready`
 2. Crée la `Game` avec le statut `in_progress`
 3. Mélange aléatoirement les joueurs → forme des paires → assigne un `Universe` par paire → assigne 2 `Character` distincts du même univers
+   - **Seuls les personnages `playable()` sont tirés** (`verif_manual = true`, `hidden = false`) ; la sélection d'univers ne retient que ceux ayant au moins un binôme jouable au même niveau. Une proposition non validée n'arrive donc jamais en partie.
 4. Délègue la création du premier round à `RoundService::createRound()`
 5. Broadcast `GameStarted`
 
@@ -318,6 +430,20 @@ Point d'entrée : `start(Room $room): Game`
 
 | Méthode | Route | Controller | Description |
 |---|---|---|---|
+| `GET` | `/api/cosmos` | `CosmosController@index` | Liste des cosmos (+ nb d'univers) |
+| `POST` | `/api/cosmos` | `CosmosController@store` | Créer un cosmos |
+| `GET` | `/api/universes` | `UniverseController@index` | Liste des univers (+ cosmos rattaché) |
+| `POST` | `/api/universes` | `UniverseController@store` | Créer un univers (`cosmos_id` optionnel) |
+| `PATCH` | `/api/universes/{universe}` | `UniverseController@update` | Modifier le cosmos d'un univers |
+| `GET` | `/api/characters` | `CharacterController@index` | Liste des personnages non masqués (+ univers, cosmos, `verif_manual`) |
+| `GET` | `/api/characters/pending` | `CharacterController@pending` | Binômes proposés en attente de validation (groupés par univers + niveau) |
+| `POST` | `/api/characters/validation/accept` | `CharacterController@accept` | Valider un binôme (`character_ids[]`) — refuse si un perso n'a pas d'image |
+| `POST` | `/api/characters/validation/reject` | `CharacterController@reject` | Refuser un binôme (`character_ids[]`) → `hidden = true` |
+| `PATCH` | `/api/characters/{character}/forbidden-words` | `CharacterController@updateForbiddenWords` | Modifier uniquement les 3 mots interdits (édition rapide) |
+| `POST` | `/api/characters/{character}/image` | `CharacterController@uploadImage` | Importer / remplacer l'image d'un personnage |
+| `POST` | `/api/universes/{universe}/characters` | `CharacterController@store` | Créer un personnage (`verif_manual = true`) |
+| `PUT` | `/api/characters/{character}` | `CharacterController@update` | Modifier un personnage (`universe_id` optionnel pour le réassigner à un autre univers) |
+| `DELETE` | `/api/characters/{character}` | `CharacterController@destroy` | Supprimer un personnage |
 | `POST` | `/api/rooms` | `RoomController@store` | Créer un salon |
 | `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères |
 | `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs |

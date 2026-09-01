@@ -14,6 +14,7 @@ export default {
           description:
               "• Nombre de joueurs : pair, minimum 4\n" +
               "• Chaque joueur reçoit un personnage secret\n" +
+              "• Chaque personnage a un nom, un univers (ex : Pokémon) et un cosmos, sa sur-catégorie (ex : Animé Japonais)\n" +
               "• Les joueurs sont regroupés en binômes partageant le même univers (sans le savoir)\n" +
               "• Chaque personnage possède 3 mots interdits",
         },

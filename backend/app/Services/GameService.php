@@ -5,12 +5,12 @@ namespace App\Services;
 use App\Enums\GameStatus;
 use App\Events\GameStarted;
 use App\Models\Binome;
+use App\Models\Character;
 use App\Models\Game;
 use App\Models\Room;
-use App\Models\Character;
+use Exception;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Exception;
 
 class GameService
 {
@@ -31,7 +31,7 @@ class GameService
             // 1. Créer la Game
             $game = Game::create([
                 'room_id' => $room->id,
-                'status'  => GameStatus::InProgress,
+                'status' => GameStatus::InProgress,
             ]);
 
             // 2. Former les binomes aléatoirement
@@ -61,10 +61,10 @@ class GameService
         }
 
         $allReady = $players->every(
-            fn($player) => $player->pivot->is_ready
+            fn ($player) => $player->pivot->is_ready
         );
 
-        if (!$allReady) {
+        if (! $allReady) {
             throw new Exception('Tous les joueurs doivent être prêts.');
         }
     }
@@ -80,13 +80,22 @@ class GameService
         // Découpe en paires : [P1, P2], [P3, P4], [P5, P6]...
         $pairs = $shuffledPlayers->chunk(2);
 
-        // Récupère les univers disponibles (autant que de paires)
-        $universes = \App\Models\Universe::inRandomOrder()
+        // Univers éligibles : ceux qui ont au moins un binôme de personnages
+        // JOUABLES (verif_manual = true, hidden = false) partageant un même niveau.
+        $eligibleUniverseIds = Character::playable()
+            ->select('universe_id')
+            ->groupBy('universe_id', 'level_affectation')
+            ->havingRaw('COUNT(*) >= 2')
+            ->pluck('universe_id')
+            ->unique();
+
+        $universes = \App\Models\Universe::whereIn('id', $eligibleUniverseIds)
+            ->inRandomOrder()
             ->take($pairs->count())
             ->get();
 
         if ($universes->count() < $pairs->count()) {
-            throw new Exception('Pas assez d\'univers disponibles pour cette partie.');
+            throw new Exception('Pas assez d\'univers avec des personnages validés pour cette partie.');
         }
 
         foreach ($pairs as $index => $pair) {
@@ -94,16 +103,17 @@ class GameService
 
             // Crée le binome
             $binome = Binome::create([
-                'game_id'     => $game->id,
+                'game_id' => $game->id,
                 'universe_id' => $universe->id,
             ]);
 
             // Un binome ne peut être formé qu'entre 2 personnages partageant le même
             // niveau d'affectation au sein de l'univers (ex : Luke + Leia = niveau 1)
-            $levelGroups = Character::where('universe_id', $universe->id)
+            $levelGroups = Character::playable()
+                ->where('universe_id', $universe->id)
                 ->get()
                 ->groupBy('level_affectation')
-                ->filter(fn($group) => $group->count() >= 2);
+                ->filter(fn ($group) => $group->count() >= 2);
 
             if ($levelGroups->isEmpty()) {
                 throw new Exception(
@@ -117,7 +127,7 @@ class GameService
             $pair->values()->each(function ($player, $i) use ($binome, $characters) {
                 $binome->players()->attach($player->id, [
                     'character_id' => $characters[$i]->id,
-                    'score'        => 0,
+                    'score' => 0,
                 ]);
             });
         }

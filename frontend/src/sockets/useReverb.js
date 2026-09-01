@@ -5,12 +5,15 @@ window.Pusher = Pusher
 
 let echo = null
 
+// The WebSocket connects back to whatever origin served the page; the Vite dev
+// server proxies /app to the Reverb container. Nothing here depends on the
+// host's LAN IP, so switching networks needs no config change.
+const wsPort = Number(window.location.port) || (window.location.protocol === 'https:' ? 443 : 80)
+
 console.log('[ENV]', {
-    key:      import.meta.env.VITE_REVERB_APP_KEY,
-    host:     import.meta.env.VITE_REVERB_HOST,
-    port:     import.meta.env.VITE_REVERB_PORT,
-    backend:  import.meta.env.VITE_BACKEND_URL,
-    api:      import.meta.env.VITE_API_URL,
+    key:  import.meta.env.VITE_REVERB_APP_KEY,
+    host: window.location.hostname,
+    port: wsPort,
 })
 
 function getEcho(playerId = null) {
@@ -18,12 +21,13 @@ function getEcho(playerId = null) {
         echo = new Echo({
             broadcaster: 'reverb',
             key: import.meta.env.VITE_REVERB_APP_KEY,
-            wsHost: import.meta.env.VITE_REVERB_HOST,
-            wsPort: Number(import.meta.env.VITE_REVERB_PORT),
-            forceTLS: import.meta.env.VITE_REVERB_SCHEME === 'https',
+            wsHost: window.location.hostname,
+            wsPort,
+            wssPort: wsPort,
+            forceTLS: window.location.protocol === 'https:',
             enabledTransports: ['ws', 'wss'],
             disableStats: true,
-            authEndpoint: `${import.meta.env.VITE_BACKEND_URL}/broadcasting/auth`,
+            authEndpoint: '/broadcasting/auth',
             auth: {
                 headers: {
                     'X-Player-Id': String(playerId),
