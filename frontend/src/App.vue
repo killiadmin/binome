@@ -5,12 +5,23 @@ import Footer from './components/footer/Footer.vue';
 
 <template>
   <Navbar />
-  <router-view/>
+  <main class="app-main">
+    <router-view/>
+  </main>
   <Footer />
 </template>
 
-<style scoped>
+<style>
 body {
   background: #060410;
+}
+
+/* Hauteur de la navbar fixed-top, pour décaler le contenu en dessous */
+:root {
+  --navbar-height: 64px;
+}
+
+.app-main {
+  padding-top: var(--navbar-height);
 }
 </style>
