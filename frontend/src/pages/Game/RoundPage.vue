@@ -492,6 +492,7 @@ function backToHome() {
           <div v-else class="character-image-placeholder">
             <span>?</span>
           </div>
+          <div v-if="myCharacter?.cosmos" class="character-cosmos-badge">{{ myCharacter.cosmos }}</div>
           <div class="character-universe-badge">{{ myCharacter?.universe ?? '…' }}</div>
         </div>
 
@@ -1056,6 +1057,22 @@ function backToHome() {
   background: var(--arcade-gold);
   color: #4a2f00;
   font-size: 0.6rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.character-cosmos-badge {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--arcade-blue-grey-dark, #2f3a4a);
+  color: var(--arcade-beige, #f4e9d8);
+  font-size: 0.55rem;
   font-weight: bold;
   letter-spacing: 0.1em;
   text-transform: uppercase;

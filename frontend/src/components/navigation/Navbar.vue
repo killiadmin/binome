@@ -35,8 +35,11 @@ watch(() => route.fullPath, () => {
       <BNavItem to="/rules" class="arcade-nav-link">
         <i class="fa-solid fa-book"></i> Règles
       </BNavItem>
-      <BNavItem to="/characters" class="arcade-nav-link">
+      <BNavItem to="/characters/list" class="arcade-nav-link">
         <i class="fa-solid fa-user-astronaut"></i> Personnages
+      </BNavItem>
+      <BNavItem to="/characters" class="arcade-nav-link">
+        <i class="fa-solid fa-user-plus"></i> Créer
       </BNavItem>
     </BNav>
   </nav>

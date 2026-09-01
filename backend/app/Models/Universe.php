@@ -1,13 +1,17 @@
 <?php
 
 namespace App\Models;
-use App\Models\Binome;
-use App\Models\Character;
+
 use Illuminate\Database\Eloquent\Model;
 
 class Universe extends Model
 {
-    protected $fillable = ['name', 'slug'];
+    protected $fillable = ['name', 'slug', 'cosmos_id'];
+
+    public function cosmos(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Cosmos::class);
+    }
 
     public function characters(): \Illuminate\Database\Eloquent\Relations\HasMany
     {

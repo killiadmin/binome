@@ -5,6 +5,7 @@ import RoomPage from "./pages/Rooms/RoomPage.vue";
 import RulePage from "./pages/Rules/RulePage.vue";
 import RoundPage from "./pages/Game/RoundPage.vue";
 import CharacterPage from "./pages/Characters/CharacterPage.vue";
+import CharacterListPage from "./pages/Characters/CharacterListPage.vue";
 
 const routes = [
     {
@@ -31,6 +32,11 @@ const routes = [
         path: '/characters',
         name: 'Character',
         component: CharacterPage,
+    },
+    {
+        path: '/characters/list',
+        name: 'CharacterList',
+        component: CharacterListPage,
     }
 ];
 

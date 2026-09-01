@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\ActionType;
 use App\Models\Action;
 use App\Models\Game;
-use App\Models\Room;
 use App\Models\Player;
+use App\Models\Room;
 use App\Services\GameService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,7 +48,7 @@ class GameController extends Controller
         return response()->json([
             'message' => 'La partie a démarré.',
             'game_id' => $game->id,
-            'status'  => $game->status,
+            'status' => $game->status,
         ], 201);
     }
 
@@ -60,8 +60,9 @@ class GameController extends Controller
     {
         $game->load([
             'binomes.universe',
+            'binomes.universe.cosmos',
             'binomes.players',
-            'rounds' => fn($q) => $q->orderBy('number'),
+            'rounds' => fn ($q) => $q->orderBy('number'),
         ]);
 
         $currentRound = $game->rounds
@@ -76,26 +77,27 @@ class GameController extends Controller
                 ->with(['player', 'targetPlayer'])
                 ->orderBy('created_at')
                 ->get()
-                ->map(fn($action) => $this->formatAction($action));
+                ->map(fn ($action) => $this->formatAction($action));
             $actions = $actions->merge($roundActions);
         }
 
         return response()->json([
             'game_id' => $game->id,
-            'status'  => $game->status,
-            'binomes' => $game->binomes->map(fn($binome) => [
-                'id'            => $binome->id,
-                'universe'      => $binome->universe->name,
+            'status' => $game->status,
+            'binomes' => $game->binomes->map(fn ($binome) => [
+                'id' => $binome->id,
+                'universe' => $binome->universe->name,
+                'cosmos' => $binome->universe->cosmos?->name,
                 'is_discovered' => $binome->is_discovered,
-                'players'       => $binome->players->map(fn($player) => [
-                    'id'           => $player->id,
-                    'pseudo'       => $player->pseudo,
+                'players' => $binome->players->map(fn ($player) => [
+                    'id' => $player->id,
+                    'pseudo' => $player->pseudo,
                     'is_eliminated' => (bool) $player->pivot->is_eliminated,
                 ]),
             ]),
             'current_round' => $currentRound ? [
-                'id'                => $currentRound->id,
-                'number'            => $currentRound->number,
+                'id' => $currentRound->id,
+                'number' => $currentRound->number,
                 'current_player_id' => $currentRound->current_player_id,
             ] : null,
             'actions' => $actions->values()->toArray(),
@@ -105,26 +107,26 @@ class GameController extends Controller
     private function formatAction(Action $action): array
     {
         $base = [
-            'action_id'  => $action->id,
-            'id'         => $action->id,
-            'round_id'   => $action->round_id,
+            'action_id' => $action->id,
+            'id' => $action->id,
+            'round_id' => $action->round_id,
             'round_number' => $action->round->number,
-            'player'     => [
-                'id'     => $action->player->id,
+            'player' => [
+                'id' => $action->player->id,
                 'pseudo' => $action->player->pseudo,
             ],
-            'type'       => $action->type,
-            'is_valid'   => $action->is_valid,
-            'answer'     => $action->answer,
+            'type' => $action->type,
+            'is_valid' => $action->is_valid,
+            'answer' => $action->answer,
             'created_at' => $action->created_at->toIso8601String(),
         ];
 
         if ($action->type === ActionType::Question) {
             return array_merge($base, [
-                'question'       => $action->is_valid ? $action->content : null,
-                'refused_reason' => !$action->is_valid ? 'Mot interdit détecté.' : null,
-                'target_player'  => $action->targetPlayer ? [
-                    'id'     => $action->targetPlayer->id,
+                'question' => $action->is_valid ? $action->content : null,
+                'refused_reason' => ! $action->is_valid ? 'Mot interdit détecté.' : null,
+                'target_player' => $action->targetPlayer ? [
+                    'id' => $action->targetPlayer->id,
                     'pseudo' => $action->targetPlayer->pseudo,
                 ] : null,
             ]);
@@ -132,11 +134,11 @@ class GameController extends Controller
 
         return array_merge($base, [
             'target_player' => $action->targetPlayer ? [
-                'id'     => $action->targetPlayer->id,
+                'id' => $action->targetPlayer->id,
                 'pseudo' => $action->targetPlayer->pseudo,
             ] : null,
             'accusation_correct' => $action->accusation_correct,
-            'character_name'     => $action->accusation_correct ? $action->content : null,
+            'character_name' => $action->accusation_correct ? $action->content : null,
         ]);
     }
 
@@ -151,10 +153,10 @@ class GameController extends Controller
             'player_id' => ['required', 'integer', 'exists:players,id'],
         ]);
 
-        $player    = Player::findOrFail($request->input('player_id'));
+        $player = Player::findOrFail($request->input('player_id'));
         $character = $player->getCharacterInGame($game);
 
-        if (!$character) {
+        if (! $character) {
             return response()->json([
                 'message' => 'Aucun personnage trouvé pour ce joueur dans cette partie.',
             ], 404);
@@ -162,10 +164,11 @@ class GameController extends Controller
 
         return response()->json([
             'character' => [
-                'id'             => $character->id,
-                'name'           => $character->name,
-                'universe'       => $character->universe->name,
-                'forbidden_words'=> $character->forbidden_words,
+                'id' => $character->id,
+                'name' => $character->name,
+                'universe' => $character->universe->name,
+                'cosmos' => $character->universe->cosmos?->name,
+                'forbidden_words' => $character->forbidden_words,
             ],
         ]);
     }

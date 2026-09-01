@@ -15,6 +15,7 @@ class StoreUniverseRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'min:2', 'max:50', 'unique:universes,name'],
+            'cosmos_id' => ['nullable', 'integer', 'exists:cosmos,id'],
         ];
     }
 
@@ -22,9 +23,10 @@ class StoreUniverseRequest extends FormRequest
     {
         return [
             'name.required' => "Le nom de l'univers est requis.",
-            'name.min'      => "Le nom de l'univers doit faire au moins 2 caractères.",
-            'name.max'      => "Le nom de l'univers ne peut pas dépasser 50 caractères.",
-            'name.unique'   => 'Un univers avec ce nom existe déjà.',
+            'name.min' => "Le nom de l'univers doit faire au moins 2 caractères.",
+            'name.max' => "Le nom de l'univers ne peut pas dépasser 50 caractères.",
+            'name.unique' => 'Un univers avec ce nom existe déjà.',
+            'cosmos_id.exists' => "Le cosmos sélectionné n'existe pas.",
         ];
     }
 }

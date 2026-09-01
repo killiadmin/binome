@@ -36,11 +36,17 @@ src/
 ├── assets/
 │
 ├── components/
+│   └── cropper/
+│       ├── ImageDropzone.vue      # zone glisser-déposer / clic → File
+│       └── ImageCropperModal.vue  # recadrage carré imposé → 512×512 JPEG
 │
 ├── composables/
 │   └── useEcho.js              # (non utilisé — remplacé par useReverb)
 │
 ├── pages/
+│   ├── Characters/
+│   │   ├── CharacterPage.vue      # Créer un personnage (univers/cosmos existant ou nouveau)
+│   │   └── CharacterListPage.vue  # Liste triée cosmos → univers → binômes, filtres, édition/suppression, validation des propositions
 │   ├── Game/
 │   │   └── RoundPage.vue       # Page de jeu (en cours de développement)
 │   ├── Home/
@@ -52,6 +58,7 @@ src/
 │
 ├── services/
 │   ├── api.js                  # Instance Axios configurée
+│   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
 │   ├── gameService.js          # Appels API partie
 │   └── roomService.js          # Appels API salon
 │
@@ -74,15 +81,19 @@ src/
 Fichier `.env` à créer à la racine du projet frontend :
 
 ```env
-VITE_API_URL=http://XXX.XXX.X.XX:8000/api
-VITE_BACKEND_URL=http://XXX.XXX.X.XX:8000
 VITE_REVERB_APP_KEY=reverb_key
-VITE_REVERB_HOST=XXX.XXX.X.XX
-VITE_REVERB_PORT=8080
-VITE_REVERB_SCHEME=http
 ```
 
-> Les valeurs `VITE_REVERB_APP_KEY` et `VITE_REVERB_HOST` doivent correspondre exactement aux valeurs du `.env` Laravel backend.
+> `VITE_REVERB_APP_KEY` doit correspondre exactement à `REVERB_APP_KEY` du `.env` Laravel backend.
+
+Le navigateur ne parle qu'à l'origine qui a servi la page (`http://<IP LAN>:5173`). `vite.config.js` proxifie `/api` et `/broadcasting` vers le conteneur `backend`, et le WebSocket `/app` vers le conteneur `reverb`, par nom de service Docker. **L'IP LAN n'apparaît donc dans aucune config front** : changer de Wi-Fi ne demande aucune regénération.
+
+Hors Docker uniquement (`npm run dev`), les noms de service ne résolvent pas — surcharger alors :
+
+```env
+VITE_PROXY_BACKEND=http://127.0.0.1:8001
+VITE_PROXY_REVERB=http://127.0.0.1:8080
+```
 
 ---
 
@@ -90,7 +101,7 @@ VITE_REVERB_SCHEME=http
 
 ### Avec Docker (recommandé)
 
-Voir le README à la racine du repo — `./start.sh` détecte l'IP LAN de la machine, met à jour `frontend/.env`, puis lance toute la stack (dont ce service) via Docker Compose. Le front est alors servi sur `http://<IP LAN>:5173`, accessible depuis n'importe quel appareil connecté au même Wi-Fi.
+Voir le README à la racine du repo — `./start.sh` lance toute la stack (dont ce service) via Docker Compose et affiche l'URL de partage. Le front est servi sur `http://<IP LAN>:5173`, accessible depuis n'importe quel appareil connecté au même Wi-Fi.
 
 ### Sans Docker (legacy)
 
@@ -99,7 +110,7 @@ npm install
 npm run dev -- --host
 ```
 
-Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost). Il faut alors éditer manuellement `.env` avec l'IP LAN de la machine (voir [Variables d'environnement](#variables-denvironnement)).
+Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost). Renseigne alors `VITE_PROXY_BACKEND` / `VITE_PROXY_REVERB` dans `.env` (voir [Variables d'environnement](#variables-denvironnement)).
 
 ---
 
@@ -109,7 +120,7 @@ Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes de
 
 ```js
 export const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL,
+    baseURL: '/api', // même origine — proxifié vers le backend par le dev server
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
