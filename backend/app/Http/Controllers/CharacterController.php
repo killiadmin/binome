@@ -24,7 +24,6 @@ class CharacterController extends Controller
     {
         return response()->json([
             'characters' => Character::with(['universe:id,name,cosmos_id', 'universe.cosmos:id,name'])
-                ->where('hidden', false)
                 ->orderBy('name')
                 ->get()
                 ->map(fn ($c) => [
@@ -38,6 +37,7 @@ class CharacterController extends Controller
                     'forbidden_words' => $c->forbidden_words,
                     'level_affectation' => $c->level_affectation,
                     'verif_manual' => $c->verif_manual,
+                    'hidden' => $c->hidden,
                 ]),
         ]);
     }

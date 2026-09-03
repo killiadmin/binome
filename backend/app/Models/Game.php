@@ -1,10 +1,8 @@
 <?php
 
 namespace App\Models;
-use App\Models\Binome;
+
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Room;
-use App\Models\Round;
 
 class Game extends Model
 {
@@ -30,6 +28,11 @@ class Game extends Model
     public function rounds()
     {
         return $this->hasMany(Round::class);
+    }
+
+    public function gameStats()
+    {
+        return $this->hasMany(GameStat::class);
     }
 
     public function currentRound()

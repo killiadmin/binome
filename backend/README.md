@@ -478,12 +478,15 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
 | `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
 | `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/answer` | `ActionController@answer` | Répondre à une question (oui/non/je ne sais pas) |
+| `GET` | `/api/admin/games` | `AdminGameController@index` | Liste de toutes les parties (en cours + terminées) — 🔒 `characters.access` |
+| `GET` | `/api/admin/games/{game}` | `AdminGameController@show` | Détail complet d'une partie (binomes + personnages révélés + journal des actions) — 🔒 `characters.access` |
+| `DELETE` | `/api/admin/games/{game}` | `AdminGameController@destroy` | Supprimer une partie (cascade DB : binomes, `binome_player`, rounds, actions, `game_stats`) — 🔒 `characters.access` |
 
 ### Accès à la gestion des personnages
 
-Les routes `/api/universes*`, `/api/characters*` et `POST /api/cosmos` sont
-protégées par le middleware `characters.access` (`EnsureCharactersAccess`,
-alias déclaré dans `bootstrap/app.php`) :
+Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
+`POST /api/cosmos` sont protégées par le middleware `characters.access`
+(`EnsureCharactersAccess`, alias déclaré dans `bootstrap/app.php`) :
 
 - Le mot de passe est lu dans `config('access.characters_password')` →
   `CHARACTERS_ACCESS_PASSWORD` du `.env`. **Vide = accès refusé** (`403`).
@@ -492,8 +495,11 @@ alias déclaré dans `bootstrap/app.php`) :
 - Le client renvoie ce token dans l'en-tête `X-Characters-Access` sur chaque
   requête protégée ; le middleware le compare via `hash_equals`.
 - Côté front, le token est persisté dans `localStorage` (`charactersAccess`),
-  les onglets « Personnages » / « Créer » et leurs routes ne sont visibles
-  qu'une fois déverrouillé (cf. `frontend/README.md`).
+  les onglets « Personnages » / « Créer » / « Parties » et leurs routes ne sont
+  visibles qu'une fois déverrouillé (cf. `frontend/README.md`).
+- La vue admin des parties (`/admin/games` côté front) réutilise ce même
+  déverrouillage : un seul mot de passe donne accès à la gestion des personnages
+  **et** à la consultation / suppression des parties.
 - `GET /api/cosmos` reste **ouvert** : le lobby en a besoin pour le mode « cosmos ».
 
 ### Sécurité des données

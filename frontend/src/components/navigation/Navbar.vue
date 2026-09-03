@@ -107,6 +107,9 @@ async function copyJoinUrl() {
       <BNavItem v-if="isCharactersUnlocked" to="/characters" class="arcade-nav-link">
         <i class="fa-solid fa-user-plus"></i> Créer
       </BNavItem>
+      <BNavItem v-if="isCharactersUnlocked" to="/admin/games" class="arcade-nav-link">
+        <i class="fa-solid fa-gamepad"></i> Parties
+      </BNavItem>
       <li class="arcade-nav-link nav-item">
         <button
           type="button"

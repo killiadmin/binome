@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccessController;
 use App\Http\Controllers\ActionController;
+use App\Http\Controllers\AdminGameController;
 use App\Http\Controllers\CharacterController;
 use App\Http\Controllers\CosmosController;
 use App\Http\Controllers\GameController;
@@ -38,6 +39,13 @@ Route::prefix('characters')->middleware('characters.access')->group(function () 
     Route::patch('{character}/forbidden-words', [CharacterController::class, 'updateForbiddenWords']);
     Route::post('{character}/image', [CharacterController::class, 'uploadImage']);
     Route::delete('{character}', [CharacterController::class, 'destroy']);
+});
+
+// Vue admin des parties — protégée par le même mot de passe que la gestion des personnages.
+Route::prefix('admin/games')->middleware('characters.access')->group(function () {
+    Route::get('/', [AdminGameController::class, 'index']);
+    Route::get('{game}', [AdminGameController::class, 'show']);
+    Route::delete('{game}', [AdminGameController::class, 'destroy']);
 });
 
 Route::prefix('rooms')->group(function () {

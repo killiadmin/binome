@@ -19,7 +19,13 @@ const success = ref(null)
 // ─── FILTRES ──────────────────────────────────────────────────────────────────
 
 const searchQuery = ref('')
-const statusFilter = reactive({ validated: true, pending: true })
+const statusFilter = reactive({ validated: true, pending: true, rejected: false })
+
+// 'validated' (relu + non masqué) | 'pending' (proposé, pas encore relu) | 'rejected' (binôme refusé)
+function characterStatus(c) {
+  if (c.hidden) return 'rejected'
+  return c.verif_manual ? 'validated' : 'pending'
+}
 const selectedCosmosFilters = ref(null) // null tant que non initialisé (= tout coché)
 
 const cosmosFilterOptions = computed(() => {
@@ -48,8 +54,7 @@ const filteredCharacters = computed(() => {
   const search = searchQuery.value.trim().toLowerCase()
 
   return characters.value.filter((c) => {
-    if (c.verif_manual && !statusFilter.validated) return false
-    if (!c.verif_manual && !statusFilter.pending) return false
+    if (!statusFilter[characterStatus(c)]) return false
 
     if (selectedCosmosFilters.value) {
       const cosmosKey = c.cosmos_name || '__none__'
@@ -105,7 +110,8 @@ function groupByLevel(chars) {
     .sort(([a], [b]) => a - b)
     .map(([level, levelCharacters]) => ({
       level,
-      isBinome: levelCharacters.length >= 2,
+      // Un binôme refusé ne compte pas comme binôme actif.
+      isBinome: levelCharacters.filter(c => !c.hidden).length >= 2,
       characters: [...levelCharacters].sort((a, b) => a.name.localeCompare(b.name)),
     }))
 }
@@ -551,6 +557,9 @@ onMounted(() => {
             <label class="filter-check">
               <input type="checkbox" v-model="statusFilter.pending" /> À valider
             </label>
+            <label class="filter-check">
+              <input type="checkbox" v-model="statusFilter.rejected" /> Binômes refusés
+            </label>
           </div>
         </div>
 
@@ -608,7 +617,10 @@ onMounted(() => {
                 <div class="character-row__info">
                   <div class="character-row__name">
                     {{ character.name }}
-                    <span v-if="character.verif_manual === false" class="word-badge word-badge--pending">
+                    <span v-if="character.hidden" class="word-badge word-badge--rejected">
+                      <i class="fa-solid fa-xmark"></i> binôme refusé
+                    </span>
+                    <span v-else-if="character.verif_manual === false" class="word-badge word-badge--pending">
                       <i class="fa-solid fa-hourglass-half"></i> à valider
                     </span>
                   </div>
@@ -1023,6 +1035,13 @@ onMounted(() => {
 .word-badge--pending {
   background: #8a5a00;
   color: #ffe9c7;
+  margin-left: 0.4rem;
+  font-size: 0.65rem;
+}
+
+.word-badge--rejected {
+  background: #7a1f1f;
+  color: #ffd7d7;
   margin-left: 0.4rem;
   font-size: 0.65rem;
 }

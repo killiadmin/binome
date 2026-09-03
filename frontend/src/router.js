@@ -40,6 +40,12 @@ const routes = [
         name: 'CharacterList',
         component: CharacterListPage,
         meta: { requiresCharactersAccess: true },
+    },
+    {
+        path: '/admin/games',
+        name: 'AdminGames',
+        component: () => import('./pages/Admin/AdminGamesPage.vue'),
+        meta: { requiresCharactersAccess: true },
     }
 ];
 
