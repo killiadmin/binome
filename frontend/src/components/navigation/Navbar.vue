@@ -1,14 +1,49 @@
 <script setup>
 import {ref, watch} from 'vue';
-import {useRoute} from 'vue-router';
-import {BNav, BNavItem} from 'bootstrap-vue-next';
+import {useRoute, useRouter} from 'vue-router';
+import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
+import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
 
 const isOpen = ref(false);
 const route = useRoute();
+const router = useRouter();
 
 watch(() => route.fullPath, () => {
   isOpen.value = false;
 });
+
+// ─── Accès « gestion des personnages » ───────────────────────────────────────
+const showUnlockModal = ref(false);
+const passwordInput = ref('');
+const unlockError = ref(null);
+const unlocking = ref(false);
+
+async function submitUnlock() {
+  if (unlocking.value) return;
+  unlocking.value = true;
+  unlockError.value = null;
+  try {
+    await charactersAccess.unlock(passwordInput.value);
+    showUnlockModal.value = false;
+    passwordInput.value = '';
+  } catch (e) {
+    unlockError.value = e.response?.data?.message || 'Mot de passe incorrect.';
+  } finally {
+    unlocking.value = false;
+  }
+}
+
+function onUnlockModalHidden() {
+  unlockError.value = null;
+  passwordInput.value = '';
+}
+
+function lockAccess() {
+  charactersAccess.lock();
+  if (route.meta.requiresCharactersAccess) {
+    router.push('/');
+  }
+}
 </script>
 
 <template>
@@ -35,14 +70,61 @@ watch(() => route.fullPath, () => {
       <BNavItem to="/rules" class="arcade-nav-link">
         <i class="fa-solid fa-book"></i> Règles
       </BNavItem>
-      <BNavItem to="/characters/list" class="arcade-nav-link">
+      <BNavItem v-if="isCharactersUnlocked" to="/characters/list" class="arcade-nav-link">
         <i class="fa-solid fa-user-astronaut"></i> Personnages
       </BNavItem>
-      <BNavItem to="/characters" class="arcade-nav-link">
+      <BNavItem v-if="isCharactersUnlocked" to="/characters" class="arcade-nav-link">
         <i class="fa-solid fa-user-plus"></i> Créer
       </BNavItem>
+      <li class="arcade-nav-link nav-item">
+        <button
+          v-if="!isCharactersUnlocked"
+          type="button"
+          class="nav-link arcade-lock-btn"
+          title="Accéder à la gestion des personnages"
+          @click="showUnlockModal = true"
+        >
+          <i class="fa-solid fa-lock"></i>
+        </button>
+        <button
+          v-else
+          type="button"
+          class="nav-link arcade-lock-btn"
+          title="Verrouiller la gestion des personnages"
+          @click="lockAccess"
+        >
+          <i class="fa-solid fa-lock-open"></i>
+        </button>
+      </li>
     </BNav>
   </nav>
+
+  <BModal
+    v-model="showUnlockModal"
+    title="Gestion des personnages"
+    no-footer
+    class="arcade-modal"
+    @hidden="onUnlockModalHidden"
+  >
+    <p class="mb-2">Saisis le mot de passe pour afficher les onglets de gestion des personnages.</p>
+    <form @submit.prevent="submitUnlock">
+      <BFormInput
+        v-model="passwordInput"
+        type="password"
+        placeholder="Mot de passe"
+        autofocus
+      />
+      <p v-if="unlockError" class="text-danger mt-2 mb-0">{{ unlockError }}</p>
+      <div class="text-center mt-3">
+        <button type="submit" class="cabinet-btn cabinet-btn--sm" :disabled="unlocking || !passwordInput">
+          <i class="fa-solid fa-unlock"></i> Déverrouiller
+        </button>
+        <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="showUnlockModal = false">
+          Annuler
+        </button>
+      </div>
+    </form>
+  </BModal>
 </template>
 
 <style scoped>
@@ -114,6 +196,21 @@ watch(() => route.fullPath, () => {
 
 .arcade-nav-link :deep(.router-link-active) {
   background: var(--arcade-taupe);
+}
+
+.arcade-lock-btn {
+  background: transparent;
+  border: none;
+  font-weight: 700;
+  color: var(--arcade-beige) !important;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.arcade-lock-btn:hover {
+  background: rgba(245, 245, 220, 0.15);
 }
 
 /* From tablet width up: show links inline, hide the burger */

@@ -46,6 +46,19 @@ export const roomService = {
     },
 
     /**
+     * Configurer le mode de jeu (hôte uniquement)
+     * PATCH /api/rooms/{room}/settings
+     * body: { player_id, game_mode: 'random' | 'cosmos', cosmos_id? }
+     */
+    updateSettings(roomId, playerId, { gameMode, cosmosId }) {
+        return api.patch(`/rooms/${roomId}/settings`, {
+            player_id: playerId,
+            game_mode: gameMode,
+            cosmos_id: cosmosId ?? null,
+        })
+    },
+
+    /**
      * Lancer la partie (créateur uniquement)
      * POST /api/rooms/{room}/start
      * body: { player_id }

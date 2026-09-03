@@ -70,6 +70,10 @@ export function useReverb(playerId = null) {
             channel.listen('.player.ready', callbacks.onPlayerReady)
         }
 
+        if (callbacks.onRoomSettingsUpdated) {
+            channel.listen('.room.settings.updated', callbacks.onRoomSettingsUpdated)
+        }
+
         if (callbacks.onGameStarted) {
             channel.listen('.game.started', callbacks.onGameStarted)
         }

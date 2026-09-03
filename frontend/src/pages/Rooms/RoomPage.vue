@@ -2,6 +2,7 @@
 import {ref, onMounted, onUnmounted, computed} from 'vue'
 import {useRouter} from 'vue-router'
 import {roomService} from '../../services/roomService'
+import {characterService} from '../../services/characterService'
 import {useReverb} from '../../sockets/useReverb'
 import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput, BAlert, BSpinner, BBadge} from 'bootstrap-vue-next'
 import {resetEcho} from "../../sockets/useReverb.js";
@@ -28,6 +29,60 @@ const startingGame = ref(false)
 const gameStarting = ref(false)
 const showRejoinModal = ref(false)
 const pendingGameId   = ref(null)
+
+// ─── MODE DE JEU ──────────────────────────────────────────────────────────────
+const gameMode = ref('random')          // 'random' | 'cosmos'
+const cosmosId = ref(null)
+const cosmosOptions = ref([])            // [{ id, name, playable_universe_count }]
+const savingSettings = ref(false)
+
+const pairsNeeded = computed(() => Math.max(1, Math.ceil(players.value.length / 2)))
+
+const selectedCosmos = computed(
+    () => cosmosOptions.value.find(c => c.id === cosmosId.value) || null
+)
+
+const selectedCosmosFeasible = computed(
+    () => !!selectedCosmos.value && selectedCosmos.value.playable_universe_count >= pairsNeeded.value
+)
+
+const startBlockedReason = computed(() => {
+  if (gameMode.value !== 'cosmos') return null
+  if (!cosmosId.value) return 'Choisis un cosmos pour démarrer.'
+  if (!selectedCosmosFeasible.value) {
+    const n = selectedCosmos.value?.playable_universe_count ?? 0
+    return `${selectedCosmos.value?.name} : ${n} binôme(s) possible(s), il en faut ${pairsNeeded.value}.`
+  }
+  return null
+})
+
+async function loadCosmosOptions() {
+  try {
+    const res = await characterService.listCosmos()
+    cosmosOptions.value = res.data.cosmos ?? []
+  } catch {
+    cosmosOptions.value = []
+  }
+}
+
+async function handleUpdateSettings() {
+  if (!isHost.value || !roomId.value) return
+  // En mode cosmos, on n'enregistre qu'une fois le cosmos choisi (évite un 422 inutile).
+  if (gameMode.value === 'cosmos' && !cosmosId.value) return
+  savingSettings.value = true
+  error.value = null
+
+  try {
+    await roomService.updateSettings(roomId.value, playerId.value, {
+      gameMode: gameMode.value,
+      cosmosId: gameMode.value === 'cosmos' ? cosmosId.value : null,
+    })
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Erreur lors de la mise à jour du mode de jeu.'
+  } finally {
+    savingSettings.value = false
+  }
+}
 
 // ─── SESSION localStorage ─────────────────────────────────────────────────────
 
@@ -69,6 +124,8 @@ async function restoreSession() {
     hostId.value   = session.hostId
     isHost.value   = session.isHost
     players.value  = res.data.room.players
+    gameMode.value = res.data.room.game_mode ?? 'random'
+    cosmosId.value = res.data.room.cosmos_id ?? null
 
     resetEcho()
     initLobby(session.roomId)
@@ -145,6 +202,10 @@ function initLobby(id) {
     onPlayerReady: (data) => {
       players.value = data.players
     },
+    onRoomSettingsUpdated: (data) => {
+      gameMode.value = data.game_mode ?? 'random'
+      cosmosId.value = data.cosmos_id ?? null
+    },
     onGameStarted: (data) => {
       console.log('[GameStarted] data reçu :', data)
       gameStatus.value = 'in_progress'
@@ -205,6 +266,8 @@ const handleJoinGame = async () => {
     gameCode.value = res.data.room.code
     playerId.value = res.data.player.id
     players.value = res.data.room.players
+    gameMode.value = res.data.room.game_mode ?? 'random'
+    cosmosId.value = res.data.room.cosmos_id ?? null
     isHost.value = false
 
     saveSession()
@@ -279,6 +342,7 @@ const isCurrentPlayerReady = computed(() => {
 
 onMounted(() => {
   restoreSession()
+  loadCosmosOptions()
 })
 
 onUnmounted(() => {
@@ -370,6 +434,61 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
               </div>
             </div>
 
+            <!-- Mode de jeu -->
+            <div v-if="gameStatus === 'waiting'" class="game-mode-panel">
+              <h5 class="roster__title">Mode de jeu</h5>
+
+              <template v-if="isHost">
+                <div class="mode-toggle">
+                  <button
+                      type="button"
+                      class="mode-toggle__btn"
+                      :class="{ 'is-active': gameMode === 'random' }"
+                      @click="gameMode = 'random'; handleUpdateSettings()"
+                  >
+                    <i class="fa-solid fa-shuffle"></i> Aléatoire
+                  </button>
+                  <button
+                      type="button"
+                      class="mode-toggle__btn"
+                      :class="{ 'is-active': gameMode === 'cosmos' }"
+                      @click="gameMode = 'cosmos'; handleUpdateSettings()"
+                  >
+                    <i class="fa-solid fa-globe"></i> Cosmos imposé
+                  </button>
+                </div>
+
+                <div v-if="gameMode === 'cosmos'" class="mode-cosmos">
+                  <select
+                      v-model="cosmosId"
+                      class="form-select mode-cosmos__select"
+                      @change="handleUpdateSettings"
+                  >
+                    <option :value="null" disabled>— Choisir un cosmos —</option>
+                    <option
+                        v-for="c in cosmosOptions"
+                        :key="c.id"
+                        :value="c.id"
+                        :disabled="c.playable_universe_count < pairsNeeded"
+                    >
+                      {{ c.name }} — {{ c.playable_universe_count }} binôme(s) possible(s)
+                    </option>
+                  </select>
+                  <p class="mode-cosmos__hint">
+                    Il faut au moins {{ pairsNeeded }} univers jouables dans le cosmos
+                    ({{ players.length }} joueur{{ players.length > 1 ? 's' : '' }}).
+                  </p>
+                </div>
+              </template>
+
+              <p v-else class="mode-readonly">
+                <i :class="gameMode === 'cosmos' ? 'fa-solid fa-globe' : 'fa-solid fa-shuffle'"></i>
+                {{ gameMode === 'cosmos'
+                    ? `Cosmos imposé${selectedCosmos ? ' — ' + selectedCosmos.name : ''}`
+                    : 'Univers aléatoires' }}
+              </p>
+            </div>
+
             <div class="btn-actions-row mb-3">
               <button
                   v-if="gameStatus === 'waiting'"
@@ -416,11 +535,15 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                   v-if="isHost && gameStatus === 'waiting' && !startingGame"
                   type="button"
                   class="play-btn"
-                  :disabled="players.length < 2"
+                  :disabled="players.length < 2 || !!startBlockedReason"
                   @click="handleStartGame"
               >
                 <i class="fa-solid fa-play"></i> Démarrer la partie
               </button>
+
+              <p v-if="isHost && gameStatus === 'waiting' && startBlockedReason" class="start-blocked">
+                <i class="fa-solid fa-circle-info"></i> {{ startBlockedReason }}
+              </p>
 
               <BAlert
                   v-if="!isHost && gameStarting"
@@ -580,5 +703,54 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   display: flex;
   justify-content: space-evenly;
   flex-direction: row-reverse;
+}
+
+/* ── Mode de jeu ──────────────────────────────────────────────── */
+.game-mode-panel {
+  margin-bottom: 1.25rem;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.mode-toggle__btn {
+  flex: 1 1 140px;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--arcade-blue-grey-dark, #37474f);
+  border-radius: 10px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-toggle__btn.is-active {
+  background: var(--arcade-blue-grey-dark, #37474f);
+  color: #fff;
+}
+
+.mode-cosmos__select {
+  margin-bottom: 0.4rem;
+}
+
+.mode-cosmos__hint,
+.mode-readonly {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--arcade-blue-grey-dark, #37474f);
+  margin: 0;
+}
+
+.start-blocked {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: #c62828;
+  text-align: center;
 }
 </style>

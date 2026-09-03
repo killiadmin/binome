@@ -58,6 +58,7 @@ src/
 │
 ├── services/
 │   ├── api.js                  # Instance Axios configurée
+│   ├── charactersAccess.js     # Déverrouillage par mot de passe des pages personnages (token en session)
 │   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
 │   ├── gameService.js          # Appels API partie
 │   └── roomService.js          # Appels API salon
@@ -130,7 +131,29 @@ export const api = axios.create({
 })
 ```
 
-Inclut un intercepteur de réponse pour logger les erreurs 401, 403, 422, 500.
+Inclut un intercepteur de réponse pour logger les erreurs 401, 403, 422, 500,
+et un intercepteur de **requête** qui joint l'en-tête `X-Characters-Access`
+(token d'accès à la gestion des personnages) quand il est présent en session.
+
+---
+
+### `charactersAccess.js` — Accès cloisonné aux personnages
+
+Les pages **Liste des personnages** (`/characters/list`) et **Création de
+personnages** (`/characters`) sont masquées par défaut et protégées par un mot
+de passe (défini côté backend dans `CHARACTERS_ACCESS_PASSWORD`).
+
+- `charactersAccess.unlock(password)` → `POST /api/access/characters`, stocke le
+  `token` renvoyé dans `localStorage` sous la clé `charactersAccess`.
+- `charactersAccess.isUnlocked` (computed réactif) → pilote l'affichage des deux
+  onglets dans `Navbar.vue` ; le cadenas ouvre la modale de saisie du mot de passe.
+- `charactersAccess.lock()` → oublie le token (reverrouille).
+- `router.js` : une garde `beforeEach` renvoie vers l'accueil toute navigation
+  vers une route `meta.requiresCharactersAccess` sans token (accès direct par URL).
+- Le token étant persisté, le mot de passe n'est demandé qu'une fois par
+  navigateur (jusqu'à `lock()` ou vidage du `localStorage`).
+- `api.js` renvoie ce token via `X-Characters-Access` sur toutes les requêtes ;
+  le backend le valide sur `/universes*`, `/characters*` et `POST /cosmos`.
 
 ---
 
@@ -173,11 +196,12 @@ joinRoom(roomId, {
     onHere:           (members) => {},   // liste initiale des connectés
     onJoining:        (member)  => {},   // quelqu'un se connecte au channel
     onLeaving:        (member)  => {},   // quelqu'un se déconnecte
-    onPlayerJoined:   (data)    => {},   // event: un joueur a rejoint le salon
-    onPlayerReady:    (data)    => {},   // event: toggle prêt/pas prêt
-    onPlayerLeft:     (data)    => {},   // event: un joueur a quitté le salon
-    onGameStarted:    (data)    => {},   // event: la partie démarre
-    onError:          (error)   => {},   // erreur d'auth ou de connexion
+    onPlayerJoined:        (data)  => {},   // event: un joueur a rejoint le salon
+    onPlayerReady:         (data)  => {},   // event: toggle prêt/pas prêt
+    onPlayerLeft:          (data)  => {},   // event: un joueur a quitté le salon
+    onRoomSettingsUpdated: (data)  => {},   // event: l'hôte change le mode de jeu / cosmos
+    onGameStarted:         (data)  => {},   // event: la partie démarre
+    onError:               (error) => {},   // erreur d'auth ou de connexion
 })
 ```
 
@@ -245,8 +269,12 @@ Page principale du lobby. Gère :
 - **Créer un salon** → `POST /api/rooms`
 - **Rejoindre un salon** → `POST /api/rooms/join`
 - **Toggle prêt** → `PATCH /api/rooms/{room}/ready`
+- **Mode de jeu** (hôte) → `PATCH /api/rooms/{room}/settings` : « Aléatoire » ou « Cosmos imposé »
+  (dropdown alimenté par `characterService.listCosmos()`, options grisées si
+  `playable_universe_count < ceil(nbJoueurs / 2)`). Les autres joueurs voient le mode en lecture seule.
 - **Quitter le salon** → `DELETE /api/rooms/{room}/leave` + confirmation modal
-- **Lancer la partie** → `POST /api/rooms/{room}/start` (hôte uniquement)
+- **Lancer la partie** → `POST /api/rooms/{room}/start` (hôte uniquement ; bouton désactivé tant
+  qu'un cosmos infaisable ou aucun cosmos n'est choisi en mode « Cosmos imposé »)
 - **WebSocket lobby** → `presence-room.{roomId}`
 - **Session** → sauvegarde/restauration localStorage
 
@@ -261,7 +289,11 @@ Page principale du lobby. Gère :
 | `isHost` | Boolean | Le joueur actuel est-il l'hôte ? |
 | `players` | Array | Liste des joueurs avec `is_ready` |
 | `gameStatus` | String | `waiting` ou `in_progress` |
+| `gameMode` | String | `random` ou `cosmos` |
+| `cosmosId` | Number\|null | Cosmos imposé (mode `cosmos`) |
+| `cosmosOptions` | Array | Cosmos + `playable_universe_count` (via `characterService.listCosmos()`) |
 | `isCurrentPlayerReady` | Computed | Statut prêt du joueur actuel |
+| `pairsNeeded` / `selectedCosmosFeasible` / `startBlockedReason` | Computed | Faisabilité du cosmos vs nb de joueurs |
 
 #### Comportement temps réel
 
@@ -269,6 +301,7 @@ Page principale du lobby. Gère :
 |---|---|
 | `player.joined` | `players.value = data.players` |
 | `player.ready` | `players.value = data.players` |
+| `room.settings.updated` | `gameMode` / `cosmosId` mis à jour chez tous les joueurs |
 | `player.left` | `players.value = data.players` + update `hostId` si transfert |
 | `game.started` | Redirect vers `RoundPage` avec `gameId` |
 
@@ -298,6 +331,7 @@ Page de jeu principale. Gère :
 | `join(code, pseudo)` | POST | `/rooms/join` | `{ pseudo, code }` |
 | `get(roomId)` | GET | `/rooms/{id}` | — |
 | `ready(roomId, playerId)` | PATCH | `/rooms/{id}/ready` | `{ player_id }` |
+| `updateSettings(roomId, playerId, { gameMode, cosmosId })` | PATCH | `/rooms/{id}/settings` | `{ player_id, game_mode, cosmos_id }` |
 | `leave(roomId, playerId)` | DELETE | `/rooms/{id}/leave` | `{ player_id }` |
 | `start(roomId, playerId)` | POST | `/rooms/{id}/start` | `{ player_id }` |
 
