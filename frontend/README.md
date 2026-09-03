@@ -44,6 +44,8 @@ src/
 │   └── useEcho.js              # (non utilisé — remplacé par useReverb)
 │
 ├── pages/
+│   ├── Admin/
+│   │   └── AdminGamesPage.vue    # Vue admin : lister / consulter / supprimer les parties (accès `charactersAccess`)
 │   ├── Characters/
 │   │   ├── CharacterPage.vue      # Créer un personnage (univers/cosmos existant ou nouveau)
 │   │   └── CharacterListPage.vue  # Liste triée cosmos → univers → binômes, filtres, édition/suppression, validation des propositions
@@ -57,6 +59,7 @@ src/
 │       └── RulePage.vue
 │
 ├── services/
+│   ├── adminService.js         # Appels API vue admin des parties (liste / détail / suppression)
 │   ├── api.js                  # Instance Axios configurée
 │   ├── charactersAccess.js     # Déverrouillage par mot de passe des pages personnages (token en session)
 │   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
@@ -139,9 +142,11 @@ et un intercepteur de **requête** qui joint l'en-tête `X-Characters-Access`
 
 ### `charactersAccess.js` — Accès cloisonné aux personnages
 
-Les pages **Liste des personnages** (`/characters/list`) et **Création de
-personnages** (`/characters`) sont masquées par défaut et protégées par un mot
-de passe (défini côté backend dans `CHARACTERS_ACCESS_PASSWORD`).
+Les pages **Liste des personnages** (`/characters/list`), **Création de
+personnages** (`/characters`) et **Parties** (`/admin/games` — vue admin :
+lister / consulter / supprimer les parties) sont masquées par défaut et
+protégées par un mot de passe (défini côté backend dans
+`CHARACTERS_ACCESS_PASSWORD`). Un seul déverrouillage donne accès aux trois.
 
 - `charactersAccess.unlock(password)` → `POST /api/access/characters`, stocke le
   `token` renvoyé dans `localStorage` sous la clé `charactersAccess`.
