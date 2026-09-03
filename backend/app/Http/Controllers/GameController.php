@@ -43,7 +43,13 @@ class GameController extends Controller
             ], 409);
         }
 
-        $game = $this->gameService->start($room);
+        try {
+            $game = $this->gameService->start($room);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        }
 
         return response()->json([
             'message' => 'La partie a démarré.',

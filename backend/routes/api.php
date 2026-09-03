@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccessController;
 use App\Http\Controllers\ActionController;
 use App\Http\Controllers\CharacterController;
 use App\Http\Controllers\CosmosController;
@@ -12,19 +13,23 @@ Route::get('/welcome', function () {
     return 'Welcome to laravel !';
 });
 
+// Authentification à la gestion des personnages (mot de passe -> token de session)
+Route::post('access/characters', [AccessController::class, 'characters']);
+
 Route::prefix('cosmos')->group(function () {
+    // GET /cosmos reste ouvert : utilisé par le lobby (mode de jeu « cosmos »).
     Route::get('/', [CosmosController::class, 'index']);
-    Route::post('/', [CosmosController::class, 'store']);
+    Route::post('/', [CosmosController::class, 'store'])->middleware('characters.access');
 });
 
-Route::prefix('universes')->group(function () {
+Route::prefix('universes')->middleware('characters.access')->group(function () {
     Route::get('/', [UniverseController::class, 'index']);
     Route::post('/', [UniverseController::class, 'store']);
     Route::patch('{universe}', [UniverseController::class, 'update']);
     Route::post('{universe}/characters', [CharacterController::class, 'store']);
 });
 
-Route::prefix('characters')->group(function () {
+Route::prefix('characters')->middleware('characters.access')->group(function () {
     Route::get('/', [CharacterController::class, 'index']);
     Route::get('pending', [CharacterController::class, 'pending']);
     Route::post('validation/accept', [CharacterController::class, 'accept']);
@@ -39,6 +44,7 @@ Route::prefix('rooms')->group(function () {
     Route::post('/', [RoomController::class, 'store']);
     Route::post('join', [RoomController::class, 'join']);
     Route::get('{room}', [RoomController::class, 'show']);
+    Route::patch('{room}/settings', [RoomController::class, 'updateSettings']);
     Route::patch('{room}/ready', [RoomController::class, 'ready']);
     Route::post('{room}/start', [GameController::class, 'start']);
     Route::delete('{room}/leave', [RoomController::class, 'leave']);

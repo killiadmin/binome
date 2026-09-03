@@ -25,6 +25,21 @@ Deviner le personnage secret des autres joueurs avant que son propre binome soit
 - Les joueurs sont regroupés en **binomes** de 2 personnes partageant le même univers, **à leur insu**
 - Chaque personnage possède **3 mots interdits**
 
+### Modes de jeu
+
+L'hôte choisit le mode dans le lobby (`PATCH /rooms/{room}/settings`) :
+
+| Mode (`rooms.game_mode`) | Comportement |
+|---|---|
+| `random` (défaut) | Chaque binome reçoit un **univers tiré au hasard** parmi les univers jouables. |
+| `cosmos` | L'hôte fixe un **cosmos** (`rooms.cosmos_id`) : tous les binomes reçoivent un univers **de ce cosmos**. |
+
+Dans les deux modes : **un univers distinct par binome**, et binome = 2 persos du même univers au
+même `level_affectation`. Un univers est « jouable » s'il a ≥ 2 personnages `playable()` partageant
+un niveau. Le mode `cosmos` exige donc **≥ (nb de joueurs / 2) univers jouables** dans le cosmos,
+sinon le démarrage renvoie une erreur `422` (message nommant le cosmos et les compteurs).
+`GET /cosmos` expose `playable_universe_count` par cosmos pour l'affichage côté lobby.
+
 ### Déroulement
 - Les joueurs jouent **chacun leur tour**, dans le même ordre à chaque round
 - À son tour, un joueur peut effectuer **une seule action** parmi deux :
@@ -188,6 +203,7 @@ Un personnage créé via la fiche de perso classique est directement `verif_manu
 app/
 ├── Enums/
 │   ├── GameStatus.php          # waiting | in_progress | finished
+│   ├── GameMode.php            # random | cosmos
 │   └── ActionType.php          # question | accusation
 │
 ├── Events/
@@ -198,7 +214,8 @@ app/
 │   ├── GameEnded.php
 │   ├── PlayerJoined.php        # broadcast quand un joueur rejoint le lobby
 │   ├── PlayerReady.php         # broadcast quand un joueur toggle son statut prêt
-│   └── PlayerLeft.php          # broadcast quand un joueur quitte le lobby
+│   ├── PlayerLeft.php          # broadcast quand un joueur quitte le lobby
+│   └── RoomSettingsUpdated.php # broadcast quand l'hôte change le mode de jeu / le cosmos
 │
 ├── Console/
 │   └── Commands/
@@ -252,7 +269,7 @@ database/
     ├── create_cosmos_table.php
     ├── create_universes_table.php   # + add_cosmos_id_to_universes_table
     ├── create_characters_table.php
-    ├── create_rooms_table.php
+    ├── create_rooms_table.php       # + add_game_mode_to_rooms_table (game_mode, cosmos_id)
     ├── create_players_table.php
     ├── create_room_player_table.php
     ├── create_games_table.php
@@ -346,7 +363,9 @@ Action
 
 ### Champs importants sur `rooms`
 ```php
-$table->foreignId('created_by')->constrained('players'); // seul l'hôte peut start
+$table->foreignId('created_by')->constrained('players');       // seul l'hôte peut start
+$table->string('game_mode')->default('random');                // random | cosmos (App\Enums\GameMode)
+$table->foreignId('cosmos_id')->nullable()->constrained('cosmos')->nullOnDelete(); // mode cosmos uniquement
 ```
 
 ---
@@ -359,8 +378,9 @@ Point d'entrée : `start(Room $room): Game`
 
 1. Valide que le nombre de joueurs est pair et ≥ 4, et que tous sont `is_ready`
 2. Crée la `Game` avec le statut `in_progress`
-3. Mélange aléatoirement les joueurs → forme des paires → assigne un `Universe` par paire → assigne 2 `Character` distincts du même univers
+3. Mélange aléatoirement les joueurs → forme des paires → `resolveUniverses()` tire un `Universe` distinct par paire → assigne 2 `Character` distincts du même univers et du même niveau
    - **Seuls les personnages `playable()` sont tirés** (`verif_manual = true`, `hidden = false`) ; la sélection d'univers ne retient que ceux ayant au moins un binôme jouable au même niveau. Une proposition non validée n'arrive donc jamais en partie.
+   - `resolveUniverses()` respecte `room.game_mode` : en mode `cosmos`, les univers sont filtrés sur `room.cosmos_id` ; s'il n'y en a pas assez, une `Exception` est levée (renvoyée en `422` par `GameController::start`, qui enveloppe désormais l'appel dans un `try/catch`).
 4. Délègue la création du premier round à `RoundService::createRound()`
 5. Broadcast `GameStarted`
 
@@ -430,8 +450,9 @@ Point d'entrée : `start(Room $room): Game`
 
 | Méthode | Route | Controller | Description |
 |---|---|---|---|
-| `GET` | `/api/cosmos` | `CosmosController@index` | Liste des cosmos (+ nb d'univers) |
-| `POST` | `/api/cosmos` | `CosmosController@store` | Créer un cosmos |
+| `POST` | `/api/access/characters` | `AccessController@characters` | Échange le mot de passe d'accès personnages (`password`) contre un `token` — `422` si incorrect |
+| `GET` | `/api/cosmos` | `CosmosController@index` | Liste des cosmos (+ nb d'univers, + `playable_universe_count`) — **route ouverte** (lobby) |
+| `POST` | `/api/cosmos` | `CosmosController@store` | Créer un cosmos — 🔒 `characters.access` |
 | `GET` | `/api/universes` | `UniverseController@index` | Liste des univers (+ cosmos rattaché) |
 | `POST` | `/api/universes` | `UniverseController@store` | Créer un univers (`cosmos_id` optionnel) |
 | `PATCH` | `/api/universes/{universe}` | `UniverseController@update` | Modifier le cosmos d'un univers |
@@ -446,7 +467,8 @@ Point d'entrée : `start(Room $room): Game`
 | `DELETE` | `/api/characters/{character}` | `CharacterController@destroy` | Supprimer un personnage |
 | `POST` | `/api/rooms` | `RoomController@store` | Créer un salon |
 | `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères |
-| `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs |
+| `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs + `game_mode` / `cosmos_id` |
+| `PATCH` | `/api/rooms/{room}/settings` | `RoomController@updateSettings` | Hôte : mode de jeu (`random` / `cosmos` + `cosmos_id`) → broadcast `RoomSettingsUpdated` |
 | `PATCH` | `/api/rooms/{room}/ready` | `RoomController@ready` | Toggle prêt/pas prêt |
 | `DELETE` | `/api/rooms/{room}/leave` | `RoomController@leave` | Quitter le salon (supprime le joueur en DB) |
 | `POST` | `/api/rooms/{room}/start` | `GameController@start` | Lancer la partie (créateur uniquement) |
@@ -456,6 +478,23 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
 | `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
 | `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/answer` | `ActionController@answer` | Répondre à une question (oui/non/je ne sais pas) |
+
+### Accès à la gestion des personnages
+
+Les routes `/api/universes*`, `/api/characters*` et `POST /api/cosmos` sont
+protégées par le middleware `characters.access` (`EnsureCharactersAccess`,
+alias déclaré dans `bootstrap/app.php`) :
+
+- Le mot de passe est lu dans `config('access.characters_password')` →
+  `CHARACTERS_ACCESS_PASSWORD` du `.env`. **Vide = accès refusé** (`403`).
+- `POST /api/access/characters` vérifie le mot de passe et renvoie un `token`
+  stable (`hash_hmac`, non réversible).
+- Le client renvoie ce token dans l'en-tête `X-Characters-Access` sur chaque
+  requête protégée ; le middleware le compare via `hash_equals`.
+- Côté front, le token est persisté dans `localStorage` (`charactersAccess`),
+  les onglets « Personnages » / « Créer » et leurs routes ne sont visibles
+  qu'une fois déverrouillé (cf. `frontend/README.md`).
+- `GET /api/cosmos` reste **ouvert** : le lobby en a besoin pour le mode « cosmos ».
 
 ### Sécurité des données
 
@@ -495,6 +534,7 @@ La route par défaut de Laravel Broadcasting est désactivée — seule la route
 | `PlayerJoined` | `room.{id}` | `player.joined` | Quelqu'un rejoint le lobby |
 | `PlayerReady` | `room.{id}` | `player.ready` | Toggle prêt/pas prêt |
 | `PlayerLeft` | `room.{id}` | `player.left` | Quelqu'un quitte le lobby |
+| `RoomSettingsUpdated` | `room.{id}` | `room.settings.updated` | L'hôte change le mode de jeu / le cosmos |
 | `GameStarted` | `room.{id}` + `game.{id}` | `game.started` | Hôte lance la partie |
 | `RoundStarted` | `game.{id}` | `round.started` | Nouveau round créé |
 | `ActionPlayed` | `game.{id}` | `action.played` | Un joueur joue son tour |
@@ -522,6 +562,8 @@ type = accusation
    POST /api/rooms                      → créer salon (code 6 chars généré auto)
    POST /api/rooms/join                 → rejoindre avec le code
    → broadcast: PlayerJoined           → tous voient le nouveau joueur
+   PATCH /api/rooms/{room}/settings     → hôte : mode de jeu (random / cosmos)
+   → broadcast: RoomSettingsUpdated    → tous voient le mode choisi
    PATCH /api/rooms/{room}/ready        → toggle prêt/pas prêt
    → broadcast: PlayerReady            → tous voient le statut mis à jour
    DELETE /api/rooms/{room}/leave       → quitter (supprime le joueur en DB)
