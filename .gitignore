@@ -26,4 +26,7 @@ dist-ssr
 
 vendor
 
+# Généré par scripts/update-lan-ip.sh (IP LAN spécifique à la machine)
+frontend/public/lan-url.json
+
 CLAUDE.MD

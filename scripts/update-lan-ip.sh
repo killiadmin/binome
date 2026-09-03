@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# Prints the URL friends on the same Wi-Fi should open to join a game.
+# Détecte l'IP LAN de l'hôte, l'écrit dans frontend/public/lan-url.json et
+# affiche l'URL que les amis sur le même Wi-Fi doivent ouvrir pour rejoindre.
 #
-# The frontend no longer stores the LAN IP anywhere: the browser only talks to
-# the Vite dev server's own origin, which proxies /api, /broadcasting and the
-# /app WebSocket to the backend & Reverb containers. So there is nothing to
-# regenerate when the network changes — this script is purely informational.
+# Le navigateur ne parle qu'à l'origine du serveur Vite, qui proxifie /api,
+# /broadcasting et le WebSocket /app vers les conteneurs backend & Reverb : rien
+# à régénérer côté proxy quand le réseau change. Ce fichier lan-url.json sert
+# uniquement au bouton « Copier le lien » de la navbar, pour que l'hôte (qui
+# ouvre souvent http://localhost:5173) puisse partager l'URL LAN réelle.
 set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LAN_FILE="$ROOT_DIR/frontend/public/lan-url.json"
+PORT=5173
 
 detect_ip() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -20,13 +26,21 @@ detect_ip() {
     fi
 }
 
-IP="$(detect_ip || true)"
+# Override manuel : « LAN_IP=192.168.64.1 ./start.sh » ou « scripts/update-lan-ip.sh 192.168.64.1 »
+# utile quand la bonne interface n'est pas la route par défaut (VM, réseau hôte…).
+IP="${1:-${LAN_IP:-$(detect_ip || true)}}"
 
 if [[ -z "$IP" ]]; then
+    rm -f "$LAN_FILE"
     echo "Impossible de détecter l'IP LAN automatiquement." >&2
-    echo "Trouve-la à la main (Préférences Réseau) — tes amis ouvriront http://<IP>:5173" >&2
+    echo "Trouve-la à la main (Préférences Réseau) — tes amis ouvriront http://<IP>:${PORT}" >&2
     exit 0
 fi
 
+URL="http://${IP}:${PORT}/"
+mkdir -p "$(dirname "$LAN_FILE")"
+printf '{\n  "url": "%s",\n  "ip": "%s",\n  "port": %s,\n  "detectedAt": "%s"\n}\n' \
+    "$URL" "$IP" "$PORT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LAN_FILE"
+
 echo "IP LAN détectée : $IP"
-echo "Tes amis rejoignent la partie via : http://${IP}:5173"
+echo "Tes amis rejoignent la partie via : $URL"
