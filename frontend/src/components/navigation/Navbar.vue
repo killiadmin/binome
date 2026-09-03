@@ -1,8 +1,9 @@
 <script setup>
-import {ref, watch} from 'vue';
+import {ref, watch, onMounted} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
 import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
+import {copyToClipboard} from '../../services/copyToClipboard';
 
 const isOpen = ref(false);
 const route = useRoute();
@@ -44,6 +45,36 @@ function lockAccess() {
     router.push('/');
   }
 }
+
+// ─── Copier l'URL de connexion (celle du réseau local que les autres joueurs utilisent) ──
+const copyState = ref('idle'); // 'idle' | 'done' | 'error'
+// URL que les autres joueurs doivent ouvrir. Par défaut l'origine courante ;
+// si l'hôte est sur localhost, on récupère l'IP LAN réelle écrite par
+// scripts/update-lan-ip.sh dans public/lan-url.json (adresse dynamique).
+const joinUrl = ref(window.location.origin + '/');
+let copyResetTimer = null;
+
+onMounted(async () => {
+  const host = window.location.hostname;
+  const onLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  if (!onLocalhost) return; // déjà ouvert via l'IP LAN : l'origine courante convient
+  try {
+    const res = await fetch('/lan-url.json?t=' + Date.now(), {cache: 'no-store'});
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data?.url) joinUrl.value = data.url;
+  } catch (e) {
+    /* pas de fichier lan-url.json : on garde l'origine courante */
+  }
+});
+
+async function copyJoinUrl() {
+  copyState.value = (await copyToClipboard(joinUrl.value)) ? 'done' : 'error';
+  clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => {
+    copyState.value = 'idle';
+  }, 2000);
+}
 </script>
 
 <template>
@@ -76,6 +107,27 @@ function lockAccess() {
       <BNavItem v-if="isCharactersUnlocked" to="/characters" class="arcade-nav-link">
         <i class="fa-solid fa-user-plus"></i> Créer
       </BNavItem>
+      <li class="arcade-nav-link nav-item">
+        <button
+          type="button"
+          class="nav-link arcade-lock-btn"
+          :class="{ 'is-done': copyState === 'done', 'is-error': copyState === 'error' }"
+          :title="'Copier l\'URL pour rejoindre : ' + joinUrl"
+          @click="copyJoinUrl"
+        >
+          <i
+            class="fa-solid"
+            :class="{
+              'fa-link': copyState === 'idle',
+              'fa-check': copyState === 'done',
+              'fa-triangle-exclamation': copyState === 'error',
+            }"
+          ></i>
+          <span class="arcade-copy-label">{{
+            copyState === 'done' ? 'Copié !' : copyState === 'error' ? 'Échec' : 'Copier le lien'
+          }}</span>
+        </button>
+      </li>
       <li class="arcade-nav-link nav-item">
         <button
           v-if="!isCharactersUnlocked"
@@ -211,6 +263,18 @@ function lockAccess() {
 
 .arcade-lock-btn:hover {
   background: rgba(245, 245, 220, 0.15);
+}
+
+.arcade-copy-label {
+  margin-left: 0.4rem;
+}
+
+.arcade-lock-btn.is-done {
+  color: var(--arcade-green, #7bd88f) !important;
+}
+
+.arcade-lock-btn.is-error {
+  color: var(--arcade-red, #f2777a) !important;
 }
 
 /* From tablet width up: show links inline, hide the burger */

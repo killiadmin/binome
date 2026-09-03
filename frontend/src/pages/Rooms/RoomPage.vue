@@ -6,6 +6,7 @@ import {characterService} from '../../services/characterService'
 import {useReverb} from '../../sockets/useReverb'
 import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput, BAlert, BSpinner, BBadge} from 'bootstrap-vue-next'
 import {resetEcho} from "../../sockets/useReverb.js";
+import {copyToClipboard} from '../../services/copyToClipboard'
 
 const router = useRouter()
 
@@ -313,6 +314,19 @@ const handleStartGame = async () => {
 
 const showLeaveModal = ref(false)
 
+// ─── Copie du code de la partie (clic sur l'écran LCD pour le partager) ────────
+const codeCopied = ref(false)
+let codeCopiedTimer = null
+
+const copyGameCode = async () => {
+  if (!gameCode.value) return
+  const ok = await copyToClipboard(gameCode.value)
+  if (!ok) return
+  codeCopied.value = true
+  clearTimeout(codeCopiedTimer)
+  codeCopiedTimer = setTimeout(() => { codeCopied.value = false }, 2000)
+}
+
 const handleLeaveRoom = async () => {
   try {
     await roomService.leave(roomId.value, playerId.value)
@@ -394,9 +408,19 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
             <div class="lcd-screen">
               <span class="lcd-label">Code</span>
-              <div class="lcd-code">
+              <button
+                  type="button"
+                  class="lcd-code lcd-code--copy"
+                  :class="{ 'is-copied': codeCopied }"
+                  :title="codeCopied ? 'Code copié !' : 'Cliquer pour copier le code et le partager'"
+                  @click="copyGameCode"
+              >
                 <span v-for="(char, i) in gameCode.split('')" :key="i" class="lcd-char">{{ char }}</span>
-              </div>
+              </button>
+              <span class="lcd-copy-hint">
+                <i class="fa-solid" :class="codeCopied ? 'fa-check' : 'fa-copy'"></i>
+                {{ codeCopied ? 'Copié !' : 'Toucher pour copier' }}
+              </span>
             </div>
 
             <div class="status-pills">
@@ -653,6 +677,39 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
 .lcd-screen {
   margin-bottom: 1.25rem;
+}
+
+/* Le code devient un bouton « copier » sans perdre le look écran LCD */
+.lcd-code--copy {
+  cursor: pointer;
+  font: inherit;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.lcd-code--copy:hover {
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 10px rgba(124, 255, 158, 0.45);
+}
+
+.lcd-code--copy:active {
+  transform: translateY(1px);
+}
+
+.lcd-code--copy.is-copied {
+  border-color: #7CFF9E;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 14px rgba(124, 255, 158, 0.7);
+}
+
+.lcd-copy-hint {
+  font-family: 'Baloo 2', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--arcade-taupe);
+}
+
+.lcd-code--copy.is-copied + .lcd-copy-hint {
+  color: #4caf7d;
 }
 
 .status-pills {
