@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Enums\GameMode;
 use App\Enums\GameStatus;
 use App\Events\GameStarted;
 use App\Models\Binome;
 use App\Models\Character;
 use App\Models\Game;
 use App\Models\Room;
+use App\Models\Universe;
 use Exception;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -34,8 +36,8 @@ class GameService
                 'status' => GameStatus::InProgress,
             ]);
 
-            // 2. Former les binomes aléatoirement
-            $this->assignBinomes($game, $players);
+            // 2. Former les binomes (mode aléatoire ou cosmos imposé)
+            $this->assignBinomes($game, $players, $room);
 
             // 3. Créer le premier round
             $this->roundService->createRound($game, roundNumber: 1);
@@ -70,9 +72,11 @@ class GameService
     }
 
     /**
-     * Forme les binomes aléatoirement et assigne un personnage à chaque joueur
+     * Forme les binomes et assigne un personnage à chaque joueur.
+     * Un univers distinct par binome ; en mode « cosmos imposé » tous les
+     * univers proviennent du cosmos choisi par l'hôte.
      */
-    private function assignBinomes(Game $game, Collection $players): void
+    private function assignBinomes(Game $game, Collection $players, Room $room): void
     {
         // Mélange aléatoire des joueurs
         $shuffledPlayers = $players->shuffle();
@@ -80,23 +84,7 @@ class GameService
         // Découpe en paires : [P1, P2], [P3, P4], [P5, P6]...
         $pairs = $shuffledPlayers->chunk(2);
 
-        // Univers éligibles : ceux qui ont au moins un binôme de personnages
-        // JOUABLES (verif_manual = true, hidden = false) partageant un même niveau.
-        $eligibleUniverseIds = Character::playable()
-            ->select('universe_id')
-            ->groupBy('universe_id', 'level_affectation')
-            ->havingRaw('COUNT(*) >= 2')
-            ->pluck('universe_id')
-            ->unique();
-
-        $universes = \App\Models\Universe::whereIn('id', $eligibleUniverseIds)
-            ->inRandomOrder()
-            ->take($pairs->count())
-            ->get();
-
-        if ($universes->count() < $pairs->count()) {
-            throw new Exception('Pas assez d\'univers avec des personnages validés pour cette partie.');
-        }
+        $universes = $this->resolveUniverses($pairs->count(), $room);
 
         foreach ($pairs as $index => $pair) {
             $universe = $universes[$index];
@@ -131,5 +119,42 @@ class GameService
                 ]);
             });
         }
+    }
+
+    /**
+     * Tire `$pairCount` univers distincts jouables (≥ 2 personnages jouables au même
+     * niveau d'affectation). En mode « cosmos imposé », restreint au cosmos de la room.
+     */
+    private function resolveUniverses(int $pairCount, Room $room): Collection
+    {
+        // Univers éligibles : ceux qui ont au moins un binôme de personnages
+        // JOUABLES (verif_manual = true, hidden = false) partageant un même niveau.
+        $eligibleUniverseIds = Character::playable()
+            ->select('universe_id')
+            ->groupBy('universe_id', 'level_affectation')
+            ->havingRaw('COUNT(*) >= 2')
+            ->pluck('universe_id')
+            ->unique();
+
+        $query = Universe::whereIn('id', $eligibleUniverseIds)->inRandomOrder();
+
+        if ($room->game_mode === GameMode::Cosmos) {
+            $query->where('cosmos_id', $room->cosmos_id);
+        }
+
+        $universes = $query->take($pairCount)->get();
+
+        if ($universes->count() < $pairCount) {
+            if ($room->game_mode === GameMode::Cosmos) {
+                throw new Exception(
+                    "Le cosmos « {$room->cosmos?->name} » n'a que {$universes->count()} univers jouable(s) "
+                    ."pour {$pairCount} binôme(s). Choisis un autre cosmos ou ajoute des personnages."
+                );
+            }
+
+            throw new Exception('Pas assez d\'univers avec des personnages validés pour cette partie.');
+        }
+
+        return $universes;
     }
 }

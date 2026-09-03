@@ -1,6 +1,8 @@
 <?php
 
 namespace App\Models;
+
+use App\Enums\GameMode;
 use Illuminate\Database\Eloquent\Model;
 
 class Room extends Model
@@ -10,12 +12,15 @@ class Room extends Model
         'is_private',
         'is_locked',
         'max_players',
-        'created_by'
+        'game_mode',
+        'cosmos_id',
+        'created_by',
     ];
 
     protected $casts = [
         'is_private' => 'boolean',
         'is_locked' => 'boolean',
+        'game_mode' => GameMode::class,
     ];
 
     public function creator(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -23,10 +28,15 @@ class Room extends Model
         return $this->belongsTo(Player::class, 'created_by');
     }
 
+    public function cosmos(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Cosmos::class);
+    }
+
     public function players(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(Player::class, 'room_player') // 👈 Spécifiez le nom de la table
-        ->withPivot('is_ready')
+            ->withPivot('is_ready')
             ->withTimestamps();
     }
 

@@ -22,6 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
+
+        $middleware->alias([
+            'characters.access' => \App\Http\Middleware\EnsureCharactersAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
