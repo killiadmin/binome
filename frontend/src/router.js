@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { getCharactersAccessToken } from "./services/charactersAccess";
 
 import HomePage from "./pages/Home/HomePage.vue";
 import RoomPage from "./pages/Rooms/RoomPage.vue";
@@ -32,17 +33,26 @@ const routes = [
         path: '/characters',
         name: 'Character',
         component: CharacterPage,
+        meta: { requiresCharactersAccess: true },
     },
     {
         path: '/characters/list',
         name: 'CharacterList',
         component: CharacterListPage,
+        meta: { requiresCharactersAccess: true },
     }
 ];
 
 const router = createRouter({
     history: createWebHistory(),
     routes,
+});
+
+// Accès direct à une page « personnages » sans token -> retour à l'accueil.
+router.beforeEach((to) => {
+    if (to.meta.requiresCharactersAccess && !getCharactersAccessToken()) {
+        return { name: 'Home' };
+    }
 });
 
 export default router;

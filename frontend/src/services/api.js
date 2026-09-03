@@ -10,6 +10,17 @@ export const api = axios.create({
     },
 })
 
+// Joint le token d'accès « gestion des personnages » quand il est présent en
+// session (clé partagée avec charactersAccess.js, lue ici sans import pour
+// éviter une dépendance circulaire).
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('charactersAccess')
+    if (token) {
+        config.headers['X-Characters-Access'] = token
+    }
+    return config
+})
+
 api.interceptors.response.use(
     (response) => response,
     (error) => {
