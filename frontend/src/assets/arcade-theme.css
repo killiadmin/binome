@@ -440,3 +440,92 @@
 .arcade-modal .modal-title {
   font-weight: 800;
 }
+
+/* ── Panneau "console" sombre (sections d'une partie) ──────────── */
+.arcade-panel {
+  background: linear-gradient(180deg, rgba(90, 111, 125, 0.14), rgba(28, 34, 38, 0.85));
+  border: 3px solid var(--arcade-blue-grey-dark);
+  border-radius: 12px;
+  padding: 0.9rem 0.9rem 1rem;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(245, 245, 220, 0.08);
+}
+
+/* Intitulé de section en police pixel, encadré de deux blocs */
+.arcade-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.6rem;
+  line-height: 1.6;
+  color: var(--arcade-gold);
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+
+.arcade-eyebrow::before,
+.arcade-eyebrow::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: var(--arcade-gold);
+  box-shadow: 0 0 0 2px rgba(224, 163, 28, 0.25);
+  flex-shrink: 0;
+}
+
+.arcade-eyebrow::after {
+  margin-left: auto;
+}
+
+/* ── Cadre pixel pour une illustration (carte personnage…) ─────── */
+.pixel-frame {
+  position: relative;
+  border: 3px solid var(--arcade-blue-grey-dark);
+  border-radius: 6px;
+  background: #e5ddc8;
+  overflow: hidden;
+  box-shadow:
+      inset 0 0 0 2px var(--arcade-beige),
+      0 5px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Fines scanlines pour l'effet "écran de borne" */
+.pixel-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.12) 0px,
+      rgba(0, 0, 0, 0.12) 1px,
+      transparent 1px,
+      transparent 3px
+  );
+  opacity: 0.5;
+}
+
+/* ── Étiquette pixel (mots interdits, badges de round…) ────────── */
+.pixel-chip {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.55rem;
+  line-height: 1.5;
+  padding: 5px 8px;
+  border: 2px solid var(--arcade-blue-grey-dark);
+  border-radius: 4px;
+  background: var(--arcade-beige);
+  color: var(--arcade-blue-grey-dark);
+  white-space: nowrap;
+}
+
+.pixel-chip--danger {
+  background: #f7dede;
+  border-color: var(--arcade-danger);
+  color: var(--arcade-danger-dark);
+}
+
+.pixel-chip--gold {
+  background: rgba(224, 163, 28, 0.15);
+  border-color: var(--arcade-gold);
+  color: var(--arcade-gold);
+}

@@ -8,7 +8,6 @@ use App\Events\ActionPlayed;
 use App\Events\AnswerGiven;
 use App\Events\GameEnded;
 use App\Models\Action;
-use App\Models\Character;
 use App\Models\Game;
 use App\Models\Player;
 use App\Models\Round;
@@ -29,34 +28,14 @@ class ActionService
 
     public function playQuestion(Round $round, Player $player, string $question, Player $targetPlayer): Action
     {
-        $game = $round->game;
-
         $this->validateTurn($round, $player);
         $this->validateHasNotPlayedThisRound($round, $player);
 
-        // Récupère le personnage du joueur qui pose la question
-        $character = $player->getCharacterInGame($game);
-
-        // Vérifie les mots interdits du joueur questionneur
-        if ($character->checkForbiddenWords($question)) {
-            // On enregistre quand même l'action comme invalide
-            $action = $this->storeAction(
-                round:   $round,
-                player:  $player,
-                type:    ActionType::Question,
-                content: $question,
-                isValid: false,
-            );
-
-            broadcast(new ActionPlayed($action));
-
-            // La question est refusée : le joueur perd son tour
-            $this->advanceRound($round, $game);
-
-            return $action;
-        }
-
-        // Question valide
+        // Les mots interdits ne sont volontairement PAS contrôlés ici.
+        // La règle : ce sont les mots interdits du joueur CIBLÉ qui comptent, et
+        // c'est lui seul qui juge si la question en contient un. Il répond alors
+        // ce qu'il veut (y compris un mensonge). Le questionneur ne doit jamais
+        // apprendre qu'il a fauté — d'où l'absence de tout rejet côté serveur.
         $action = $this->storeAction(
             round:   $round,
             player:  $player,

@@ -172,6 +172,7 @@ class GameController extends Controller
             'character' => [
                 'id' => $character->id,
                 'name' => $character->name,
+                'image' => $character->image,
                 'universe' => $character->universe->name,
                 'cosmos' => $character->universe->cosmos?->name,
                 'forbidden_words' => $character->forbidden_words,
