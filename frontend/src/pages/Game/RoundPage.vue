@@ -5,7 +5,7 @@ import {gameService} from '../../services/gameService'
 import {useReverb, resetEcho} from '../../sockets/useReverb.js'
 import {
   BModal, BFormInput,
-  BFormSelect, BAlert, BSpinner
+  BAlert, BSpinner
 } from 'bootstrap-vue-next'
 
 const route = useRoute()
@@ -77,6 +77,18 @@ const isMyTurn = computed(() =>
 const currentPlayerName = computed(() => {
   const p = players.value.find(p => p.id === currentPlayerId.value)
   return p?.pseudo ?? '…'
+})
+
+// Mots interdits de MON personnage présents dans la question qu'on me pose.
+// Détection purement locale : le serveur ne renvoie mes mots interdits qu'à moi
+// (GET /games/{game}/me), donc cette info ne fuite jamais vers le questionneur.
+// Même sémantique que l'ancien contrôle serveur : sous-chaîne, insensible à la casse.
+const forbiddenWordsInQuestion = computed(() => {
+  const text = pendingQuestion.value?.question ?? ''
+  if (!text) return []
+  const haystack = text.toLowerCase()
+  return (myCharacter.value?.forbidden_words ?? [])
+      .filter(word => haystack.includes(String(word).toLowerCase()))
 })
 
 const otherPlayers = computed(() =>
@@ -437,7 +449,7 @@ function backToHome() {
 </script>
 
 <template>
-  <div class="round-page arcade-bg mt-5">
+  <div class="round-page arcade-bg">
 
     <!-- ── ANIMATION TRANSITION ROUND ─────────────────────────────────────── -->
     <div v-if="showRoundTransition" class="round-transition-overlay">
@@ -450,81 +462,108 @@ function backToHome() {
 
     <!-- Loading -->
     <div v-if="loading" class="loading-screen">
-      <div class="loading-orb"></div>
-      <p class="loading-text">Chargement de la partie…</p>
+      <div class="loading-blocks"><span></span><span></span><span></span></div>
+      <p class="loading-text">Chargement de la partie<span class="caret">_</span></p>
     </div>
 
     <template v-else>
 
       <!-- Erreur globale -->
-      <div v-if="error" class="error-banner">{{ error }}</div>
+      <div v-if="error" class="arcade-alert round-error">
+        <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+      </div>
 
-      <!-- ── HEADER : tour en cours ──────────────────────────────────────── -->
-      <div class="turn-banner" :class="isMyTurn ? 'turn-mine' : 'turn-other'">
-        <div class="turn-inner">
-          <span class="turn-icon">{{ isMyTurn ? '⚡' : '⏳' }}</span>
-          <div class="turn-text">
-            <span class="turn-main">
+      <!-- ── MARQUEE : tour en cours ─────────────────────────────────────── -->
+      <div class="turn-marquee" :class="isMyTurn ? 'is-mine' : 'is-other'">
+        <div class="turn-marquee__inner">
+          <span class="turn-marquee__icon">
+            <i :class="isMyTurn ? 'fa-solid fa-bolt' : 'fa-solid fa-hourglass-half'"></i>
+          </span>
+          <div class="turn-marquee__text">
+            <span class="turn-marquee__main">
               {{ isMyTurn ? 'Ton tour !' : `Tour de ${currentPlayerName}` }}
             </span>
-            <span class="turn-sub">Round {{ currentRound?.number ?? '—' }}</span>
+            <span class="turn-marquee__sub">
+              {{ isMyTurn ? 'Question ou accusation' : 'À toi de deviner…' }}
+            </span>
+          </div>
+          <div class="turn-marquee__round">
+            <span class="turn-marquee__round-label">Round</span>
+            <span class="lcd-code turn-marquee__lcd">
+              <span class="lcd-char">{{ currentRound?.number ?? '—' }}</span>
+            </span>
           </div>
         </div>
       </div>
 
       <!-- ── CARTE PERSONNAGE ────────────────────────────────────────────── -->
-      <div class="character-card">
-        <div class="character-card-glow"></div>
+      <section class="board-card character-board">
+        <div class="board-card__rivet board-card__rivet--tl"></div>
+        <div class="board-card__rivet board-card__rivet--tr"></div>
+        <div class="board-card__rivet board-card__rivet--bl"></div>
+        <div class="board-card__rivet board-card__rivet--br"></div>
 
-        <!-- Bouton flou -->
-        <button class="blur-toggle" @click="isBlurred = !isBlurred">
-          {{ isBlurred ? '👁 Révéler' : '🙈 Masquer' }}
-        </button>
-
-        <!-- Image du personnage -->
-        <div class="character-image-wrap" :class="{ blurred: isBlurred }">
-          <img
-              v-if="myCharacter?.image_url"
-              :src="myCharacter.image_url"
-              :alt="myCharacter?.name"
-              class="character-image"
-          />
-          <div v-else class="character-image-placeholder">
-            <span>?</span>
-          </div>
-          <div v-if="myCharacter?.cosmos" class="character-cosmos-badge">{{ myCharacter.cosmos }}</div>
-          <div class="character-universe-badge">{{ myCharacter?.universe ?? '…' }}</div>
+        <!-- Bouton flou : sur sa propre ligne pour ne jamais chevaucher le titre -->
+        <div class="character-board__head">
+          <button type="button" class="reveal-btn" @click="isBlurred = !isBlurred">
+            <i :class="isBlurred ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash'"></i>
+            {{ isBlurred ? 'Révéler' : 'Masquer' }}
+          </button>
         </div>
 
-        <!-- Infos personnage -->
-        <div class="character-info">
-          <p class="character-label" :class="{ blurred: isBlurred }">Ton personnage</p>
-          <h1 class="character-name" :class="{ blurred: isBlurred }">
-            {{ myCharacter?.name ?? '???' }}
-          </h1>
+        <h2 class="board-card__title character-board__title">Ton personnage</h2>
 
-          <!-- Mots interdits -->
-          <div class="forbidden-section">
-            <p class="forbidden-title" :class="{ blurred: isBlurred }">☠ Mots interdits</p>
-            <div class="forbidden-words" :class="{ blurred: isBlurred }">
-        <span
-            v-for="word in myCharacter?.forbidden_words ?? []"
-            :key="word"
-            class="forbidden-word"
-        >
-          {{ word }}
-        </span>
+        <div class="character-board__body" :class="{ blurred: isBlurred }">
+          <!-- Portrait -->
+          <div class="character-portrait">
+            <div class="pixel-frame character-portrait__frame">
+              <img
+                  v-if="myCharacter?.image"
+                  :src="myCharacter.image"
+                  :alt="myCharacter?.name"
+                  class="character-portrait__img"
+              />
+              <div v-else class="character-portrait__placeholder">
+                <span>?</span>
+              </div>
+            </div>
+            <span v-if="myCharacter?.cosmos" class="portrait-badge portrait-badge--cosmos">
+              {{ myCharacter.cosmos }}
+            </span>
+            <span class="portrait-badge portrait-badge--universe">
+              {{ myCharacter?.universe ?? '…' }}
+            </span>
+          </div>
+
+          <!-- Infos personnage -->
+          <div class="character-info">
+            <p class="character-name">
+              {{ myCharacter?.name ?? '???' }}
+            </p>
+
+            <!-- Mots interdits -->
+            <div class="forbidden-section">
+              <p class="forbidden-title">
+                <i class="fa-solid fa-skull"></i> Mots interdits
+              </p>
+              <div class="forbidden-words">
+                <span
+                    v-for="word in myCharacter?.forbidden_words ?? []"
+                    :key="word"
+                    class="pixel-chip pixel-chip--danger"
+                >{{ word }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- ── NOTIFICATION BINÔME DÉCOUVERT ─────────────────────────────── -->
       <div v-if="binomeNotif" class="binome-notif">
-        <span class="binome-notif-icon">🔍</span>
+        <span class="binome-notif__icon"><i class="fa-solid fa-magnifying-glass"></i></span>
         <div>
-          <p class="binome-notif-title">Binôme découvert !</p>
-          <p class="binome-notif-sub">
+          <p class="binome-notif__title">Binôme découvert !</p>
+          <p class="binome-notif__sub">
             {{ binomeNotif.player1 }} ({{ binomeNotif.character1 }})
             &amp; {{ binomeNotif.player2 }} ({{ binomeNotif.character2 }})
           </p>
@@ -534,28 +573,30 @@ function backToHome() {
       <!-- ── ACTIONS (mon tour) ─────────────────────────────────────────── -->
       <div class="actions-section">
         <template v-if="isMyTurn && !hasPlayed">
-          <button class="action-btn action-btn-question" @click="showQuestionModal = true">
-            <span class="action-btn-icon">💬</span>
-            <span class="action-btn-label">Poser une question</span>
+          <button type="button" class="cabinet-btn action-cabinet" @click="showQuestionModal = true">
+            <span class="cabinet-btn__icon"><i class="fa-solid fa-comment-dots"></i></span>
+            <span class="action-cabinet__label">Poser une question</span>
           </button>
-          <button class="action-btn action-btn-accuse" @click="showAccusationModal = true">
-            <span class="action-btn-icon">🎯</span>
-            <span class="action-btn-label">Faire une accusation</span>
+          <button type="button" class="cabinet-btn cabinet-btn--danger action-cabinet" @click="showAccusationModal = true">
+            <span class="cabinet-btn__icon"><i class="fa-solid fa-crosshairs"></i></span>
+            <span class="action-cabinet__label">Faire une accusation</span>
           </button>
         </template>
 
         <div v-else-if="isMyTurn && hasPlayed" class="action-waiting">
-          ✅ Action envoyée — en attente des autres joueurs…
+          <i class="fa-solid fa-circle-check"></i>
+          Action envoyée — en attente des autres joueurs<span class="caret">_</span>
         </div>
 
         <div v-else class="action-waiting">
-          👁 Observe et prépare ta stratégie…
+          <i class="fa-solid fa-eye"></i>
+          Observe et prépare ta stratégie<span class="caret">_</span>
         </div>
       </div>
 
       <!-- ── HISTORIQUE DES ACTIONS ─────────────────────────────────────────── -->
-      <div v-if="actions.length" class="actions-history">
-        <p class="history-title">📜 Historique de la partie</p>
+      <section v-if="actions.length" class="arcade-panel actions-history">
+        <p class="arcade-eyebrow">Historique de la partie</p>
         <div class="history-list">
 
           <template v-for="group in [...actionsByRound].reverse()" :key="group.round_id">
@@ -563,9 +604,9 @@ function backToHome() {
             <!-- Séparateur de round -->
             <div class="history-round-separator">
               <span class="history-round-line"></span>
-              <span class="history-round-badge">
-          Round {{ group.number ?? group.round_id }}
-        </span>
+              <span class="pixel-chip pixel-chip--gold history-round-badge">
+                Round {{ group.number ?? group.round_id }}
+              </span>
               <span class="history-round-line"></span>
             </div>
 
@@ -646,45 +687,67 @@ function backToHome() {
 
           </template>
         </div>
-      </div>
+      </section>
 
       <!-- ── LISTE DES JOUEURS ──────────────────────────────────────────── -->
-      <div class="players-section">
-        <p class="players-title">Joueurs</p>
-        <div class="players-list">
+      <section class="board-card players-board">
+        <div class="board-card__rivet board-card__rivet--tl"></div>
+        <div class="board-card__rivet board-card__rivet--tr"></div>
+        <div class="board-card__rivet board-card__rivet--bl"></div>
+        <div class="board-card__rivet board-card__rivet--br"></div>
+
+        <h2 class="board-card__title">Joueurs</h2>
+
+        <div class="players-grid">
           <div
               v-for="player in players"
               :key="player.id"
-              class="player-row"
+              class="player-token"
               :class="{
-                'player-row-active':     player.id === currentPlayerId,
-                'player-row-eliminated': eliminatedPlayerIds.has(player.id),
+                'is-active':     player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id),
+                'is-eliminated': eliminatedPlayerIds.has(player.id),
               }"
           >
-            <div class="player-avatar" :class="player.id === myPlayerId ? 'avatar-me' : 'avatar-other'">
+            <div class="player-token__avatar">
               {{ player.pseudo.slice(0, 2).toUpperCase() }}
             </div>
-            <span class="player-name">{{ player.pseudo }}</span>
-            <div class="player-badges">
-              <span v-if="player.id === myPlayerId" class="badge-pill badge-me">moi</span>
-              <span v-if="player.id === currentPlayerId" class="badge-pill badge-active">joue</span>
-              <span v-if="discoveredPlayerIds.has(player.id)" class="badge-pill badge-discovered">découvert</span>
-              <span v-if="eliminatedPlayerIds.has(player.id)" class="badge-pill badge-eliminated">
-                💀 éliminé
-              </span>
+            <div class="player-token__name">{{ player.pseudo }}</div>
+            <div class="player-token__badges">
+              <span v-if="player.id === myPlayerId" class="player-token__badge">moi</span>
+              <span v-if="player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id)"
+                    class="player-token__badge player-token__badge--active">joue</span>
+              <span v-if="discoveredPlayerIds.has(player.id)"
+                    class="player-token__badge player-token__badge--danger">découvert</span>
+              <span v-if="eliminatedPlayerIds.has(player.id)"
+                    class="player-token__badge player-token__badge--danger">💀 éliminé</span>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- ── MODAL : Poser une question ─────────────────────────────────── -->
       <BModal v-model="showQuestionModal" title="💬 Poser une question" no-footer class="arcade-modal">
         <div class="mb-3">
-          <label class="form-label">À qui poses-tu la question ?</label>
-          <BFormSelect v-model="questionTarget" :options="[
-            { value: '', text: 'Choisir un joueur…', disabled: true },
-            ...otherPlayers.map(p => ({ value: p.id, text: p.pseudo }))
-          ]"/>
+          <label class="picker-label">À qui poses-tu la question ?</label>
+          <div class="target-picker" role="radiogroup" aria-label="Choisir un joueur">
+            <button
+                v-for="p in otherPlayers"
+                :key="p.id"
+                type="button"
+                class="target-chip"
+                :class="{ 'is-selected': questionTarget === p.id }"
+                role="radio"
+                :aria-checked="questionTarget === p.id"
+                @click="questionTarget = p.id"
+            >
+              <span class="target-chip__avatar">{{ p.pseudo.slice(0, 2).toUpperCase() }}</span>
+              <span class="target-chip__name">{{ p.pseudo }}</span>
+              <span v-if="questionTarget === p.id" class="target-chip__check">
+                <i class="fa-solid fa-check"></i>
+              </span>
+            </button>
+          </div>
+          <p v-if="!otherPlayers.length" class="picker-empty">Aucun joueur disponible.</p>
         </div>
         <div class="mb-3">
           <label class="form-label">Ta question :</label>
@@ -694,7 +757,7 @@ function backToHome() {
               maxlength="200"
               @keyup.enter="submitQuestion"
           />
-          <small class="text-muted">Attention aux mots interdits du personnage de tes adversaires !</small>
+          <small class="text-muted">Tu ignores les mots interdits de ta cible : si tu en prononces un, elle aura le droit de te mentir.</small>
         </div>
         <div class="text-center">
           <button type="button" class="cabinet-btn cabinet-btn--sm"
@@ -716,12 +779,12 @@ function backToHome() {
           <div v-if="!showScoreBoard" class="gameover-animation">
             <div class="gameover-title">{{ gameOverTitle }}</div>
             <p class="gameover-sub">{{ gameOverMsg }}</p>
-            <div class="gameover-orb"></div>
+            <div class="loading-blocks"><span></span><span></span><span></span></div>
           </div>
 
           <!-- Tableau des scores -->
           <div v-else class="scoreboard">
-            <h4 class="scoreboard-title">📊 Tableau des scores</h4>
+            <h4 class="scoreboard-title">Tableau des scores</h4>
 
             <div class="scoreboard-list">
               <div
@@ -788,16 +851,38 @@ function backToHome() {
             <p class="answer-question-text">« {{ pendingQuestion?.question }} »</p>
           </div>
 
-          <!-- Rappel mots interdits -->
-          <div class="answer-forbidden">
-            <p class="forbidden-title">☠ Tes mots interdits (attention dans ta réponse !)</p>
+          <!-- Piège détecté : la question contient un de MES mots interdits -->
+          <div v-if="forbiddenWordsInQuestion.length" class="answer-trap">
+            <p class="answer-trap-title">
+              <i class="fa-solid fa-skull"></i> Mot interdit prononcé !
+            </p>
             <div class="forbidden-words">
-        <span
-            v-for="word in myCharacter?.forbidden_words ?? []"
-            :key="word"
-            class="forbidden-word"
-        >{{ word }}</span>
+              <span
+                  v-for="word in forbiddenWordsInQuestion"
+                  :key="word"
+                  class="pixel-chip pixel-chip--danger"
+              >{{ word }}</span>
             </div>
+            <p class="answer-trap-hint">
+              Tu as le droit de mentir : réponds ce que tu veux, il n'en saura rien.
+            </p>
+          </div>
+
+          <!-- Rappel mots interdits -->
+          <div v-else class="answer-forbidden">
+            <p class="forbidden-title">
+              <i class="fa-solid fa-skull"></i> Tes mots interdits
+            </p>
+            <div class="forbidden-words">
+              <span
+                  v-for="word in myCharacter?.forbidden_words ?? []"
+                  :key="word"
+                  class="pixel-chip pixel-chip--danger"
+              >{{ word }}</span>
+            </div>
+            <p class="answer-trap-hint">
+              Aucun n'a été prononcé : réponds honnêtement.
+            </p>
           </div>
 
           <div class="answer-buttons">
@@ -823,14 +908,29 @@ function backToHome() {
 
       <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" no-footer class="arcade-modal" centered>
         <BAlert variant="warning" class="small">
-          ⚠️ Si le joueur confirme, son binôme est éliminé !
+          ⚠️ Si le joueur confirme, il est éliminé et devient spectateur. Son binôme, lui, reste en jeu et n'est pas révélé.
         </BAlert>
         <div class="mb-3">
-          <label class="form-label">Qui accuses-tu ?</label>
-          <BFormSelect v-model="accusationTarget" :options="[
-      { value: '', text: 'Choisir un joueur…', disabled: true },
-      ...otherPlayers.map(p => ({ value: p.id, text: p.pseudo }))
-    ]"/>
+          <label class="picker-label">Qui accuses-tu ?</label>
+          <div class="target-picker" role="radiogroup" aria-label="Choisir un joueur à accuser">
+            <button
+                v-for="p in otherPlayers"
+                :key="p.id"
+                type="button"
+                class="target-chip"
+                :class="{ 'is-selected': accusationTarget === p.id }"
+                role="radio"
+                :aria-checked="accusationTarget === p.id"
+                @click="accusationTarget = p.id"
+            >
+              <span class="target-chip__avatar">{{ p.pseudo.slice(0, 2).toUpperCase() }}</span>
+              <span class="target-chip__name">{{ p.pseudo }}</span>
+              <span v-if="accusationTarget === p.id" class="target-chip__check">
+                <i class="fa-solid fa-check"></i>
+              </span>
+            </button>
+          </div>
+          <p v-if="!otherPlayers.length" class="picker-empty">Aucun joueur disponible.</p>
         </div>
         <div class="mb-3">
           <label class="form-label">Son personnage selon toi :</label>
@@ -896,13 +996,16 @@ function backToHome() {
 <style scoped>
 /* ─── BASE ──────────────────────────────────────────────────────────────────── */
 .round-page {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--navbar-height));
   padding: 0 0 6rem;
   font-family: 'Baloo 2', sans-serif;
   color: var(--arcade-beige);
-  max-width: 430px;
+  max-width: 460px;
   margin: 0 auto;
   position: relative;
+  text-align: left;
+  border-left: 3px solid rgba(71, 87, 95, 0.6);
+  border-right: 3px solid rgba(71, 87, 95, 0.6);
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.8);
 }
 
@@ -912,255 +1015,332 @@ function backToHome() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--navbar-height));
   gap: 1.5rem;
 }
 
-.loading-orb {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--arcade-gold);
-  border-top-color: transparent;
-  animation: spin 1s linear infinite;
+/* Trois blocs pixel qui rebondissent (remplace le spinner arrondi) */
+.loading-blocks {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.loading-blocks span {
+  width: 14px;
+  height: 14px;
+  background: var(--arcade-gold);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+  animation: pixel-bounce 0.9s steps(2, end) infinite;
+}
+
+.loading-blocks span:nth-child(2) { animation-delay: 0.15s; }
+.loading-blocks span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes pixel-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
 }
 
 .loading-text {
+  font-family: 'Press Start 2P', cursive;
   color: var(--arcade-taupe);
-  font-size: 0.9rem;
-  letter-spacing: 0.1em;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ─── ERROR ─────────────────────────────────────────────────────────────────── */
-.error-banner {
-  background: var(--arcade-danger-dark);
-  color: #ffd7d7;
+  font-size: 0.7rem;
+  line-height: 1.8;
   text-align: center;
-  padding: 0.75rem 1rem;
-  font-size: 0.85rem;
 }
 
-/* ─── TURN BANNER ───────────────────────────────────────────────────────────── */
-.turn-banner {
+.caret {
+  animation: caret-blink 1s steps(2, end) infinite;
+}
+
+@keyframes caret-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ─── ERREUR ────────────────────────────────────────────────────────────────── */
+.round-error {
+  margin: 0.75rem 1rem 0;
+  border-radius: 6px;
+}
+
+/* ─── MARQUEE DE TOUR ───────────────────────────────────────────────────────── */
+.turn-marquee {
   position: sticky;
-  top: 0;
+  /* Se cale juste sous la navbar fixed-top au lieu de passer dessous */
+  top: var(--navbar-height);
   z-index: 10;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 3px solid var(--arcade-blue-grey-dark);
+  padding: 0.7rem 1rem;
+  border-bottom: 4px solid var(--arcade-blue-grey-dark);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
 }
 
-.turn-mine {
-  background: linear-gradient(135deg, #ffd876, var(--arcade-gold));
+.turn-marquee.is-mine {
+  background:
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0 8px, transparent 8px 16px),
+      linear-gradient(180deg, #ffd876, var(--arcade-gold));
+  border-bottom-color: #a8720f;
 }
 
-.turn-mine .turn-main,
-.turn-mine .turn-sub {
-  color: #4a2f00;
+.turn-marquee.is-other {
+  background:
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 8px, transparent 8px 16px),
+      var(--arcade-blue-grey-dark);
 }
 
-.turn-other {
-  background: var(--arcade-blue-grey-dark);
-}
-
-.turn-inner {
+.turn-marquee__inner {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-.turn-icon {
-  font-size: 1.4rem;
-}
-
-.turn-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.turn-main {
-  font-size: 1rem;
-  font-weight: bold;
-  color: var(--arcade-gold);
-  letter-spacing: 0.03em;
-  font-family: 'Baloo 2', sans-serif;
-}
-
-.turn-sub {
-  font-size: 0.75rem;
-  color: var(--arcade-taupe);
-  letter-spacing: 0.08em;
-}
-
-/* ─── CARTE PERSONNAGE ──────────────────────────────────────────────────────── */
-.character-card {
-  position: relative;
-  margin: 1.25rem 1rem;
-  background: var(--arcade-beige);
-  border: 3px solid var(--arcade-blue-grey);
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  gap: 1rem;
-  padding: 1rem;
-  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.25), 0 12px 18px rgba(0, 0, 0, 0.3);
-}
-
-.character-card-glow {
-  position: absolute;
-  top: -40px;
-  left: -40px;
-  width: 180px;
-  height: 180px;
-  background: radial-gradient(circle, rgba(224, 163, 28, 0.18) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.character-image-wrap {
-  position: relative;
+.turn-marquee__icon {
+  font-size: 1.15rem;
+  width: 2.1rem;
+  height: 2.1rem;
   flex-shrink: 0;
-  width: 110px;
-}
-
-.character-image {
-  width: 110px;
-  height: 140px;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 2px solid var(--arcade-blue-grey);
-  display: block;
-}
-
-.character-image-placeholder {
-  width: 110px;
-  height: 140px;
-  border-radius: 10px;
-  background: #e5ddc8;
-  border: 2px solid var(--arcade-blue-grey);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 3rem;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.turn-marquee__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.turn-marquee__main {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.turn-marquee__sub {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.75;
+}
+
+.turn-marquee.is-mine .turn-marquee__inner { color: #4a2f00; }
+.turn-marquee.is-other .turn-marquee__main { color: var(--arcade-beige); }
+.turn-marquee.is-other .turn-marquee__sub,
+.turn-marquee.is-other .turn-marquee__icon { color: var(--arcade-taupe); }
+
+.turn-marquee__round {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.turn-marquee__round-label {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.45rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.turn-marquee__lcd {
+  padding: 0.3rem 0.55rem;
+  border-radius: 4px;
+}
+
+/* ─── CARTE PERSONNAGE ──────────────────────────────────────────────────────── */
+.character-board {
+  margin: 1.5rem 1rem;
+  padding: 1.6rem 1.1rem 1.25rem;
+}
+
+.character-board__title {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.character-board__body {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.character-portrait {
+  position: relative;
+  flex-shrink: 0;
+  width: 116px;
+  padding-bottom: 0.5rem;
+}
+
+.character-portrait__frame {
+  width: 116px;
+  height: 148px;
+}
+
+.character-portrait__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.character-portrait__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 2.2rem;
   color: var(--arcade-taupe);
 }
 
-.character-universe-badge {
+.portrait-badge {
   position: absolute;
-  bottom: -8px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--arcade-gold);
-  color: #4a2f00;
-  font-size: 0.6rem;
-  font-weight: bold;
-  letter-spacing: 0.1em;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.45rem;
+  line-height: 1.5;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 20px;
+  padding: 4px 7px;
+  border-radius: 4px;
+  border: 2px solid;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  z-index: 2;
 }
 
-.character-cosmos-badge {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--arcade-blue-grey-dark, #2f3a4a);
-  color: var(--arcade-beige, #f4e9d8);
-  font-size: 0.55rem;
-  font-weight: bold;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 20px;
-  white-space: nowrap;
+.portrait-badge--cosmos {
+  top: -9px;
+  background: var(--arcade-blue-grey-dark);
+  border-color: #34424a;
+  color: var(--arcade-beige);
+}
+
+.portrait-badge--universe {
+  bottom: -3px;
+  background: linear-gradient(180deg, #ffd876, var(--arcade-gold));
+  border-color: #a8720f;
+  color: #4a2f00;
 }
 
 .character-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
-}
-
-.character-label {
-  font-size: 0.65rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--arcade-taupe);
-  margin: 0;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
 .character-name {
-  font-size: 1.4rem;
+  font-size: 1.35rem;
+  font-weight: 800;
   color: var(--arcade-blue-grey-dark);
   margin: 0;
-  line-height: 1.2;
-  font-style: italic;
-}
-
-.forbidden-section {
-  margin-top: 0.5rem;
+  line-height: 1.15;
+  word-break: break-word;
+  text-shadow: 2px 2px 0 rgba(158, 139, 127, 0.35);
 }
 
 .forbidden-title {
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.5rem;
+  line-height: 1.6;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--arcade-danger-dark);
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.5rem;
 }
 
 .forbidden-words {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
 
-.forbidden-word {
-  background: rgba(179, 69, 63, 0.12);
-  border: 1px solid var(--arcade-danger);
-  color: var(--arcade-danger-dark);
-  font-size: 0.75rem;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-family: 'Courier New', monospace;
-  letter-spacing: 0.05em;
+/* ─── FLOU ──────────────────────────────────────────────────────────────────── */
+.blurred {
+  filter: blur(8px);
+  user-select: none;
+  transition: filter 0.3s ease;
+}
+
+.character-board__head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.reveal-btn {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 2px solid var(--arcade-blue-grey-dark);
+  background: var(--arcade-blue-grey);
+  color: var(--arcade-beige);
+  cursor: pointer;
+  box-shadow: 0 3px 0 var(--arcade-blue-grey-dark);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.reveal-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 var(--arcade-blue-grey-dark);
 }
 
 /* ─── NOTIFICATION BINÔME ───────────────────────────────────────────────────── */
 .binome-notif {
-  margin: 0 1rem 1rem;
-  background: rgba(63, 122, 78, 0.25);
-  border: 1px solid var(--arcade-success);
+  margin: 0 1rem 1.25rem;
+  background: linear-gradient(180deg, rgba(63, 122, 78, 0.35), rgba(28, 34, 38, 0.9));
+  border: 3px solid var(--arcade-success);
   border-radius: 12px;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 0.9rem;
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
+  box-shadow: 0 5px 0 var(--arcade-success-dark);
   animation: slideIn 0.3s ease;
 }
 
-.binome-notif-icon {
-  font-size: 1.3rem;
+.binome-notif__icon {
   flex-shrink: 0;
-}
-
-.binome-notif-title {
-  font-size: 0.85rem;
-  font-weight: bold;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--arcade-success);
+  border-radius: 6px;
   color: #a9dab5;
-  margin: 0 0 0.2rem;
 }
 
-.binome-notif-sub {
-  font-size: 0.75rem;
+.binome-notif__title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.55rem;
+  line-height: 1.6;
+  color: #b9e6c4;
+  margin: 0 0 0.35rem;
+}
+
+.binome-notif__sub {
+  font-size: 0.8rem;
   color: #8ac298;
   margin: 0;
 }
@@ -1177,198 +1357,50 @@ function backToHome() {
   margin: 0 1rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.9rem;
 }
 
-.action-btn {
-  font-family: 'Baloo 2', sans-serif;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.action-cabinet {
   width: 100%;
-  padding: 1rem 1.25rem;
-  border: 2px solid;
-  border-radius: 12px;
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
+  justify-content: flex-start;
+  padding: 0.9rem 1.1rem;
+  gap: 0.9rem;
 }
 
-.action-btn:active {
-  transform: scale(0.98);
-}
-
-.action-btn-question {
-  border-color: var(--arcade-blue-grey);
-  background: rgba(90, 111, 125, 0.25);
-}
-
-.action-btn-question:hover {
-  background: rgba(90, 111, 125, 0.4);
-}
-
-.action-btn-accuse {
-  border-color: var(--arcade-gold);
-  background: rgba(224, 163, 28, 0.15);
-}
-
-.action-btn-accuse:hover {
-  background: rgba(224, 163, 28, 0.28);
-}
-
-.action-btn-icon {
-  font-size: 1.4rem;
-  flex-shrink: 0;
-}
-
-.action-btn-label {
-  font-size: 0.95rem;
-  color: var(--arcade-beige);
-  letter-spacing: 0.02em;
+.action-cabinet__label {
+  font-size: 1rem;
   font-weight: 700;
 }
 
 .action-waiting {
+  font-family: 'Press Start 2P', cursive;
   text-align: center;
-  padding: 1rem;
+  padding: 1rem 0.9rem;
   color: var(--arcade-taupe);
-  font-size: 0.85rem;
-  font-style: italic;
-  background: rgba(245, 245, 220, 0.04);
+  font-size: 0.55rem;
+  line-height: 2;
+  background: var(--arcade-dark-2);
+  border: 3px solid var(--arcade-blue-grey-dark);
   border-radius: 10px;
-  border: 1px solid rgba(245, 245, 220, 0.08);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 /* ─── JOUEURS ───────────────────────────────────────────────────────────────── */
-.players-section {
+.players-board {
   margin: 0 1rem;
+  padding: 1.5rem 1.1rem 1.25rem;
 }
 
-.players-title {
-  font-size: 0.65rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--arcade-taupe);
-  margin: 0 0 0.75rem;
+.players-board .board-card__title {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-bottom: 1.1rem;
 }
 
-.players-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.player-row {
-  display: flex;
-  align-items: center;
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
-  background: rgba(245, 245, 220, 0.05);
-  border: 1px solid rgba(245, 245, 220, 0.1);
-  border-radius: 10px;
-  transition: all 0.15s;
-}
-
-.player-row-active {
-  background: rgba(224, 163, 28, 0.14);
-  border-color: var(--arcade-gold);
-}
-
-.player-row-discovered {
-  opacity: 0.5;
-}
-
-.player-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.65rem;
-  font-weight: bold;
-  flex-shrink: 0;
-  font-family: 'Baloo 2', sans-serif;
-}
-
-.avatar-me {
-  background: rgba(90, 111, 125, 0.4);
-  color: var(--arcade-beige);
-  border: 1px solid var(--arcade-blue-grey);
-}
-
-.avatar-other {
-  background: rgba(158, 139, 127, 0.25);
-  color: var(--arcade-taupe);
-  border: 1px solid var(--arcade-taupe);
-}
-
-.player-name {
-  flex: 1;
-  font-size: 0.9rem;
-  color: var(--arcade-beige);
-}
-
-.player-badges {
-  display: flex;
-  gap: 0.3rem;
-}
-
-.badge-pill {
-  font-size: 0.6rem;
-  padding: 2px 7px;
-  border-radius: 20px;
-  font-family: 'Baloo 2', sans-serif;
-  letter-spacing: 0.05em;
-  font-weight: bold;
-  text-transform: uppercase;
-}
-
-.badge-me {
-  background: rgba(90, 111, 125, 0.3);
-  color: var(--arcade-beige);
-  border: 1px solid var(--arcade-blue-grey);
-}
-
-.badge-active {
-  background: rgba(224, 163, 28, 0.25);
-  color: var(--arcade-gold);
-  border: 1px solid var(--arcade-gold);
-}
-
-.badge-discovered {
-  background: rgba(179, 69, 63, 0.25);
-  color: #f0b8b5;
-  border: 1px solid var(--arcade-danger);
-}
-
-/* ─── FLOU ──────────────────────────────────────────────────────────────────── */
-.blurred {
-  filter: blur(8px);
-  user-select: none;
-  transition: filter 0.3s ease;
-}
-
-.blur-toggle {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  z-index: 2;
-  font-family: 'Baloo 2', sans-serif;
-  background: rgba(36, 36, 36, 0.7);
-  border: 1px solid var(--arcade-gold);
-  border-radius: 20px;
-  color: var(--arcade-gold);
-  font-size: 0.7rem;
-  padding: 4px 10px;
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  transition: background 0.15s;
-}
-
-.blur-toggle:hover {
-  background: rgba(36, 36, 36, 0.9);
 }
 
 /* ─── HISTORIQUE DES ACTIONS ────────────────────────────────────────────────── */
@@ -1376,34 +1408,25 @@ function backToHome() {
   margin: 0 1rem 1.5rem;
 }
 
-.history-title {
-  font-size: 0.65rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--arcade-taupe);
-  margin: 0 0 0.6rem;
-}
-
 .history-list {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  max-height: 220px;
+  max-height: 240px;
   overflow-y: auto;
   padding-right: 0.25rem;
 }
 
 .history-list::-webkit-scrollbar {
-  width: 3px;
+  width: 4px;
 }
 
 .history-list::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .history-list::-webkit-scrollbar-thumb {
   background: var(--arcade-taupe);
-  border-radius: 2px;
 }
 
 .history-item {
@@ -1411,34 +1434,34 @@ function backToHome() {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
   font-size: 0.8rem;
-  border-left: 3px solid;
+  border-left: 4px solid;
   line-height: 1.4;
   min-width: 0;
 }
 
 .history-question-valid {
-  background: rgba(90, 111, 125, 0.25);
+  background: rgba(90, 111, 125, 0.28);
   border-color: var(--arcade-blue-grey);
   color: #cdd9e0;
 }
 
 .history-question-invalid {
-  background: rgba(179, 69, 63, 0.25);
+  background: rgba(179, 69, 63, 0.28);
   border-color: var(--arcade-danger);
   color: #f0b8b5;
 }
 
 .history-accusation-ok {
-  background: rgba(63, 122, 78, 0.25);
+  background: rgba(63, 122, 78, 0.28);
   border-color: var(--arcade-success);
   color: #b9e6c4;
 }
 
 .history-accusation-ko {
-  background: rgba(179, 69, 63, 0.25);
+  background: rgba(179, 69, 63, 0.28);
   border-color: var(--arcade-danger);
   color: #f0b8b5;
 }
@@ -1472,6 +1495,128 @@ function backToHome() {
   min-width: 0;
 }
 
+/* ─── SÉPARATEUR DE ROUND ───────────────────────────────────────────────────── */
+.history-round-separator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.history-round-line {
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, rgba(224, 163, 28, 0.35) 0 4px, transparent 4px 8px);
+}
+
+.history-round-badge {
+  flex-shrink: 0;
+}
+
+/* ─── SÉLECTION D'UN JOUEUR (remplace les <select>, pensé pour le tactile) ──── */
+.picker-label {
+  display: block;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.5rem;
+  line-height: 1.7;
+  text-transform: uppercase;
+  color: var(--arcade-blue-grey-dark);
+  margin-bottom: 0.6rem;
+}
+
+.target-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+
+.target-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* 48px de haut minimum : cible tactile confortable au pouce */
+  min-height: 48px;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  font-family: 'Baloo 2', sans-serif;
+  background: #fff;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 10px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.12s ease;
+}
+
+.target-chip:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+.target-chip.is-selected {
+  background: #fff6de;
+  border-color: var(--arcade-gold);
+  box-shadow: 0 3px 0 #a8720f;
+}
+
+.target-chip__avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.6rem;
+  background: var(--arcade-taupe);
+  color: #fff;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.target-chip.is-selected .target-chip__avatar {
+  background: var(--arcade-gold);
+  color: #4a2f00;
+}
+
+.target-chip__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  color: var(--arcade-blue-grey-dark);
+  /* Les pseudos longs passent sur 2 lignes plutôt que d'être tronqués trop tôt */
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.target-chip__check {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--arcade-success);
+  color: #fff;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+}
+
+.picker-empty {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--arcade-taupe);
+}
+
 /* ─── MODALE RÉPONSE ────────────────────────────────────────────────────────── */
 .answer-modal-body {
   font-family: 'Baloo 2', sans-serif;
@@ -1484,8 +1629,8 @@ function backToHome() {
 
 .answer-question-box {
   background: rgba(90, 111, 125, 0.1);
-  border: 1px solid var(--arcade-blue-grey);
-  border-radius: 10px;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 8px;
   padding: 0.75rem;
 }
 
@@ -1507,9 +1652,32 @@ function backToHome() {
 
 .answer-forbidden {
   background: rgba(179, 69, 63, 0.1);
-  border: 1px solid var(--arcade-danger);
-  border-radius: 10px;
+  border: 2px solid var(--arcade-danger);
+  border-radius: 8px;
   padding: 0.65rem 0.75rem;
+}
+
+.answer-trap {
+  background: rgba(179, 69, 63, 0.22);
+  border: 3px solid var(--arcade-danger);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.answer-trap-title {
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--arcade-danger);
+  margin: 0 0 0.45rem;
+  letter-spacing: 0.02em;
+}
+
+.answer-trap-hint {
+  font-size: 0.8rem;
+  color: var(--arcade-blue-grey-dark);
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
 }
 
 .answer-buttons {
@@ -1521,14 +1689,19 @@ function backToHome() {
   font-family: 'Baloo 2', sans-serif;
   flex: 1;
   padding: 0.75rem 0.25rem;
-  border-radius: 12px;
-  border: 2px solid;
+  border-radius: 10px;
+  border: 3px solid;
   font-size: 0.85rem;
   font-weight: bold;
   cursor: pointer;
-  transition: all 0.15s;
-  background: transparent;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s;
+  background: var(--arcade-beige);
   white-space: nowrap;
+}
+
+.answer-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: none;
 }
 
 .answer-btn:disabled {
@@ -1539,28 +1712,19 @@ function backToHome() {
 .answer-btn-yes {
   border-color: var(--arcade-success);
   color: var(--arcade-success-dark);
-}
-
-.answer-btn-yes:hover:not(:disabled) {
-  background: rgba(63, 122, 78, 0.12);
+  box-shadow: 0 4px 0 var(--arcade-success-dark);
 }
 
 .answer-btn-no {
   border-color: var(--arcade-danger);
   color: var(--arcade-danger-dark);
-}
-
-.answer-btn-no:hover:not(:disabled) {
-  background: rgba(179, 69, 63, 0.12);
+  box-shadow: 0 4px 0 var(--arcade-danger-dark);
 }
 
 .answer-btn-dont-know {
   border-color: var(--arcade-taupe);
   color: var(--arcade-taupe);
-}
-
-.answer-btn-dont-know:hover:not(:disabled) {
-  background: rgba(158, 139, 127, 0.15);
+  box-shadow: 0 4px 0 #7c6c62;
 }
 
 /* ─── RÉPONSE DANS L'HISTORIQUE ─────────────────────────────────────────────── */
@@ -1620,7 +1784,7 @@ function backToHome() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.5rem;
   animation: textPop 5s ease forwards;
 }
 
@@ -1647,61 +1811,22 @@ function backToHome() {
 }
 
 .round-transition-label {
-  font-size: 0.75rem;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.7rem;
   letter-spacing: 0.4em;
   color: var(--arcade-gold);
-  font-family: 'Baloo 2', sans-serif;
-  font-weight: bold;
   text-transform: uppercase;
 }
 
 .round-transition-number {
-  font-size: 6rem;
-  font-weight: bold;
+  font-size: 5rem;
   color: var(--arcade-beige);
   font-family: 'Press Start 2P', cursive;
   line-height: 1;
-  text-shadow: 0 0 40px rgba(224, 163, 28, 0.6),
-  0 0 80px rgba(224, 163, 28, 0.3);
-}
-
-/* ─── SÉPARATEUR DE ROUND ───────────────────────────────────────────────────── */
-.history-round-separator {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.5rem 0 0.25rem;
-}
-
-.history-round-line {
-  flex: 1;
-  height: 1px;
-  background: rgba(224, 163, 28, 0.25);
-}
-
-.history-round-badge {
-  font-size: 0.6rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--arcade-gold);
-  background: rgba(224, 163, 28, 0.12);
-  border: 1px solid var(--arcade-gold);
-  padding: 2px 10px;
-  border-radius: 20px;
-  white-space: nowrap;
-  font-family: 'Baloo 2', sans-serif;
-  font-weight: bold;
-}
-
-.badge-eliminated {
-  background: rgba(179, 69, 63, 0.25);
-  color: #f0b8b5;
-  border: 1px solid var(--arcade-danger);
-}
-
-.player-row-eliminated {
-  opacity: 0.4;
-  text-decoration: line-through;
+  text-shadow:
+      4px 4px 0 var(--arcade-taupe),
+      0 0 40px rgba(224, 163, 28, 0.6),
+      0 0 80px rgba(224, 163, 28, 0.3);
 }
 
 /* ─── FIN DE PARTIE ANIMATION ───────────────────────────────────────────────── */
@@ -1709,100 +1834,145 @@ function backToHome() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
   padding: 2rem 0;
 }
+
 .gameover-title {
   font-family: 'Press Start 2P', cursive;
-  font-size: 1.6rem;
-  font-weight: bold;
+  font-size: 1.3rem;
+  line-height: 1.5;
   color: var(--arcade-gold);
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
   animation: titlePulse 1s ease infinite alternate;
 }
+
 @keyframes titlePulse {
-  from { text-shadow: 0 0 20px rgba(224, 163, 28, 0.4); }
-  to   { text-shadow: 0 0 60px rgba(224, 163, 28, 0.9); }
+  from { text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3), 0 0 20px rgba(224, 163, 28, 0.4); }
+  to   { text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3), 0 0 60px rgba(224, 163, 28, 0.9); }
 }
+
 .gameover-sub {
   font-family: 'Baloo 2', sans-serif;
   color: var(--arcade-taupe);
-  font-size: 0.9rem;
-  font-style: italic;
-}
-.gameover-orb {
-  width: 60px; height: 60px;
-  border-radius: 50%;
-  border: 2px solid var(--arcade-gold);
-  border-top-color: transparent;
-  animation: spin 1s linear infinite;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
 }
 
 /* ─── TABLEAU DES SCORES ────────────────────────────────────────────────────── */
 .scoreboard { text-align: left; font-family: 'Baloo 2', sans-serif; }
+
 .scoreboard-title {
   text-align: center;
-  color: var(--arcade-gold);
-  margin-bottom: 1rem;
-  letter-spacing: 0.05em;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--arcade-blue-grey-dark);
+  margin-bottom: 1.25rem;
 }
+
 .scoreboard-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
+
 .scoreboard-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.65rem 0.75rem;
-  background: rgba(245, 245, 220, 0.05);
-  border: 1px solid rgba(245, 245, 220, 0.12);
+  background: #fff;
+  border: 2px solid var(--arcade-blue-grey);
   border-radius: 10px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
   flex-wrap: wrap;
 }
+
 .scoreboard-winner {
-  background: rgba(224, 163, 28, 0.15);
+  background: #fff6de;
   border-color: var(--arcade-gold);
+  box-shadow: 0 3px 0 #a8720f;
 }
+
 .scoreboard-eliminated {
-  opacity: 0.5;
+  opacity: 0.55;
+  filter: grayscale(0.4);
 }
+
 .scoreboard-rank   { font-size: 1.2rem; flex-shrink: 0; }
 .scoreboard-player { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
 .scoreboard-pseudo {
-  font-weight: bold;
-  color: var(--arcade-beige);
-  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--arcade-blue-grey-dark);
+  font-size: 0.95rem;
 }
+
 .scoreboard-character {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--arcade-taupe);
   font-style: italic;
 }
+
 .scoreboard-details {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
 }
+
 .stat-chip {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
   padding: 2px 8px;
-  border-radius: 20px;
-  background: rgba(245, 245, 220, 0.08);
-  border: 1px solid rgba(245, 245, 220, 0.15);
-  color: var(--arcade-taupe);
+  border-radius: 999px;
+  background: rgba(90, 111, 125, 0.12);
+  border: 1px solid var(--arcade-blue-grey);
+  color: var(--arcade-blue-grey-dark);
   font-family: 'Baloo 2', sans-serif;
   white-space: nowrap;
 }
+
 .stat-chip-gold {
-  background: rgba(224, 163, 28, 0.18);
+  background: rgba(224, 163, 28, 0.2);
   border-color: var(--arcade-gold);
-  color: var(--arcade-gold);
+  color: #8a6410;
 }
+
 .scoreboard-score {
-  font-weight: bold;
-  color: var(--arcade-gold);
-  font-size: 1rem;
+  font-family: 'Press Start 2P', cursive;
+  color: var(--arcade-blue-grey-dark);
+  font-size: 0.7rem;
   flex-shrink: 0;
+}
+
+.scoreboard-winner .scoreboard-score {
+  color: #8a6410;
+}
+
+/* ─── PETITS ÉCRANS ─────────────────────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .character-board__body {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .character-info {
+    width: 100%;
+  }
+
+  .character-name {
+    text-align: center;
+  }
+
+  .forbidden-words {
+    justify-content: center;
+  }
+
+  .forbidden-title {
+    text-align: center;
+  }
 }
 </style>

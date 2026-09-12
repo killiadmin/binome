@@ -34,9 +34,7 @@ class ActionController extends Controller
         return response()->json([
             'action'   => $action->load('player'),
             'is_valid' => $action->is_valid,
-            'message'  => $action->is_valid
-                ? 'Question posée avec succès.'
-                : 'Question refusée : elle contient un mot interdit.',
+            'message'  => 'Question posée avec succès.',
         ]);
     }
 
