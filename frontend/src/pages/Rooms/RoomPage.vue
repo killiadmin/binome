@@ -390,8 +390,8 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
         <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
       </div>
 
-      <!-- Boutons principaux -->
-      <div class="cabinet-buttons">
+      <!-- Boutons principaux : masqués quand un salon est actif, pour libérer l'écran -->
+      <div v-if="!gameCode" class="cabinet-buttons">
         <button class="cabinet-btn stacked" type="button" @click="showCreateModal = true">
           <span class="cabinet-btn__icon"><i class="fa-solid fa-plus"></i></span>
           <span class="cabinet-btn__label">Créer une partie</span>
