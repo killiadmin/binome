@@ -58,9 +58,8 @@ class GameService
             throw new Exception('Il faut au minimum 4 joueurs pour démarrer.');
         }
 
-        if ($players->count() % 2 !== 0) {
-            throw new Exception('Le nombre de joueurs doit être pair pour former des binomes.');
-        }
+        // Un nombre impair est accepté : le joueur surnuméraire devient orphelin
+        // (binome d'un seul joueur) — voir assignBinomes().
 
         $allReady = $players->every(
             fn ($player) => $player->pivot->is_ready
@@ -75,6 +74,11 @@ class GameService
      * Forme les binomes et assigne un personnage à chaque joueur.
      * Un univers distinct par binome ; en mode « cosmos imposé » tous les
      * univers proviennent du cosmos choisi par l'hôte.
+     *
+     * Si le nombre de joueurs est impair, le dernier joueur du mélange se
+     * retrouve seul : son binome est marqué `is_orphan` et ne reçoit qu'un
+     * personnage. Il joue comme une équipe à part entière (et touche le bonus
+     * de victoire) mais n'a aucun partenaire à protéger — ce qu'il ignore.
      */
     private function assignBinomes(Game $game, Collection $players, Room $room): void
     {
@@ -82,17 +86,21 @@ class GameService
         $shuffledPlayers = $players->shuffle();
 
         // Découpe en paires : [P1, P2], [P3, P4], [P5, P6]...
-        $pairs = $shuffledPlayers->chunk(2);
+        // En nombre impair, la dernière « paire » ne contient qu'un joueur.
+        $teams = $shuffledPlayers->chunk(2);
 
-        $universes = $this->resolveUniverses($pairs->count(), $room);
+        $universes = $this->resolveUniverses($teams->count(), $room);
 
-        foreach ($pairs as $index => $pair) {
+        foreach ($teams as $index => $team) {
             $universe = $universes[$index];
+            $members = $team->values();
+            $isOrphan = $members->count() === 1;
 
             // Crée le binome
             $binome = Binome::create([
                 'game_id' => $game->id,
                 'universe_id' => $universe->id,
+                'is_orphan' => $isOrphan,
             ]);
 
             // Un binome ne peut être formé qu'entre 2 personnages partageant le même
@@ -109,10 +117,12 @@ class GameService
                 );
             }
 
-            $characters = $levelGroups->random()->shuffle()->take(2)->values();
+            // L'orphelin ne tire qu'un personnage, mais toujours dans un univers
+            // qui aurait pu porter un vrai binome : rien ne le trahit.
+            $characters = $levelGroups->random()->shuffle()->take($members->count())->values();
 
             // Attache chaque joueur au binome avec son personnage
-            $pair->values()->each(function ($player, $i) use ($binome, $characters) {
+            $members->each(function ($player, $i) use ($binome, $characters) {
                 $binome->players()->attach($player->id, [
                     'character_id' => $characters[$i]->id,
                     'score' => 0,
@@ -122,10 +132,11 @@ class GameService
     }
 
     /**
-     * Tire `$pairCount` univers distincts jouables (≥ 2 personnages jouables au même
+     * Tire `$teamCount` univers distincts jouables (≥ 2 personnages jouables au même
      * niveau d'affectation). En mode « cosmos imposé », restreint au cosmos de la room.
+     * L'orphelin compte comme une équipe : il consomme lui aussi un univers.
      */
-    private function resolveUniverses(int $pairCount, Room $room): Collection
+    private function resolveUniverses(int $teamCount, Room $room): Collection
     {
         // Univers éligibles : ceux qui ont au moins un binôme de personnages
         // JOUABLES (verif_manual = true, hidden = false) partageant un même niveau.
@@ -142,13 +153,13 @@ class GameService
             $query->where('cosmos_id', $room->cosmos_id);
         }
 
-        $universes = $query->take($pairCount)->get();
+        $universes = $query->take($teamCount)->get();
 
-        if ($universes->count() < $pairCount) {
+        if ($universes->count() < $teamCount) {
             if ($room->game_mode === GameMode::Cosmos) {
                 throw new Exception(
                     "Le cosmos « {$room->cosmos?->name} » n'a que {$universes->count()} univers jouable(s) "
-                    ."pour {$pairCount} binôme(s). Choisis un autre cosmos ou ajoute des personnages."
+                    ."pour {$teamCount} binôme(s). Choisis un autre cosmos ou ajoute des personnages."
                 );
             }
 

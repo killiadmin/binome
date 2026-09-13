@@ -35,6 +35,17 @@ class Game extends Model
         return $this->hasMany(GameStat::class);
     }
 
+    /**
+     * La partie compte-t-elle un orphelin (binome d'un seul joueur, formé quand
+     * les joueurs sont en nombre impair) ?
+     */
+    public function hasOrphan(): bool
+    {
+        return $this->relationLoaded('binomes')
+            ? $this->binomes->contains(fn ($binome) => $binome->is_orphan)
+            : $this->binomes()->where('is_orphan', true)->exists();
+    }
+
     public function currentRound()
     {
         return $this->hasOne(Round::class)

@@ -33,7 +33,10 @@ class GameStarted implements ShouldBroadcastNow
 
     /**
      * Ce que reçoit le front :
-     * - La partie avec ses binomes et le premier round
+     * - La liste à plat des joueurs et le premier round
+     * - La composition des binomes n'est JAMAIS diffusée : c'est tout l'enjeu
+     *   de la partie. On annonce seulement qu'un orphelin existe (nombre de
+     *   joueurs impair), sans dire de qui il s'agit.
      * - Chaque joueur voit UNIQUEMENT son propre personnage (pas celui des autres)
      */
     public function broadcastWith(): array
@@ -41,14 +44,15 @@ class GameStarted implements ShouldBroadcastNow
         return [
             'game_id' => $this->game->id,
             'status'  => $this->game->status,
-            'binomes' => $this->game->binomes->map(fn($binome) => [
-                'id'          => $binome->id,
-                'universe_id' => $binome->universe_id,
-                'players'     => $binome->players->map(fn($player) => [
+            'players' => $this->game->binomes
+                ->flatMap(fn($binome) => $binome->players)
+                ->map(fn($player) => [
                     'id'     => $player->id,
                     'pseudo' => $player->pseudo,
-                ]),
-            ]),
+                ])
+                ->sortBy('id')
+                ->values(),
+            'has_orphan' => $this->game->hasOrphan(),
             'first_round' => [
                 'id'                => $this->game->rounds->first()->id,
                 'number'            => 1,

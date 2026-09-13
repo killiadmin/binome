@@ -12,11 +12,21 @@ export default {
         {
           title: "👥 Mise en place",
           description:
-              "• Nombre de joueurs : pair, minimum 4\n" +
+              "• Nombre de joueurs : minimum 4, pair ou impair\n" +
               "• Chaque joueur reçoit un personnage secret\n" +
               "• Chaque personnage a un nom, un univers (ex : Pokémon) et un cosmos, sa sur-catégorie (ex : Animé Japonais)\n" +
               "• Les joueurs sont regroupés en binômes partageant le même univers (sans le savoir)\n" +
               "• Chaque personnage possède 3 mots interdits",
+        },
+        {
+          title: "🕳️ L’orphelin (nombre impair)",
+          description:
+              "Si vous êtes en nombre impair, un joueur tiré au sort n'a aucun binôme : c'est l'orphelin.\n\n" +
+              "• Tout le monde sait qu'un orphelin existe, personne ne sait qui c'est\n" +
+              "• L'orphelin lui-même l'ignore : il a un personnage et un univers comme les autres, et cherche un partenaire qui n'existe pas\n" +
+              "• Il joue et peut être accusé exactement comme les autres\n" +
+              "• Il compte comme une équipe à lui tout seul : s'il est le dernier en jeu, il gagne et touche le bonus complet, comme un binôme intact\n" +
+              "• Tout est révélé à la fin : son identité apparaît au tableau des scores",
         },
         {
           title: "🔄 Déroulement d’un tour",
@@ -50,8 +60,8 @@ export default {
           title: "🏆 Comment gagner",
           description:
               "• Un joueur correctement accusé est éliminé : il devient spectateur jusqu'à la fin\n" +
-              "• La partie s'arrête dès qu'il ne reste qu'UN SEUL binôme complet, ses deux membres encore en jeu → ce binôme gagne\n" +
-              "• Si plus aucun binôme n'est complet, le dernier survivant isolé gagne seul\n\n" +
+              "• La partie s'arrête dès qu'il ne reste qu'UNE SEULE équipe intacte : un binôme dont les deux membres sont encore en jeu, ou l'orphelin encore en vie → cette équipe gagne\n" +
+              "• Si plus aucune équipe n'est intacte, le dernier survivant isolé gagne seul\n\n" +
               "Tu ne gagnes donc pas en devinant le plus vite : tu gagnes en restant en vie.\n" +
               "À la fin, tous les binômes et tous les personnages sont révélés.",
         },
@@ -61,9 +71,10 @@ export default {
               "Tout le monde marque, gagnant comme éliminé :\n\n" +
               "• +1 par élimination — une accusation que la cible a confirmée\n" +
               "• +1 par round survécu — tous les rounds si tu n'es jamais éliminé, sinon jusqu'à ton round d'élimination inclus\n" +
-              "• +5 si tu gagnes AVEC ton binôme intact (ton partenaire jamais éliminé)\n\n" +
+              "• +5 si tu gagnes AVEC ton équipe intacte : ton binôme dont le partenaire n'a jamais été éliminé, ou l'orphelin qui va au bout\n\n" +
               "⚠️ Une accusation ratée ne coûte rien : 0 point, aucune pénalité — mais elle gâche ton tour\n" +
-              "⚠️ Un survivant isolé gagne la partie, mais pas le bonus de +5\n\n" +
+              "⚠️ Un rescapé dont le partenaire a été éliminé gagne la partie, mais pas le bonus de +5\n" +
+              "⚠️ L'orphelin, lui, n'a jamais eu de partenaire à perdre : son bonus est acquis s'il gagne\n\n" +
               "Le classement final est trié par score : un éliminé très offensif peut finir devant un vainqueur discret.",
         },
       ]

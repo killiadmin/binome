@@ -37,7 +37,14 @@ const cosmosId = ref(null)
 const cosmosOptions = ref([])            // [{ id, name, playable_universe_count }]
 const savingSettings = ref(false)
 
+// Un joueur surnuméraire forme quand même une « équipe » : il consomme son
+// propre univers, d'où le ceil().
 const pairsNeeded = computed(() => Math.max(1, Math.ceil(players.value.length / 2)))
+
+// Nombre impair : le dernier joueur tiré au sort jouera sans binôme.
+const willHaveOrphan = computed(
+    () => players.value.length >= 4 && players.value.length % 2 !== 0
+)
 
 const selectedCosmos = computed(
     () => cosmosOptions.value.find(c => c.id === cosmosId.value) || null
@@ -431,7 +438,17 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                 <span class="pill-dot"></span>
                 {{ getGameStatusText(gameStatus) }}
               </span>
+              <span v-if="willHaveOrphan && gameStatus === 'waiting'" class="pill pill--orphan">
+                <i class="fa-solid fa-user-slash"></i> 1 orphelin
+              </span>
             </div>
+
+            <p v-if="willHaveOrphan && gameStatus === 'waiting'" class="orphan-hint">
+              <i class="fa-solid fa-circle-info"></i>
+              Nombre impair : un joueur sera tiré au sort pour jouer sans binôme.
+              Il gagne les mêmes points qu'un binôme s'il finit dernier en jeu —
+              mais il ne saura pas qu'il est seul.
+            </p>
 
             <!-- Liste des joueurs -->
             <div class="roster">
@@ -802,6 +819,18 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   font-size: 0.8rem;
   color: var(--arcade-blue-grey-dark, #37474f);
   margin: 0;
+}
+
+.pill--orphan {
+  border-color: var(--arcade-blue-grey);
+  color: var(--arcade-blue-grey-dark);
+}
+
+.orphan-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: var(--arcade-blue-grey-dark);
+  text-align: center;
 }
 
 .start-blocked {

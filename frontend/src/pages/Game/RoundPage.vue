@@ -38,6 +38,15 @@ const questionText = ref('')
 const accusationTarget = ref('')
 const accusationCharacter = ref('')
 
+// Erreur affichée DANS la modale d'action : la bannière `error` de la page est
+// masquée par le backdrop tant qu'une modale est ouverte, le joueur ne la voit pas.
+const modalError = ref(null)
+
+// Doit rester aligné sur PlayQuestionRequest (min:5) côté backend.
+const QUESTION_MIN = 5
+const QUESTION_MAX = 200
+const CHARACTER_MAX = 100
+
 const showQuestionModal = ref(false)
 const showAccusationModal = ref(false)
 
@@ -66,6 +75,15 @@ const submittingConfirm    = ref(false)
 const gameStats       = ref([])
 const showScoreBoard  = ref(false)
 const gameWinners     = ref([])
+
+// Fiche joueur : consultation des échanges adressés à un joueur donné
+const selectedPlayerId = ref(null)
+const showPlayerSheet  = ref(false)
+
+// Nombre de joueurs impair : un orphelin joue sans binôme. Tout le monde sait
+// qu'il existe, personne ne sait qui c'est — pas même lui, jusqu'à la fin.
+const hasOrphan      = ref(false)
+const orphanPseudos  = ref(new Set())
 
 // ─── COMPUTED ─────────────────────────────────────────────────────────────────
 
@@ -124,10 +142,45 @@ const actionsByRound = computed(() => {
   return Object.values(groups)
 })
 
+const trimmedQuestion = computed(() => questionText.value.trim())
+
+const questionTooShort = computed(() => trimmedQuestion.value.length < QUESTION_MIN)
+
 const eliminatedPlayerIds = computed(() => {
   const ids = new Set()
   players.value.forEach(p => { if (p.is_eliminated) ids.add(p.id) })
   return ids
+})
+
+const selectedPlayer = computed(() =>
+    players.value.find(p => p.id === selectedPlayerId.value) ?? null
+)
+
+// Fil « conversation » d'un joueur : toutes les actions qui lui ont été adressées,
+// de la plus ancienne à la plus récente (actions.value est déjà chronologique).
+// `showRound` ne vaut true qu'au changement de round, pour n'afficher le
+// séparateur qu'une fois par round.
+const selectedPlayerThread = computed(() => {
+  if (!selectedPlayerId.value) return []
+  let lastRound = null
+  return actions.value
+      .filter(a => a.target_player?.id === selectedPlayerId.value)
+      .map((action, i) => {
+        const round = action.round_number ?? action.round_id
+        const showRound = round !== lastRound
+        lastRound = round
+        return {action, key: action.action_id ?? action.id ?? i, round, showRound}
+      })
+})
+
+// Nombre d'échanges reçus par joueur, affiché sur son jeton dans la liste
+const threadCountByPlayer = computed(() => {
+  const counts = {}
+  actions.value.forEach(a => {
+    const id = a.target_player?.id
+    if (id) counts[id] = (counts[id] ?? 0) + 1
+  })
+  return counts
 })
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -159,14 +212,17 @@ onMounted(async () => {
       showAnswerModal.value = true
     }
 
-    players.value = game.binomes.flatMap(b =>
-        b.players.map(p => ({ ...p, is_eliminated: p.is_eliminated ?? false }))
-    )
+    // Le backend renvoie les joueurs à plat : la composition des binômes n'est
+    // exposée qu'une fois un binôme découvert (sinon l'orphelin serait trahi).
+    players.value = (game.players ?? []).map(p => ({
+      ...p,
+      is_eliminated: p.is_eliminated ?? false,
+    }))
+    hasOrphan.value = !!game.has_orphan
     currentRound.value = game.current_round ?? null
     currentPlayerId.value = game.current_round?.current_player_id ?? null
     availableCharacters.value = game.characters ?? []
-    discoveredBinomes.value = game.binomes
-        .filter(b => b.is_discovered)
+    discoveredBinomes.value = (game.binomes ?? [])
         .map(b => ({
           player1_id: b.players[0]?.id,
           player2_id: b.players[1]?.id,
@@ -362,11 +418,28 @@ async function handleGameEnded(data) {
   gameStats.value  = data.stats ?? []
   gameWinners.value = data.winners ?? []
 
+  // Tout est révélé à la fin, orphelin compris.
+  orphanPseudos.value = new Set(
+      (data.all_binomes ?? [])
+          .filter(b => b.is_orphan)
+          .flatMap(b => (b.players ?? []).map(p => p.pseudo))
+  )
+
+  const myPseudo   = players.value.find(p => p.id === myPlayerId.value)?.pseudo
+  const iWasOrphan = !!myPseudo && orphanPseudos.value.has(myPseudo)
   const iWon = data.winners?.some(w => w.id === myPlayerId.value)
+
   gameOverTitle.value = iWon ? '🏆 Victoire !' : '💀 Défaite'
-  gameOverMsg.value   = iWon
-      ? "Votre binôme n'a jamais été découvert. Bien joué !"
-      : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+
+  if (iWasOrphan) {
+    gameOverMsg.value = iWon
+        ? "Tu étais l'orphelin : seul depuis le début, et dernier debout. Tu marques comme un binôme entier !"
+        : "Tu étais l'orphelin : tu jouais seul depuis le début, sans le savoir."
+  } else {
+    gameOverMsg.value = iWon
+        ? "Votre binôme n'a jamais été découvert. Bien joué !"
+        : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+  }
 
   await new Promise(r => setTimeout(r, 4000))
   showScoreBoard.value = true
@@ -405,34 +478,96 @@ async function submitConfirmAccusation(confirmed) {
 
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 
+// Message lisible à partir d'une erreur API : une 422 Laravel porte le détail
+// dans `errors` (un tableau de messages par champ), les autres cas n'ont que
+// `message`.
+function apiErrorMessage(e, fallback) {
+  const data = e.response?.data
+  const fieldErrors = Object.values(data?.errors ?? {}).flat()
+  if (fieldErrors.length) return fieldErrors.join(' ')
+  return data?.message || fallback
+}
+
 async function submitQuestion() {
-  if (!questionTarget.value || !questionText.value.trim() || submitting.value) return
+  if (!questionTarget.value || submitting.value) return
+
+  // Même règle que le backend, mais expliquée avant l'envoi : sinon le refus 422
+  // n'apparaissait que dans la console.
+  if (questionTooShort.value) {
+    modalError.value = `La question doit faire au moins ${QUESTION_MIN} caractères.`
+    return
+  }
+
   submitting.value = true
+  modalError.value = null
   error.value = null
   try {
-    await gameService.playQuestion(gameId, currentRound.value.id, myPlayerId.value, questionTarget.value, questionText.value.trim())
+    await gameService.playQuestion(gameId, currentRound.value.id, myPlayerId.value, questionTarget.value, trimmedQuestion.value)
     showQuestionModal.value = false
     resetForms()
   } catch (e) {
-    error.value = e.response?.data?.message || "Erreur lors de l'envoi de la question."
+    modalError.value = apiErrorMessage(e, "Erreur lors de l'envoi de la question.")
   } finally {
     submitting.value = false
   }
 }
 
 async function submitAccusation() {
-  if (!accusationTarget.value || !accusationCharacter.value || submitting.value) return
+  if (!accusationTarget.value || !accusationCharacter.value.trim() || submitting.value) return
   submitting.value = true
+  modalError.value = null
   error.value = null
   try {
-    await gameService.playAccusation(gameId, currentRound.value.id, myPlayerId.value, accusationTarget.value, accusationCharacter.value)
+    await gameService.playAccusation(gameId, currentRound.value.id, myPlayerId.value, accusationTarget.value, accusationCharacter.value.trim())
     showAccusationModal.value = false
     resetForms()
   } catch (e) {
-    error.value = e.response?.data?.message || "Erreur lors de l'accusation."
+    modalError.value = apiErrorMessage(e, "Erreur lors de l'accusation.")
   } finally {
     submitting.value = false
   }
+}
+
+// Ouvre une modale d'action en repartant d'un état d'erreur propre
+function openActionModal(which) {
+  modalError.value = null
+  if (which === 'question') showQuestionModal.value = true
+  else showAccusationModal.value = true
+}
+
+// ─── FICHE JOUEUR ─────────────────────────────────────────────────────────────
+
+function openPlayerSheet(playerId) {
+  selectedPlayerId.value = playerId
+  showPlayerSheet.value = true
+}
+
+const ANSWER_LABELS = {
+  yes:       'Oui ✅',
+  no:        'Non ❌',
+  dont_know: 'Je ne sais pas 🤷',
+}
+
+function answerLabel(answer) {
+  return ANSWER_LABELS[answer] ?? answer
+}
+
+// Résultat d'une accusation, tolérant aux deux formes de payload :
+// le broadcast envoie accusation_confirmed, GET /games/{game} ne l'expose pas.
+function accusationOutcome(action) {
+  const confirmed = action.accusation_confirmed ?? null
+  const correct   = action.accusation_correct ?? null
+
+  if (confirmed === null && correct === null) {
+    return {icon: '⏳', tone: 'pending', text: 'en attente de confirmation…'}
+  }
+  if (correct) {
+    return {icon: '🎯', tone: 'ok', text: 'accusation correcte !'}
+  }
+  if (confirmed === false) {
+    return {icon: '🛡️', tone: 'ko', text: 'nié par le joueur.'}
+  }
+  return {icon: '❌', tone: 'ko', text: 'mauvaise accusation.'}
 }
 
 function resetForms() {
@@ -440,6 +575,7 @@ function resetForms() {
   questionText.value = ''
   accusationTarget.value = ''
   accusationCharacter.value = ''
+  modalError.value = null
 }
 
 function backToHome() {
@@ -558,6 +694,18 @@ function backToHome() {
         </div>
       </section>
 
+      <!-- ── ANNONCE : UN ORPHELIN EST EN JEU ──────────────────────────── -->
+      <div v-if="hasOrphan && !gameEnded" class="orphan-banner">
+        <span class="orphan-banner__icon"><i class="fa-solid fa-user-slash"></i></span>
+        <div>
+          <p class="orphan-banner__title">Un orphelin dans la partie</p>
+          <p class="orphan-banner__sub">
+            Vous êtes en nombre impair : l'un de vous joue sans binôme.
+            Personne ne sait qui — pas même lui.
+          </p>
+        </div>
+      </div>
+
       <!-- ── NOTIFICATION BINÔME DÉCOUVERT ─────────────────────────────── -->
       <div v-if="binomeNotif" class="binome-notif">
         <span class="binome-notif__icon"><i class="fa-solid fa-magnifying-glass"></i></span>
@@ -573,11 +721,11 @@ function backToHome() {
       <!-- ── ACTIONS (mon tour) ─────────────────────────────────────────── -->
       <div class="actions-section">
         <template v-if="isMyTurn && !hasPlayed">
-          <button type="button" class="cabinet-btn action-cabinet" @click="showQuestionModal = true">
+          <button type="button" class="cabinet-btn action-cabinet" @click="openActionModal('question')">
             <span class="cabinet-btn__icon"><i class="fa-solid fa-comment-dots"></i></span>
             <span class="action-cabinet__label">Poser une question</span>
           </button>
-          <button type="button" class="cabinet-btn cabinet-btn--danger action-cabinet" @click="showAccusationModal = true">
+          <button type="button" class="cabinet-btn cabinet-btn--danger action-cabinet" @click="openActionModal('accusation')">
             <span class="cabinet-btn__icon"><i class="fa-solid fa-crosshairs"></i></span>
             <span class="action-cabinet__label">Faire une accusation</span>
           </button>
@@ -698,16 +846,28 @@ function backToHome() {
 
         <h2 class="board-card__title">Joueurs</h2>
 
+        <p class="players-hint">
+          <i class="fa-solid fa-hand-pointer"></i>
+          Touche un joueur pour relire tout ce qu'on lui a demandé.
+        </p>
+
         <div class="players-grid">
-          <div
+          <button
               v-for="player in players"
               :key="player.id"
-              class="player-token"
+              type="button"
+              class="player-token player-token--clickable"
               :class="{
                 'is-active':     player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id),
                 'is-eliminated': eliminatedPlayerIds.has(player.id),
               }"
+              :aria-label="`Voir la fiche de ${player.pseudo}`"
+              @click="openPlayerSheet(player.id)"
           >
+            <span class="player-token__thread"
+                  :class="{ 'is-empty': !threadCountByPlayer[player.id] }">
+              <i class="fa-solid fa-comments"></i>{{ threadCountByPlayer[player.id] ?? 0 }}
+            </span>
             <div class="player-token__avatar">
               {{ player.pseudo.slice(0, 2).toUpperCase() }}
             </div>
@@ -721,12 +881,109 @@ function backToHome() {
               <span v-if="eliminatedPlayerIds.has(player.id)"
                     class="player-token__badge player-token__badge--danger">💀 éliminé</span>
             </div>
-          </div>
+          </button>
         </div>
       </section>
 
+      <!-- ── MODAL : Fiche joueur (conversation) ────────────────────────── -->
+      <BModal
+          v-model="showPlayerSheet"
+          :title="`🗂️ Fiche de ${selectedPlayer?.pseudo ?? ''}`"
+          no-footer
+          class="arcade-modal"
+          centered
+          scrollable
+      >
+        <div class="sheet-body">
+
+          <!-- En-tête : qui on consulte -->
+          <div class="sheet-head">
+            <span class="sheet-avatar">
+              {{ (selectedPlayer?.pseudo ?? '').slice(0, 2).toUpperCase() }}
+            </span>
+            <div class="sheet-head__info">
+              <p class="sheet-name">{{ selectedPlayer?.pseudo }}</p>
+              <div class="player-token__badges">
+                <span v-if="selectedPlayer?.id === myPlayerId" class="player-token__badge">moi</span>
+                <span v-if="selectedPlayer?.id === currentPlayerId && !eliminatedPlayerIds.has(selectedPlayer?.id)"
+                      class="player-token__badge player-token__badge--active">joue</span>
+                <span v-if="discoveredPlayerIds.has(selectedPlayer?.id)"
+                      class="player-token__badge player-token__badge--danger">découvert</span>
+                <span v-if="eliminatedPlayerIds.has(selectedPlayer?.id)"
+                      class="player-token__badge player-token__badge--danger">💀 éliminé</span>
+                <span class="player-token__badge">
+                  {{ selectedPlayerThread.length }} échange{{ selectedPlayerThread.length > 1 ? 's' : '' }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <p v-if="!selectedPlayerThread.length" class="sheet-empty">
+            Personne ne lui a encore rien demandé.
+          </p>
+
+          <!-- Conversation : tout ce qui lui a été adressé, du plus ancien au plus récent -->
+          <div v-else class="chat">
+            <template v-for="entry in selectedPlayerThread" :key="entry.key">
+
+              <div v-if="entry.showRound" class="chat-round">
+                <span class="chat-round__line"></span>
+                <span class="pixel-chip pixel-chip--gold">Round {{ entry.round }}</span>
+                <span class="chat-round__line"></span>
+              </div>
+
+              <!-- Question posée au joueur, puis sa réponse -->
+              <template v-if="entry.action.type === 'question' && entry.action.is_valid">
+                <div class="chat-row chat-row--in">
+                  <div class="chat-bubble chat-bubble--in">
+                    <p class="chat-author">{{ entry.action.player?.pseudo }}</p>
+                    <p class="chat-text">{{ entry.action.question }}</p>
+                  </div>
+                </div>
+                <div class="chat-row chat-row--out">
+                  <div
+                      v-if="entry.action.answer !== null && entry.action.answer !== undefined"
+                      class="chat-bubble chat-bubble--out"
+                      :class="`chat-bubble--${entry.action.answer}`"
+                  >
+                    <p class="chat-text">{{ answerLabel(entry.action.answer) }}</p>
+                  </div>
+                  <div v-else class="chat-bubble chat-bubble--out chat-bubble--pending">
+                    <p class="chat-text">en attente de réponse…</p>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Question refusée (mot interdit) -->
+              <div v-else-if="entry.action.type === 'question'" class="chat-system chat-system--ko">
+                ❌ <span class="chat-author">{{ entry.action.player?.pseudo }}</span>
+                a utilisé un mot interdit — tour perdu.
+              </div>
+
+              <!-- Accusation dont il a fait l'objet -->
+              <div v-else
+                   class="chat-system"
+                   :class="`chat-system--${accusationOutcome(entry.action).tone}`">
+                {{ accusationOutcome(entry.action).icon }}
+                <span class="chat-author">{{ entry.action.player?.pseudo }}</span>
+                l'accuse
+                <template v-if="entry.action.character_name">
+                  d'être <em>« {{ entry.action.character_name }} »</em>
+                </template>
+                — {{ accusationOutcome(entry.action).text }}
+              </div>
+
+            </template>
+          </div>
+        </div>
+      </BModal>
+
       <!-- ── MODAL : Poser une question ─────────────────────────────────── -->
       <BModal v-model="showQuestionModal" title="💬 Poser une question" no-footer class="arcade-modal">
+        <div v-if="modalError" class="modal-error" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>{{ modalError }}</span>
+        </div>
         <div class="mb-3">
           <label class="picker-label">À qui poses-tu la question ?</label>
           <div class="target-picker" role="radiogroup" aria-label="Choisir un joueur">
@@ -754,14 +1011,26 @@ function backToHome() {
           <BFormInput
               v-model="questionText"
               placeholder="Pose ta question !"
-              maxlength="200"
+              :maxlength="QUESTION_MAX"
+              :state="trimmedQuestion.length && questionTooShort ? false : null"
+              @update:model-value="modalError = null"
               @keyup.enter="submitQuestion"
           />
+          <div class="input-hint" :class="{ 'is-warning': trimmedQuestion.length && questionTooShort }">
+            <span v-if="!trimmedQuestion.length">Minimum {{ QUESTION_MIN }} caractères.</span>
+            <span v-else-if="questionTooShort">
+              Encore {{ QUESTION_MIN - trimmedQuestion.length }}
+              caractère{{ QUESTION_MIN - trimmedQuestion.length > 1 ? 's' : '' }}
+              avant de pouvoir envoyer.
+            </span>
+            <span v-else></span>
+            <span class="input-hint__count">{{ trimmedQuestion.length }}/{{ QUESTION_MAX }}</span>
+          </div>
           <small class="text-muted">Tu ignores les mots interdits de ta cible : si tu en prononces un, elle aura le droit de te mentir.</small>
         </div>
         <div class="text-center">
           <button type="button" class="cabinet-btn cabinet-btn--sm"
-                   :disabled="!questionTarget || !questionText.trim() || submitting"
+                   :disabled="!questionTarget || questionTooShort || submitting"
                    @click="submitQuestion">
             <BSpinner v-if="submitting" small class="me-1"/>
             Poser la question
@@ -813,6 +1082,9 @@ function backToHome() {
                   <span class="stat-chip">🛡️ {{ stat.rounds_survived }} rounds</span>
                   <span v-if="stat.survived_full_game" class="stat-chip stat-chip-gold">
               ⭐ Survie complète
+            </span>
+                  <span v-if="orphanPseudos.has(stat.player_pseudo)" class="stat-chip stat-chip-orphan">
+              🚷 Orphelin
             </span>
                 </div>
 
@@ -907,6 +1179,10 @@ function backToHome() {
       </BModal>
 
       <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" no-footer class="arcade-modal" centered>
+        <div v-if="modalError" class="modal-error" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>{{ modalError }}</span>
+        </div>
         <BAlert variant="warning" class="small">
           ⚠️ Si le joueur confirme, il est éliminé et devient spectateur. Son binôme, lui, reste en jeu et n'est pas révélé.
         </BAlert>
@@ -937,8 +1213,9 @@ function backToHome() {
           <BFormInput
               v-model="accusationCharacter"
               placeholder="Ex : Simba, Iron Man…"
-              maxlength="100"
+              :maxlength="CHARACTER_MAX"
               :disabled="!accusationTarget"
+              @update:model-value="modalError = null"
               @keyup.enter="submitAccusation"
           />
         </div>
@@ -1345,6 +1622,46 @@ function backToHome() {
   margin: 0;
 }
 
+/* Annonce d'un orphelin : informatif, volontairement plus sobre que la
+   notification de binôme découvert — ce n'est pas un événement de jeu. */
+.orphan-banner {
+  margin: 0 1rem 1.25rem;
+  background: linear-gradient(180deg, rgba(90, 111, 125, 0.28), rgba(28, 34, 38, 0.9));
+  border: 3px solid var(--arcade-blue-grey);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  box-shadow: 0 5px 0 var(--arcade-blue-grey-dark);
+}
+
+.orphan-banner__icon {
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 6px;
+  color: #c3d2db;
+}
+
+.orphan-banner__title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.55rem;
+  line-height: 1.6;
+  color: #d3e0e8;
+  margin: 0 0 0.35rem;
+}
+
+.orphan-banner__sub {
+  font-size: 0.8rem;
+  color: #a7bac6;
+  margin: 0;
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -1401,6 +1718,228 @@ function backToHome() {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 0.75rem;
+}
+
+.players-hint {
+  font-size: 0.75rem;
+  color: var(--arcade-taupe);
+  margin: -0.6rem 0 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Jeton cliquable : ouvre la fiche (conversation) du joueur */
+.player-token--clickable {
+  appearance: none;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, opacity 0.2s ease;
+}
+
+.player-token--clickable:hover,
+.player-token--clickable:focus-visible {
+  transform: translateY(-3px);
+  border-color: var(--arcade-gold);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.player-token--clickable:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Pastille "nombre d'échanges reçus" */
+.player-token__thread {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: var(--arcade-gold);
+  color: var(--arcade-dark);
+  font-size: 0.65rem;
+  font-weight: 800;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.player-token__thread.is-empty {
+  background: var(--arcade-taupe);
+  color: #fff;
+}
+
+/* ─── FICHE JOUEUR (MODALE CONVERSATION) ────────────────────────────────────── */
+.sheet-body {
+  font-family: 'Baloo 2', sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px dashed rgba(90, 111, 125, 0.35);
+}
+
+.sheet-avatar {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--arcade-blue-grey);
+  color: #fff;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.sheet-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--arcade-blue-grey-dark);
+  word-break: break-word;
+}
+
+.sheet-head__info .player-token__badges {
+  margin-top: 0.3rem;
+}
+
+.sheet-empty {
+  margin: 0;
+  padding: 1.25rem 0;
+  text-align: center;
+  font-style: italic;
+  color: var(--arcade-taupe);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chat-round {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.chat-round__line {
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, rgba(224, 163, 28, 0.45) 0 4px, transparent 4px 8px);
+}
+
+.chat-row {
+  display: flex;
+}
+
+.chat-row--in  { justify-content: flex-start; }
+.chat-row--out { justify-content: flex-end; }
+
+.chat-bubble {
+  max-width: 82%;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.chat-bubble--in {
+  background: rgba(90, 111, 125, 0.12);
+  border-color: var(--arcade-blue-grey);
+  border-bottom-left-radius: 4px;
+  color: var(--arcade-blue-grey-dark);
+}
+
+.chat-bubble--out {
+  border-bottom-right-radius: 4px;
+  font-weight: 700;
+}
+
+.chat-bubble--yes {
+  background: rgba(63, 122, 78, 0.15);
+  border-color: var(--arcade-success);
+  color: var(--arcade-success-dark);
+}
+
+.chat-bubble--no {
+  background: rgba(179, 69, 63, 0.15);
+  border-color: var(--arcade-danger);
+  color: var(--arcade-danger-dark);
+}
+
+.chat-bubble--dont_know {
+  background: rgba(158, 139, 127, 0.2);
+  border-color: var(--arcade-taupe);
+  color: #6b5c52;
+}
+
+.chat-bubble--pending {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--arcade-taupe);
+  color: var(--arcade-taupe);
+  font-style: italic;
+  font-weight: 600;
+}
+
+.chat-author {
+  margin: 0 0 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #8a6510;
+}
+
+.chat-text {
+  margin: 0;
+}
+
+.chat-system {
+  font-size: 0.8rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border-left: 4px solid var(--arcade-blue-grey);
+  background: rgba(90, 111, 125, 0.1);
+  color: var(--arcade-blue-grey-dark);
+  word-break: break-word;
+}
+
+.chat-system--ok {
+  background: rgba(63, 122, 78, 0.15);
+  border-left-color: var(--arcade-success);
+  color: var(--arcade-success-dark);
+}
+
+.chat-system--ko {
+  background: rgba(179, 69, 63, 0.15);
+  border-left-color: var(--arcade-danger);
+  color: var(--arcade-danger-dark);
+}
+
+.chat-system--pending {
+  background: rgba(158, 139, 127, 0.15);
+  border-left-color: var(--arcade-taupe);
+  color: #6b5c52;
+  font-style: italic;
 }
 
 /* ─── HISTORIQUE DES ACTIONS ────────────────────────────────────────────────── */
@@ -1511,6 +2050,44 @@ function backToHome() {
 
 .history-round-badge {
   flex-shrink: 0;
+}
+
+/* ─── ERREUR & AIDE DANS LES MODALES D'ACTION ───────────────────────────────── */
+/* La bannière .round-error de la page est masquée par le backdrop de la modale :
+   les refus de l'API doivent donc être affichés ici, sous les yeux du joueur. */
+.modal-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.75rem;
+  border: 2px solid var(--arcade-danger);
+  border-radius: 8px;
+  background: rgba(179, 69, 63, 0.12);
+  color: var(--arcade-danger-dark);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.input-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--arcade-taupe);
+}
+
+.input-hint.is-warning {
+  color: var(--arcade-danger-dark);
+  font-weight: 700;
+}
+
+.input-hint__count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── SÉLECTION D'UN JOUEUR (remplace les <select>, pensé pour le tactile) ──── */
@@ -1933,6 +2510,12 @@ function backToHome() {
   color: var(--arcade-blue-grey-dark);
   font-family: 'Baloo 2', sans-serif;
   white-space: nowrap;
+}
+
+.stat-chip-orphan {
+  background: rgba(90, 111, 125, 0.2);
+  border-color: var(--arcade-blue-grey-dark);
+  color: var(--arcade-blue-grey-dark);
 }
 
 .stat-chip-gold {

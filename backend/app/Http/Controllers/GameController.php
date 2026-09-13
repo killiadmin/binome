@@ -90,17 +90,34 @@ class GameController extends Controller
         return response()->json([
             'game_id' => $game->id,
             'status' => $game->status,
-            'binomes' => $game->binomes->map(fn ($binome) => [
-                'id' => $binome->id,
-                'universe' => $binome->universe->name,
-                'cosmos' => $binome->universe->cosmos?->name,
-                'is_discovered' => $binome->is_discovered,
-                'players' => $binome->players->map(fn ($player) => [
+            // Liste à plat : la composition des binomes n'est pas diffusée tant
+            // qu'un binome n'est pas découvert. La renvoyer trahirait l'orphelin,
+            // seul binome à ne compter qu'un joueur.
+            'players' => $game->binomes
+                ->flatMap(fn ($binome) => $binome->players)
+                ->map(fn ($player) => [
                     'id' => $player->id,
                     'pseudo' => $player->pseudo,
                     'is_eliminated' => (bool) $player->pivot->is_eliminated,
+                ])
+                ->sortBy('id')
+                ->values(),
+            // Un orphelin est en jeu (nombre de joueurs impair) — sans dire qui.
+            'has_orphan' => $game->hasOrphan(),
+            'binomes' => $game->binomes
+                ->filter(fn ($binome) => $binome->is_discovered)
+                ->values()
+                ->map(fn ($binome) => [
+                    'id' => $binome->id,
+                    'universe' => $binome->universe->name,
+                    'cosmos' => $binome->universe->cosmos?->name,
+                    'is_discovered' => true,
+                    'players' => $binome->players->map(fn ($player) => [
+                        'id' => $player->id,
+                        'pseudo' => $player->pseudo,
+                        'is_eliminated' => (bool) $player->pivot->is_eliminated,
+                    ]),
                 ]),
-            ]),
             'current_round' => $currentRound ? [
                 'id' => $currentRound->id,
                 'number' => $currentRound->number,

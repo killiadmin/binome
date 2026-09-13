@@ -13,6 +13,12 @@ class Binome extends Model
         'universe_id',
         'discovered_by_player_id',
         'is_discovered', // si présent en DB
+        'is_orphan',
+    ];
+
+    protected $casts = [
+        'is_discovered' => 'boolean',
+        'is_orphan' => 'boolean',
     ];
 
     public function game()

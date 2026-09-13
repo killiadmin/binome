@@ -308,7 +308,7 @@ Page principale du lobby. Gère :
 | `player.ready` | `players.value = data.players` |
 | `room.settings.updated` | `gameMode` / `cosmosId` mis à jour chez tous les joueurs |
 | `player.left` | `players.value = data.players` + update `hostId` si transfert |
-| `game.started` | Redirect vers `RoundPage` avec `gameId` |
+| `game.started` | Redirect vers `RoundPage` avec `gameId` (payload : `players[]` à plat + `has_orphan`, jamais les binômes) |
 
 ### `RoundPage.vue`
 
@@ -322,7 +322,23 @@ Page de jeu principale. Gère :
 - Historique complet des actions groupées par round
 - Animation de transition entre les rounds
 - Notifications de binôme découvert
+- Bannière « un orphelin dans la partie » (voir ci-dessous)
 - Modale de fin de partie
+
+#### Orphelin (nombre de joueurs impair)
+
+Quand la partie démarre à un nombre impair de joueurs, un joueur tiré au sort n'a
+pas de binôme. Le backend n'envoie **jamais** la composition des binômes tant qu'aucun
+n'est découvert : `GET /games/{game}` renvoie `players[]` **à plat** plus un booléen
+`has_orphan`. La page l'utilise pour deux choses :
+
+- `hasOrphan` → bannière `.orphan-banner` : tout le monde sait qu'un orphelin existe,
+  personne ne sait qui — **pas même l'orphelin lui-même**, qui joue une partie normale.
+- À la fin, `GameEnded.all_binomes[].is_orphan` alimente `orphanPseudos` : chip
+  « 🚷 Orphelin » au tableau des scores, et message de fin adapté si c'était toi.
+
+L'orphelin marque comme un binôme intact (bonus de +5) s'il finit dernier en jeu.
+`RoomPage` prévient l'hôte dès le lobby dès que le compte est impair.
 
 ---
 
