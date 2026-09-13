@@ -93,6 +93,7 @@ class AdminGameController extends Controller
                 'universe' => $binome->universe->name,
                 'cosmos' => $binome->universe->cosmos?->name,
                 'is_discovered' => (bool) $binome->is_discovered,
+                'is_orphan' => (bool) $binome->is_orphan,
                 'discovered_by_player_id' => $binome->discovered_by_player_id,
                 'players' => $binome->players->map(function ($player) use ($characters) {
                     $character = $characters->get($player->pivot->character_id);

@@ -20,10 +20,26 @@
 Deviner le personnage secret des autres joueurs avant que son propre binome soit découvert.
 
 ### Mise en place
-- Nombre de joueurs : **pair, minimum 4** (ex : 6, 8, 10…)
+- Nombre de joueurs : **minimum 4**, pair ou impair
 - Au début de chaque partie, chaque joueur reçoit un **personnage secret** tiré d'un univers (ex : Disney, Marvel…)
 - Les joueurs sont regroupés en **binomes** de 2 personnes partageant le même univers, **à leur insu**
 - Chaque personnage possède **3 mots interdits**
+
+#### L'orphelin (nombre impair)
+
+Si les joueurs sont en nombre impair, le joueur surnuméraire du tirage se retrouve
+**seul dans son binome** : c'est l'**orphelin** (`binomes.is_orphan = true`, un seul
+`binome_player`). Il reçoit un personnage et un univers comme les autres, dans un
+univers qui aurait pu porter un vrai binome — rien ne le distingue.
+
+- **L'orphelin ignore qu'il est orphelin** : aucune route ni aucun event ne le lui dit
+  avant la fin. `GET /games/{game}` et l'event `GameStarted` exposent seulement
+  `has_orphan: true` — un orphelin existe, sans dire qui.
+- Il compte comme **une équipe à part entière** : tant qu'il est en vie son équipe est
+  intacte, donc s'il est le dernier en jeu il gagne **et touche le bonus de +5**, comme
+  un binome complet. C'est ce qui le distingue d'un rescapé (joueur dont le partenaire
+  a été éliminé), qui gagne sans bonus.
+- Il est révélé à la fin, dans `GameEnded.all_binomes[].is_orphan`.
 
 ### Modes de jeu
 
@@ -36,8 +52,9 @@ L'hôte choisit le mode dans le lobby (`PATCH /rooms/{room}/settings`) :
 
 Dans les deux modes : **un univers distinct par binome**, et binome = 2 persos du même univers au
 même `level_affectation`. Un univers est « jouable » s'il a ≥ 2 personnages `playable()` partageant
-un niveau. Le mode `cosmos` exige donc **≥ (nb de joueurs / 2) univers jouables** dans le cosmos,
-sinon le démarrage renvoie une erreur `422` (message nommant le cosmos et les compteurs).
+un niveau. L'orphelin consomme lui aussi un univers : le mode `cosmos` exige donc
+**≥ ceil(nb de joueurs / 2) univers jouables** dans le cosmos, sinon le démarrage renvoie une
+erreur `422` (message nommant le cosmos et les compteurs).
 `GET /cosmos` expose `playable_universe_count` par cosmos pour l'affichage côté lobby.
 
 ### Déroulement
@@ -55,9 +72,13 @@ sinon le démarrage renvoie une erreur `422` (message nommant le cosmos et les c
 > ⚠️ Ce sont les mots interdits du **joueur qui pose la question** (liés à son propre personnage) qui filtrent, pas ceux du joueur interrogé. La vérification est uniquement côté backend — le joueur interrogé répond librement sans contrainte backend.
 
 ### Victoire
-- Quand une accusation est correcte, le **binome du joueur ciblé est découvert**
-- La partie se termine quand il ne reste **plus qu'un seul binome non découvert**
-- Ce dernier binome **gagne la partie** (les autres ont tous été découverts avant)
+- Quand une accusation est correcte, le **joueur ciblé est éliminé** (son binome n'est pas révélé)
+- On appelle **équipe intacte** un binome dont aucun membre n'a été éliminé : une paire complète,
+  ou l'orphelin encore en vie. Un **rescapé** est un joueur encore actif dont le partenaire est tombé.
+- La partie se termine quand il ne reste **qu'une seule équipe intacte et aucun rescapé** → cette
+  équipe gagne ; **ou** plus aucune équipe intacte et **un seul rescapé** → il gagne seul
+- Bonus de score : **+5 pour une victoire avec l'équipe intacte** — donc pour un binome complet
+  ou pour l'orphelin, mais pas pour un rescapé
 
 ---
 
@@ -325,7 +346,8 @@ Game
 Binome
   └── belongsTo → Game
   └── belongsTo → Universe
-  └── belongsToMany → Player  (pivot: character_id, score)
+  └── belongsToMany → Player  (pivot: character_id, score, is_eliminated)
+  └── bool: is_orphan          (binome d'un seul joueur — nombre de joueurs impair)
   └── discovered_by_player_id → Player (nullable)
 
 Round
@@ -360,6 +382,7 @@ Action
 | player_id | FK | |
 | character_id | FK | Personnage secret assigné à ce joueur |
 | score | integer | Score du joueur dans cette partie |
+| is_eliminated | boolean | Le joueur a été correctement accusé — il devient spectateur |
 
 ### Champs importants sur `rooms`
 ```php
@@ -376,9 +399,10 @@ $table->foreignId('cosmos_id')->nullable()->constrained('cosmos')->nullOnDelete(
 
 Point d'entrée : `start(Room $room): Game`
 
-1. Valide que le nombre de joueurs est pair et ≥ 4, et que tous sont `is_ready`
+1. Valide que le nombre de joueurs est ≥ 4 (pair ou impair) et que tous sont `is_ready`
 2. Crée la `Game` avec le statut `in_progress`
 3. Mélange aléatoirement les joueurs → forme des paires → `resolveUniverses()` tire un `Universe` distinct par paire → assigne 2 `Character` distincts du même univers et du même niveau
+   - **Nombre impair** : la dernière « paire » ne contient qu'un joueur → binome `is_orphan = true` avec un seul personnage (voir « L'orphelin » plus haut)
    - **Seuls les personnages `playable()` sont tirés** (`verif_manual = true`, `hidden = false`) ; la sélection d'univers ne retient que ceux ayant au moins un binôme jouable au même niveau. Une proposition non validée n'arrive donc jamais en partie.
    - `resolveUniverses()` respecte `room.game_mode` : en mode `cosmos`, les univers sont filtrés sur `room.cosmos_id` ; s'il n'y en a pas assez, une `Exception` est levée (renvoyée en `422` par `GameController::start`, qui enveloppe désormais l'appel dans un `try/catch`).
 4. Délègue la création du premier round à `RoundService::createRound()`
@@ -504,7 +528,10 @@ Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
 
 ### Sécurité des données
 
-- `GET /games/{game}` → ne retourne **jamais** les personnages des joueurs
+- `GET /games/{game}` → ne retourne **jamais** les personnages des joueurs, ni la composition
+  des binomes non découverts : les joueurs arrivent **à plat** dans `players[]`, et seul
+  `has_orphan` (booléen) signale qu'un orphelin est en jeu. Renvoyer les binomes trahirait
+  l'orphelin, seul groupe à ne compter qu'un joueur.
 - `GET /games/{game}/me` → retourne le personnage **uniquement au joueur concerné** (via `player_id` en query param)
 - Les personnages ne sont révélés publiquement que dans les events `BinomeDiscovered` et `GameEnded`
 

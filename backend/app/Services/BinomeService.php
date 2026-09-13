@@ -13,7 +13,7 @@ class BinomeService
 {
     /**
      * Élimine un joueur (sans découvrir son binôme)
-     * Son partenaire devient orphelin
+     * Son partenaire, s'il en a un, se retrouve rescapé isolé
      */
     public function eliminatePlayer(Game $game, Player $target, Player $eliminatedBy): void
     {
@@ -28,8 +28,16 @@ class BinomeService
     }
 
     /**
-     * Vérifie la condition de fin de partie après une élimination
-     * Fin si : il ne reste qu'un binôme complet OU un orphelin seul
+     * Vérifie la condition de fin de partie après une élimination.
+     *
+     * Une « équipe intacte » est un binôme dont aucun membre n'a été éliminé —
+     * donc une paire complète, ou un orphelin (binôme d'un seul joueur, formé
+     * au démarrage quand les joueurs sont en nombre impair) encore en vie.
+     * Un rescapé est un joueur encore actif dont le binôme a perdu l'autre
+     * membre : il peut gagner, mais son binôme est brisé.
+     *
+     * Fin si : il ne reste qu'une équipe intacte et aucun rescapé,
+     *          OU plus aucune équipe intacte et un seul rescapé.
      */
     public function checkGameOver(Game $game): ?array
     {
@@ -50,33 +58,25 @@ class BinomeService
                 : [];
         }
 
-        // Cherche les binômes avec leurs deux joueurs encore actifs
-        $completeBinomes = $game->binomes->filter(function ($binome) {
-            $activePairs = $binome->players
-                ->filter(fn($p) => !$p->pivot->is_eliminated)
-                ->count();
-            return $activePairs === 2;
-        });
+        // Équipes intactes : paire complète encore debout, ou orphelin en vie
+        $intactTeams = $game->binomes->filter(
+            fn($binome) => $binome->players->every(fn($p) => !$p->pivot->is_eliminated)
+        );
 
-        // Joueurs actifs sans binôme complet (orphelins)
-        $orphans = $game->binomes
-            ->filter(function ($binome) {
-                $active = $binome->players
-                    ->filter(fn($p) => !$p->pivot->is_eliminated)
-                    ->count();
-                return $active === 1;
-            })
+        // Joueurs actifs dont le binôme a été brisé par une élimination
+        $loneSurvivors = $game->binomes
+            ->reject(fn($binome) => $binome->players->every(fn($p) => !$p->pivot->is_eliminated))
             ->flatMap(fn($b) => $b->players->filter(fn($p) => !$p->pivot->is_eliminated))
             ->values();
 
-        // Fin si exactement 1 binôme complet et aucun orphelin
-        if ($completeBinomes->count() === 1 && $orphans->isEmpty()) {
-            return $completeBinomes->first()->players->all();
+        // Fin si exactement 1 équipe intacte et aucun rescapé
+        if ($intactTeams->count() === 1 && $loneSurvivors->isEmpty()) {
+            return $intactTeams->first()->players->all();
         }
 
-        // Fin si 0 binôme complet et exactement 1 orphelin
-        if ($completeBinomes->isEmpty() && $orphans->count() === 1) {
-            return [$orphans->first()];
+        // Fin si 0 équipe intacte et exactement 1 rescapé
+        if ($intactTeams->isEmpty() && $loneSurvivors->count() === 1) {
+            return [$loneSurvivors->first()];
         }
 
         return null; // Partie continue

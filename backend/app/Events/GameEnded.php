@@ -50,9 +50,10 @@ class GameEnded implements ShouldBroadcastNow
             ])->sortByDesc('score')->values(),
             'all_binomes' => $this->game->binomes->load('players', 'universe')
                 ->map(fn($binome) => [
-                    'id'       => $binome->id,
-                    'universe' => $binome->universe->name,
-                    'players'  => $binome->players->map(fn($p) => [
+                    'id'        => $binome->id,
+                    'universe'  => $binome->universe->name,
+                    'is_orphan' => (bool) $binome->is_orphan,
+                    'players'   => $binome->players->map(fn($p) => [
                         'pseudo'    => $p->pseudo,
                         'character' => \App\Models\Character::find($p->pivot->character_id)?->name,
                     ]),

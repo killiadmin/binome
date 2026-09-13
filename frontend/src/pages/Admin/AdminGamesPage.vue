@@ -187,6 +187,7 @@ onMounted(loadGames)
                 {{ binome.universe }}
                 <span v-if="binome.cosmos" class="cosmos">· {{ binome.cosmos }}</span>
                 <span v-if="binome.is_discovered" class="tag tag--discovered">découvert</span>
+                <span v-if="binome.is_orphan" class="tag tag--orphan">orphelin</span>
               </h3>
               <div class="players">
                 <div v-for="p in binome.players" :key="p.id" class="player">
@@ -418,6 +419,7 @@ onMounted(loadGames)
 
 .tag--discovered { background: var(--arcade-success); color: #fff; }
 .tag--eliminated { background: var(--arcade-danger); color: #fff; }
+.tag--orphan { background: var(--arcade-blue-grey); color: #fff; }
 
 .round { margin-bottom: 0.6rem; }
 .round-label { font-weight: 700; font-size: 0.85rem; }

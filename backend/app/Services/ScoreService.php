@@ -24,10 +24,13 @@ class ScoreService
 
         foreach ($game->binomes as $binome) {
 
-            // Un binôme est « intact » si aucun de ses deux joueurs n'a été
-            // éliminé. Un survivant orphelin peut gagner la partie, mais il ne
-            // touche pas les points du binôme gagnant : son binôme est brisé.
-            $binomeIntact = $binome->players
+            // Une équipe est « intacte » si aucun de ses membres n'a été
+            // éliminé. Un rescapé isolé (partenaire éliminé) peut gagner la
+            // partie, mais il ne touche pas les points de l'équipe gagnante :
+            // son binôme est brisé. L'orphelin, lui, est une équipe d'un seul
+            // joueur : tant qu'il est en vie son équipe est intacte, et il
+            // gagne donc le bonus complet s'il est le dernier en jeu.
+            $teamIntact = $binome->players
                 ->every(fn($p) => ! $p->pivot->is_eliminated);
 
             foreach ($binome->players as $player) {
@@ -55,7 +58,7 @@ class ScoreService
                 // Score
                 $score = $eliminations * 1
                     + $roundsSurvived * 1
-                    + ($isWinner && !$isEliminated && $binomeIntact ? 5 : 0);
+                    + ($isWinner && !$isEliminated && $teamIntact ? 5 : 0);
 
                 $stat = GameStat::create([
                     'game_id'            => $game->id,
