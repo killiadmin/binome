@@ -23,5 +23,6 @@ body {
 
 .app-main {
   padding-top: var(--navbar-height);
+  padding-bottom: var(--navbar-height);
 }
 </style>
