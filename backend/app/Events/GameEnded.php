@@ -47,6 +47,7 @@ class GameEnded implements ShouldBroadcastNow
                 'score'              => $s->score,
                 'is_winner'          => $s->is_winner,
                 'is_eliminated'      => $s->is_eliminated,
+                'is_excluded'        => (bool) $s->is_excluded,
             ])->sortByDesc('score')->values(),
             'all_binomes' => $this->game->binomes->load('players', 'universe')
                 ->map(fn($binome) => [

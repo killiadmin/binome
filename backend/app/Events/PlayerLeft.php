@@ -34,11 +34,7 @@ class PlayerLeft implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
-            'players'      => $this->room->players()->get()->map(fn($p) => [
-                'id'       => $p->id,
-                'pseudo'   => $p->pseudo,
-                'is_ready' => $p->pivot->is_ready,
-            ]),
+            'players'      => $this->room->playersPayload(),
             'new_host_id'  => $this->newHost?->id,
         ];
     }

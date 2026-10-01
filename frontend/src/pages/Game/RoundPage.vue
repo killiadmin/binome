@@ -1,8 +1,14 @@
 <script setup>
-import {ref, computed, onMounted, onUnmounted, nextTick, watch} from 'vue'
+import {ref, computed, onMounted, onUnmounted} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {gameService} from '../../services/gameService'
 import {useReverb, resetEcho} from '../../sockets/useReverb.js'
+import {useGameNotes} from '../../composables/useGameNotes'
+import QuickReactions from '../../components/game/QuickReactions.vue'
+import GameNotepad from '../../components/game/GameNotepad.vue'
+import GameRecap from '../../components/game/GameRecap.vue'
+import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
+import RoundTransition from '../../components/game/RoundTransition.vue'
 import {
   BModal, BFormInput,
   BAlert, BSpinner
@@ -65,8 +71,7 @@ const submittingAnswer = ref(false)
 
 const showRoundTransition = ref(false)
 const transitionRoundNumber = ref(1)
-
-const transitionCanvas = ref(null)
+let finishRoundTransition = null
 
 const pendingAccusation    = ref(null)
 const showAccusationConfirmModal = ref(false)
@@ -74,7 +79,7 @@ const submittingConfirm    = ref(false)
 
 const gameStats       = ref([])
 const showScoreBoard  = ref(false)
-const gameWinners     = ref([])
+const recap           = ref(null)
 
 // Fiche joueur : consultation des échanges adressés à un joueur donné
 const selectedPlayerId = ref(null)
@@ -84,6 +89,55 @@ const showPlayerSheet  = ref(false)
 // qu'il existe, personne ne sait qui c'est — pas même lui, jusqu'à la fin.
 const hasOrphan      = ref(false)
 const orphanPseudos  = ref(new Set())
+
+// Bloc-notes privé (localStorage uniquement, voir composables/useGameNotes.js)
+const notes = useGameNotes(gameId, myPlayerId.value)
+const showNotepad = ref(false)
+
+// Réactions rapides reçues, en cours d'animation
+const reactions = ref([])
+let reactionSeq = 0
+
+// ─── PRÉSENCE / JOUEURS DÉCONNECTÉS ───────────────────────────────────────────
+
+// Membres connectés au channel game.{id}, joueurs et spectateurs : id → pseudo
+const members = ref(new Map())
+// id → horodatage de la déconnexion. Absent = en ligne.
+const offlineSince = ref({})
+const leaveTimers = new Map()
+const now = ref(Date.now())
+let clock = null
+
+// Un rechargement de page produit un leaving suivi d'un joining : on attend un
+// peu avant d'afficher le joueur hors ligne.
+const LEAVE_GRACE_MS = 3000
+// Délai avant de proposer à l'hôte de passer son tour / de l'exclure : évite
+// une décision hâtive sur un simple rechargement ou un écran verrouillé.
+const AFK_GRACE_SECONDS = 30
+
+const AFK_REASONS = {
+  turn:       "C'est son tour de jouer",
+  answer:     'Il doit répondre à une question',
+  accusation: 'Il doit confirmer une accusation',
+}
+
+// L'hôte du salon décide pour un joueur déconnecté (GET /games/{game} → host_id)
+const hostId = ref(null)
+const skipping = ref(false)
+const excluding = ref(false)
+const excludeTarget = ref(null)   // joueur dont on confirme l'exclusion
+const showExcludeModal = ref(false)
+
+// Message éphémère (tour passé, réactions trop rapides…)
+const notice = ref(null)
+let noticeTimer = null
+
+// WebSocket coupé (écran verrouillé, Wi-Fi qui saute) : Pusher se reconnecte
+// seul, mais les events émis pendant la coupure sont perdus → resync().
+const connectionLost = ref(false)
+let stopConnectionWatch = null
+let hiddenAt = null
+let syncing = false
 
 // ─── COMPUTED ─────────────────────────────────────────────────────────────────
 
@@ -152,6 +206,78 @@ const eliminatedPlayerIds = computed(() => {
   return ids
 })
 
+// Spectateur : membre du salon sans personnage (arrivé après le lancement).
+// Un joueur éliminé garde sa carte mais ne joue plus.
+const isSpectator = computed(() =>
+    !loading.value && !players.value.some(p => p.id === myPlayerId.value)
+)
+
+const amEliminated = computed(() => eliminatedPlayerIds.value.has(myPlayerId.value))
+
+function isOnline(playerId) {
+  return !(playerId in offlineSince.value)
+}
+
+const spectators = computed(() =>
+    [...members.value]
+        .filter(([id]) => !players.value.some(p => p.id === id))
+        .map(([id, pseudo]) => ({id, pseudo}))
+)
+
+// Qui la partie attend-elle ? Miroir de ActionService::findBlocker() côté serveur.
+const blocker = computed(() => {
+  if (gameEnded.value || !currentRound.value) return null
+  const cp = currentPlayerId.value
+  const last = actions.value
+      .filter(a => a.round_id === currentRound.value.id && a.player?.id === cp)
+      .at(-1)
+
+  if (!last) return {playerId: cp, reason: 'turn'}
+  if (last.type === 'question' && last.is_valid && last.answer == null) {
+    return {playerId: last.target_player?.id, reason: 'answer'}
+  }
+  if (last.type === 'accusation' && last.accusation_confirmed == null) {
+    return {playerId: last.target_player?.id, reason: 'accusation'}
+  }
+  return null
+})
+
+const isHost = computed(() => hostId.value !== null && hostId.value === myPlayerId.value)
+const hostPseudo = computed(() =>
+    players.value.find(p => p.id === hostId.value)?.pseudo ?? members.value.get(hostId.value) ?? "l'hôte"
+)
+
+// Le joueur attendu est hors ligne : la partie est en pause. Seul l'hôte
+// décide, après AFK_GRACE_SECONDS : passer son tour (sauf s'il doit répondre à
+// une question — une réponse est obligatoire) ou l'exclure. Le serveur
+// revérifie la présence via Reverb.
+const afkBlocker = computed(() => {
+  const b = blocker.value
+  if (!b?.playerId || isOnline(b.playerId)) return null
+  const player = players.value.find(p => p.id === b.playerId)
+  if (!player) return null
+  const seconds = Math.max(0, Math.floor((now.value - offlineSince.value[b.playerId]) / 1000))
+  const decides = isHost.value && b.playerId !== myPlayerId.value
+  return {
+    ...b,
+    player,
+    seconds,
+    waitLeft: Math.max(0, AFK_GRACE_SECONDS - seconds),
+    canSkip: decides && b.reason !== 'answer',
+    canExclude: decides,
+    hostOffline: hostId.value !== null && !isOnline(hostId.value),
+  }
+})
+
+const amExcluded = computed(() =>
+    !!players.value.find(p => p.id === myPlayerId.value)?.is_excluded
+)
+
+// Photo d'un joueur par id (panneau « Historique de la partie »)
+const avatarById = computed(() =>
+    Object.fromEntries(players.value.map(p => [p.id, p.avatar_url ?? null]))
+)
+
 const selectedPlayer = computed(() =>
     players.value.find(p => p.id === selectedPlayerId.value) ?? null
 )
@@ -185,11 +311,98 @@ const threadCountByPlayer = computed(() => {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
-watch(showRoundTransition, async (val) => {
-  if (!val) return
-  await nextTick()
-  startWaveAnimation(transitionCanvas.value)
-})
+// État complet de la partie depuis l'API. Sert au chargement initial et à la
+// resynchronisation après une coupure (events manqués pendant la déconnexion).
+async function loadGameState() {
+  const game = await gameService.show(gameId)
+  actions.value = game.actions ?? []
+
+  // Le backend renvoie les joueurs à plat : la composition des binômes n'est
+  // exposée qu'une fois un binôme découvert (sinon l'orphelin serait trahi).
+  players.value = (game.players ?? []).map(p => ({
+    ...p,
+    is_eliminated: p.is_eliminated ?? false,
+  }))
+  hasOrphan.value = !!game.has_orphan
+  hostId.value = game.host_id ?? null
+  currentRound.value = game.current_round ?? null
+  currentPlayerId.value = game.current_round?.current_player_id ?? null
+  availableCharacters.value = game.characters ?? []
+  discoveredBinomes.value = (game.binomes ?? [])
+      .map(b => ({
+        player1_id: b.players[0]?.id,
+        player2_id: b.players[1]?.id,
+      }))
+
+  hasPlayed.value = !!currentRound.value && actions.value.some(a =>
+      a.round_id === currentRound.value.id && a.player?.id === myPlayerId.value
+  )
+
+  // Un spectateur n'a pas de personnage : /me répondrait 404.
+  const inGame = players.value.some(p => p.id === myPlayerId.value)
+  if (inGame && !myCharacter.value) {
+    myCharacter.value = await gameService.myCharacter(gameId, myPlayerId.value)
+  }
+
+  restorePendingPrompts()
+
+  if (game.status === 'finished' && !gameEnded.value) {
+    await handleGameEnded(null, {animate: false})
+  }
+}
+
+// Rouvre (ou referme) les modales qui attendent une réponse de MA part.
+function restorePendingPrompts() {
+  const me = myPlayerId.value
+
+  const question = actions.value.find(a =>
+      a.type === 'question' && a.is_valid && a.target_player?.id === me && a.answer == null
+  )
+  pendingQuestion.value = question ?? null
+  showAnswerModal.value = !!question
+
+  const accusation = actions.value.find(a =>
+      a.type === 'accusation' && a.target_player?.id === me && a.accusation_confirmed == null
+  )
+  pendingAccusation.value = accusation ?? null
+  showAccusationConfirmModal.value = !!accusation
+}
+
+async function resync() {
+  if (syncing) return
+  syncing = true
+  try {
+    await loadGameState()
+  } catch {
+    /* la prochaine reconnexion ou le prochain retour sur l'onglet réessaiera */
+  } finally {
+    syncing = false
+  }
+}
+
+function watchConnection(onConnectionChange) {
+  let connectedOnce = false
+  stopConnectionWatch = onConnectionChange(({current}) => {
+    if (current === 'connected') {
+      if (connectedOnce) resync()
+      connectedOnce = true
+      connectionLost.value = false
+    } else if (connectedOnce) {
+      connectionLost.value = true
+    }
+  })
+}
+
+// Téléphone verrouillé puis rallumé : la socket peut se croire encore
+// connectée alors que des events ont été perdus. On resynchronise au retour.
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now()
+    return
+  }
+  if (hiddenAt && Date.now() - hiddenAt > 3000) resync()
+  hiddenAt = null
+}
 
 onMounted(async () => {
   if (!gameId || !myPlayerId.value) {
@@ -198,38 +411,7 @@ onMounted(async () => {
   }
 
   try {
-    const game = await gameService.show(gameId)
-    actions.value = game.actions ?? []
-
-    const pending = (game.actions ?? []).find(a =>
-        a.type === 'question' &&
-        a.is_valid &&
-        a.target_player?.id === myPlayerId.value &&
-        a.answer === null
-    )
-    if (pending) {
-      pendingQuestion.value = pending
-      showAnswerModal.value = true
-    }
-
-    // Le backend renvoie les joueurs à plat : la composition des binômes n'est
-    // exposée qu'une fois un binôme découvert (sinon l'orphelin serait trahi).
-    players.value = (game.players ?? []).map(p => ({
-      ...p,
-      is_eliminated: p.is_eliminated ?? false,
-    }))
-    hasOrphan.value = !!game.has_orphan
-    currentRound.value = game.current_round ?? null
-    currentPlayerId.value = game.current_round?.current_player_id ?? null
-    availableCharacters.value = game.characters ?? []
-    discoveredBinomes.value = (game.binomes ?? [])
-        .map(b => ({
-          player1_id: b.players[0]?.id,
-          player2_id: b.players[1]?.id,
-        }))
-
-    const me = await gameService.myCharacter(gameId, myPlayerId.value)
-    myCharacter.value = me
+    await loadGameState()
   } catch (e) {
     error.value = 'Impossible de charger la partie.'
   } finally {
@@ -237,8 +419,12 @@ onMounted(async () => {
   }
 
   resetEcho()
-  const {joinGame} = useReverb(myPlayerId.value)
+  const {joinGame, onConnectionChange} = useReverb(myPlayerId.value)
+  watchConnection(onConnectionChange)
   joinGame(gameId, {
+    onHere:               handleHere,
+    onJoining:            handleJoining,
+    onLeaving:            handleLeaving,
     onRoundStarted:       handleRoundStarted,
     onActionPlayed:       handleActionPlayed,
     onAnswerGiven:        handleAnswerGiven,
@@ -246,83 +432,163 @@ onMounted(async () => {
     onBinomeDiscovered:   handleBinomeDiscovered,
     onGameEnded:          handleGameEnded,
     onPlayerEliminated: handlePlayerEliminated,
+    onReactionSent:       handleReactionSent,
+    onTurnSkipped:        handleTurnSkipped,
+    onPlayerExcluded:     handlePlayerExcluded,
+    onPlayerAvatarUpdated: (data) => {
+      players.value = players.value.map(p => p.id === data.player_id ? {...p, avatar_url: data.avatar_url} : p)
+    },
     onError: () => { error.value = 'Connexion WebSocket perdue.' },
   })
+
+  clock = setInterval(() => { now.value = Date.now() }, 1000)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
+  stopConnectionWatch?.()
+  clearInterval(clock)
+  clearTimeout(noticeTimer)
+  leaveTimers.forEach(timer => clearTimeout(timer))
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   const {leaveGame} = useReverb(myPlayerId.value)
   leaveGame(gameId)
 })
 
 
-function startWaveAnimation(canvas) {
-  if (!canvas) return
+// ─── WEBSOCKET HANDLERS ───────────────────────────────────────────────────────
 
-  const ctx = canvas.getContext('2d')
-  const W = canvas.width = window.innerWidth
-  const H = canvas.height = window.innerHeight
-  const duration = 2200
-  const start = performance.now()
-
-  // Deux vagues décalées
-  const waves = [
-    {color: 'rgba(224, 163, 28, 0.18)', speed: 1, delay: 0},
-    {color: 'rgba(224, 163, 28, 0.10)', speed: 0.85, delay: 180},
-    {color: 'rgba(255, 255, 255, 0.06)', speed: 1.1, delay: 80},
-  ]
-
-  function easeInOut(t) {
-    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
-  }
-
-  function drawFrame(now) {
-    const elapsed = now - start
-    if (elapsed > duration) {
-      ctx.clearRect(0, 0, W, H)
-      return
-    }
-
-    ctx.clearRect(0, 0, W, H)
-
-    waves.forEach(wave => {
-      const t = Math.max(0, elapsed - wave.delay) / (duration - wave.delay)
-      if (t <= 0) return
-
-      const progress = easeInOut(Math.min(t, 1))
-      const centerX = progress * (W + 300) - 150
-      const amplitude = H * 0.18
-      const frequency = 0.012 * wave.speed
-
-      ctx.beginPath()
-      ctx.moveTo(0, H)
-
-      for (let x = 0; x <= W; x += 4) {
-        const y = H / 2
-            + Math.sin((x * frequency) + (elapsed * 0.004 * wave.speed)) * amplitude
-            + Math.sin((x * frequency * 1.7) + (elapsed * 0.003)) * (amplitude * 0.4)
-        // Masque : seulement à gauche du front de vague
-        if (x < centerX + 60) {
-          if (x === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-      }
-
-      // Ferme vers le bas pour remplir
-      ctx.lineTo(Math.min(centerX + 60, W), H)
-      ctx.lineTo(0, H)
-      ctx.closePath()
-      ctx.fillStyle = wave.color
-      ctx.fill()
-    })
-
-    requestAnimationFrame(drawFrame)
-  }
-
-  requestAnimationFrame(drawFrame)
+function handleHere(list) {
+  members.value = new Map(list.map(m => [m.id, m.pseudo]))
+  const stamp = Date.now()
+  const offline = {}
+  players.value.forEach(p => {
+    if (!members.value.has(p.id)) offline[p.id] = offlineSince.value[p.id] ?? stamp
+  })
+  offlineSince.value = offline
 }
 
-// ─── WEBSOCKET HANDLERS ───────────────────────────────────────────────────────
+function handleJoining(member) {
+  clearTimeout(leaveTimers.get(member.id))
+  leaveTimers.delete(member.id)
+  members.value = new Map(members.value).set(member.id, member.pseudo)
+  const {[member.id]: _, ...rest} = offlineSince.value
+  offlineSince.value = rest
+}
+
+function handleLeaving(member) {
+  clearTimeout(leaveTimers.get(member.id))
+  leaveTimers.set(member.id, setTimeout(() => {
+    leaveTimers.delete(member.id)
+    const next = new Map(members.value)
+    next.delete(member.id)
+    members.value = next
+    offlineSince.value = {...offlineSince.value, [member.id]: Date.now() - LEAVE_GRACE_MS}
+  }, LEAVE_GRACE_MS))
+}
+
+function handleReactionSent(data) {
+  const id = ++reactionSeq
+  reactions.value.push({id, emoji: data.emoji, pseudo: data.player?.pseudo, x: 12 + Math.random() * 76})
+  // Plafond : une rafale ne doit pas couvrir l'écran
+  if (reactions.value.length > 12) reactions.value.shift()
+  setTimeout(() => {
+    reactions.value = reactions.value.filter(r => r.id !== id)
+  }, 2700)
+}
+
+async function sendReaction(emoji) {
+  try {
+    await gameService.react(gameId, myPlayerId.value, emoji)
+  } catch (e) {
+    if (e.response?.status === 429) showNotice('Doucement sur les réactions 😅')
+  }
+}
+
+function handleTurnSkipped(data) {
+  // Reçu par le joueur « déconnecté » lui-même s'il revient pile à ce moment.
+  if (data.player?.id === myPlayerId.value && data.reason === 'accusation') {
+    showAccusationConfirmModal.value = false
+    pendingAccusation.value = null
+  }
+
+  const outcome = data.reason === 'accusation'
+      ? "l'accusation est tranchée automatiquement"
+      : 'son tour est passé'
+
+  showNotice(`⏭️ ${data.player?.pseudo} est déconnecté : ${outcome} (décision de l'hôte).`)
+}
+
+function handlePlayerExcluded(data) {
+  const removed = [data.player?.id, data.partner?.id].filter(Boolean)
+  players.value = players.value.map(p => removed.includes(p.id)
+      ? {...p, is_eliminated: true, is_excluded: p.id === data.player?.id || p.is_excluded}
+      : p)
+
+  // Question / accusation devenue sans objet : retirée, son auteur rejoue.
+  if (data.cancelled_action_id) {
+    const cancelled = actions.value.find(a => (a.action_id ?? a.id) === data.cancelled_action_id)
+    actions.value = actions.value.filter(a => (a.action_id ?? a.id) !== data.cancelled_action_id)
+    if (cancelled?.player?.id === myPlayerId.value) hasPlayed.value = false
+    if ((pendingQuestion.value?.action_id ?? pendingQuestion.value?.id) === data.cancelled_action_id) {
+      showAnswerModal.value = false
+      pendingQuestion.value = null
+    }
+    if ((pendingAccusation.value?.action_id ?? pendingAccusation.value?.id) === data.cancelled_action_id) {
+      showAccusationConfirmModal.value = false
+      pendingAccusation.value = null
+    }
+  }
+
+  showNotice(data.partner
+      ? `🚪 ${data.player.pseudo} a été exclu par l'hôte : son binôme ${data.partner.pseudo} est éliminé avec lui.`
+      : `🚪 ${data.player.pseudo} a été exclu par l'hôte.`)
+}
+
+function askExclude(player) {
+  excludeTarget.value = player
+  showExcludeModal.value = true
+}
+
+async function confirmExclude() {
+  if (excluding.value || !excludeTarget.value) return
+  excluding.value = true
+  error.value = null
+  try {
+    await gameService.excludePlayer(gameId, excludeTarget.value.id, myPlayerId.value)
+  } catch (e) {
+    error.value = apiErrorMessage(e, "Impossible d'exclure ce joueur.")
+  } finally {
+    excluding.value = false
+    showExcludeModal.value = false
+    excludeTarget.value = null
+  }
+}
+
+function showNotice(text) {
+  notice.value = text
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => { notice.value = null }, 5000)
+}
+
+async function skipBlockedTurn() {
+  if (skipping.value) return
+  skipping.value = true
+  error.value = null
+  try {
+    await gameService.skipTurn(gameId, myPlayerId.value)
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'Impossible de passer ce tour.')
+  } finally {
+    skipping.value = false
+  }
+}
+
+function formatDuration(seconds) {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return m ? `${m} min ${String(s).padStart(2, '0')} s` : `${s} s`
+}
 
 async function handleRoundStarted(data) {
   if (data.is_new_round) {
@@ -371,13 +637,28 @@ function handleAnswerGiven(data) {
   if (idx !== -1) {
     actions.value[idx] = {...actions.value[idx], answer: data.answer}
   }
+  // Répondue ailleurs (autre onglet, tour passé) : la modale n'a plus lieu d'être.
+  if ((pendingQuestion.value?.action_id ?? pendingQuestion.value?.id) === data.action_id) {
+    showAnswerModal.value = false
+    pendingQuestion.value = null
+  }
 }
 
+// Résolue par l'event `done` de RoundTransition (la durée vit dans le composant).
 async function playRoundTransition(roundNumber) {
+  finishRoundTransition?.()
   transitionRoundNumber.value = roundNumber
   showRoundTransition.value = true
-  await new Promise(resolve => setTimeout(resolve, 5000))
+  let finish
+  await new Promise(resolve => { finish = finishRoundTransition = resolve })
+  // Un round plus récent a pu prendre la main entre-temps : on ne le coupe pas.
+  if (finishRoundTransition !== finish) return
+  finishRoundTransition = null
   showRoundTransition.value = false
+}
+
+function onRoundTransitionDone() {
+  finishRoundTransition?.()
 }
 
 async function submitAnswer(answer) {
@@ -413,35 +694,66 @@ function handleBinomeDiscovered(data) {
   }, 6000)
 }
 
-async function handleGameEnded(data) {
-  gameEnded.value  = true
-  gameStats.value  = data.stats ?? []
-  gameWinners.value = data.winners ?? []
+// GameEnded est diffusé depuis la transaction qui clôt la partie : le récap
+// peut répondre 409 (« pas terminée ») quelques instants, d'où les reprises.
+async function fetchRecap(attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await gameService.recap(gameId)
+    } catch (e) {
+      if (e.response?.status !== 409 || i === attempts - 1) return null
+      await new Promise(r => setTimeout(r, 800))
+    }
+  }
+  return null
+}
+
+// data : payload GameEnded, ou null quand on découvre la fin au chargement
+// (rechargement de page, reconnexion après la fin).
+async function handleGameEnded(data, {animate = true} = {}) {
+  if (gameEnded.value) return
+  gameEnded.value = true
+  showAnswerModal.value = false
+  showAccusationConfirmModal.value = false
+  showQuestionModal.value = false
+  showAccusationModal.value = false
+
+  recap.value = await fetchRecap()
+  gameStats.value = recap.value?.stats ?? data?.stats ?? []
+
+  const winnerPseudos = data?.winners?.map(w => w.pseudo) ?? recap.value?.winners ?? []
 
   // Tout est révélé à la fin, orphelin compris.
   orphanPseudos.value = new Set(
-      (data.all_binomes ?? [])
+      (recap.value?.binomes ?? data?.all_binomes ?? [])
           .filter(b => b.is_orphan)
           .flatMap(b => (b.players ?? []).map(p => p.pseudo))
   )
 
   const myPseudo   = players.value.find(p => p.id === myPlayerId.value)?.pseudo
   const iWasOrphan = !!myPseudo && orphanPseudos.value.has(myPseudo)
-  const iWon = data.winners?.some(w => w.id === myPlayerId.value)
+  const iWon = !!myPseudo && winnerPseudos.includes(myPseudo)
 
-  gameOverTitle.value = iWon ? '🏆 Victoire !' : '💀 Défaite'
-
-  if (iWasOrphan) {
-    gameOverMsg.value = iWon
-        ? "Tu étais l'orphelin : seul depuis le début, et dernier debout. Tu marques comme un binôme entier !"
-        : "Tu étais l'orphelin : tu jouais seul depuis le début, sans le savoir."
+  if (isSpectator.value) {
+    gameOverTitle.value = '🏁 Partie terminée'
+    gameOverMsg.value = winnerPseudos.length
+        ? `Victoire de ${winnerPseudos.join(' & ')} !`
+        : 'Personne ne l’emporte.'
   } else {
-    gameOverMsg.value = iWon
-        ? "Votre binôme n'a jamais été découvert. Bien joué !"
-        : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+    gameOverTitle.value = iWon ? '🏆 Victoire !' : '💀 Défaite'
+
+    if (iWasOrphan) {
+      gameOverMsg.value = iWon
+          ? "Tu étais l'orphelin : seul depuis le début, et dernier debout. Tu marques comme un binôme entier !"
+          : "Tu étais l'orphelin : tu jouais seul depuis le début, sans le savoir."
+    } else {
+      gameOverMsg.value = iWon
+          ? "Votre binôme n'a jamais été découvert. Bien joué !"
+          : 'Votre binôme a été découvert. Meilleure chance la prochaine fois !'
+    }
   }
 
-  await new Promise(r => setTimeout(r, 4000))
+  if (animate) await new Promise(r => setTimeout(r, 4000))
   showScoreBoard.value = true
 }
 
@@ -453,6 +765,10 @@ function handleAccusationConfirmed(data) {
       accusation_confirmed: data.accusation_confirmed,
       accusation_correct:   data.accusation_correct,
     }
+  }
+  if ((pendingAccusation.value?.action_id ?? pendingAccusation.value?.id) === data.action_id) {
+    showAccusationConfirmModal.value = false
+    pendingAccusation.value = null
   }
 }
 
@@ -588,13 +904,12 @@ function backToHome() {
   <div class="round-page arcade-bg">
 
     <!-- ── ANIMATION TRANSITION ROUND ─────────────────────────────────────── -->
-    <div v-if="showRoundTransition" class="round-transition-overlay">
-      <canvas ref="transitionCanvas" class="round-transition-canvas"></canvas>
-      <div class="round-transition-text">
-        <span class="round-transition-label">ROUND</span>
-        <span class="round-transition-number">{{ transitionRoundNumber }}</span>
-      </div>
-    </div>
+    <RoundTransition
+        v-if="showRoundTransition"
+        :key="transitionRoundNumber"
+        :round="transitionRoundNumber"
+        @done="onRoundTransitionDone"
+    />
 
     <!-- Loading -->
     <div v-if="loading" class="loading-screen">
@@ -609,6 +924,15 @@ function backToHome() {
         <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
       </div>
 
+      <!-- Connexion WebSocket coupée : Pusher se reconnecte seul, puis resync() -->
+      <div v-if="connectionLost" class="net-banner" role="status">
+        <i class="fa-solid fa-wifi"></i>
+        Connexion perdue — reconnexion en cours<span class="caret">_</span>
+      </div>
+
+      <!-- Message éphémère (tour passé…) -->
+      <div v-if="notice" class="turn-notice" role="status">{{ notice }}</div>
+
       <!-- ── MARQUEE : tour en cours ─────────────────────────────────────── -->
       <div class="turn-marquee" :class="isMyTurn ? 'is-mine' : 'is-other'">
         <div class="turn-marquee__inner">
@@ -620,7 +944,7 @@ function backToHome() {
               {{ isMyTurn ? 'Ton tour !' : `Tour de ${currentPlayerName}` }}
             </span>
             <span class="turn-marquee__sub">
-              {{ isMyTurn ? 'Question ou accusation' : 'À toi de deviner…' }}
+              {{ isMyTurn ? 'Question ou accusation' : isSpectator ? 'Tu regardes la partie' : 'À toi de deviner…' }}
             </span>
           </div>
           <div class="turn-marquee__round">
@@ -632,8 +956,20 @@ function backToHome() {
         </div>
       </div>
 
+      <!-- ── SPECTATEUR : pas de personnage ─────────────────────────────── -->
+      <div v-if="isSpectator" class="info-banner info-banner--spectator">
+        <span class="info-banner__icon"><i class="fa-solid fa-eye"></i></span>
+        <div>
+          <p class="info-banner__title">Mode spectateur</p>
+          <p class="info-banner__sub">
+            Tu es arrivé après le lancement : tu suis la partie sans personnage.
+            Tu joueras à la prochaine !
+          </p>
+        </div>
+      </div>
+
       <!-- ── CARTE PERSONNAGE ────────────────────────────────────────────── -->
-      <section class="board-card character-board">
+      <section v-else class="board-card character-board">
         <div class="board-card__rivet board-card__rivet--tl"></div>
         <div class="board-card__rivet board-card__rivet--tr"></div>
         <div class="board-card__rivet board-card__rivet--bl"></div>
@@ -694,6 +1030,20 @@ function backToHome() {
         </div>
       </section>
 
+      <!-- ── ÉLIMINÉ : il regarde la fin ───────────────────────────────── -->
+      <div v-if="amEliminated && !gameEnded" class="info-banner info-banner--eliminated">
+        <span class="info-banner__icon"><i class="fa-solid fa-skull"></i></span>
+        <div>
+          <p class="info-banner__title">{{ amExcluded ? 'Tu as été exclu' : 'Tu es éliminé' }}</p>
+          <p class="info-banner__sub">
+            {{ amExcluded
+              ? "L'hôte t'a exclu pendant ta déconnexion, ton binôme est éliminé avec toi."
+              : 'Tu suis la fin de la partie en spectateur.' }}
+            Ne souffle rien à personne 🤫
+          </p>
+        </div>
+      </div>
+
       <!-- ── ANNONCE : UN ORPHELIN EST EN JEU ──────────────────────────── -->
       <div v-if="hasOrphan && !gameEnded" class="orphan-banner">
         <span class="orphan-banner__icon"><i class="fa-solid fa-user-slash"></i></span>
@@ -718,6 +1068,85 @@ function backToHome() {
         </div>
       </div>
 
+      <!-- ── PAUSE : le joueur attendu est déconnecté, l'hôte décide ────── -->
+      <div v-if="afkBlocker" class="info-banner info-banner--afk" role="status">
+        <span class="info-banner__icon"><i class="fa-solid fa-pause"></i></span>
+        <div class="info-banner__body">
+          <p class="info-banner__title">Partie en pause</p>
+          <p class="info-banner__sub">
+            <strong>{{ afkBlocker.player.pseudo }}</strong> est déconnecté depuis
+            {{ formatDuration(afkBlocker.seconds) }}. {{ AFK_REASONS[afkBlocker.reason] }}.
+          </p>
+
+          <!-- L'hôte décide -->
+          <template v-if="afkBlocker.canExclude">
+            <p class="info-banner__sub afk-hint">
+              <template v-if="afkBlocker.waitLeft > 0">
+                Laisse-lui une chance de revenir : décision possible dans {{ afkBlocker.waitLeft }} s.
+              </template>
+              <template v-else-if="!afkBlocker.canSkip">
+                Il doit répondre : attends son retour, ou exclus-le.
+              </template>
+              <template v-else>Tu es l'hôte : à toi de décider.</template>
+            </p>
+            <div class="afk-actions">
+              <button
+                  v-if="afkBlocker.canSkip"
+                  type="button"
+                  class="cabinet-btn cabinet-btn--sm afk-skip"
+                  :disabled="afkBlocker.waitLeft > 0 || skipping"
+                  @click="skipBlockedTurn"
+              >
+                <BSpinner v-if="skipping" small class="me-1"/>
+                <i v-else class="fa-solid fa-forward"></i>
+                Passer son tour
+              </button>
+              <button
+                  type="button"
+                  class="cabinet-btn cabinet-btn--sm cabinet-btn--danger afk-exclude"
+                  :disabled="afkBlocker.waitLeft > 0 || excluding"
+                  @click="askExclude(afkBlocker.player)"
+              >
+                <i class="fa-solid fa-door-open"></i>
+                Exclure
+              </button>
+            </div>
+          </template>
+
+          <p v-else class="info-banner__sub afk-hint">
+            <template v-if="afkBlocker.playerId === hostId">
+              C'est l'hôte : la partie attend son retour.
+            </template>
+            <template v-else-if="afkBlocker.hostOffline">
+              L'hôte ({{ hostPseudo }}) est déconnecté lui aussi : en attente de leur retour.
+            </template>
+            <template v-else>
+              En attente de son retour, ou de la décision de l'hôte ({{ hostPseudo }}).
+            </template>
+          </p>
+        </div>
+      </div>
+
+      <!-- ── MODAL : confirmation d'exclusion (hôte) ────────────────────── -->
+      <BModal v-model="showExcludeModal" title="🚪 Exclure un joueur" no-footer class="arcade-modal" centered>
+        <p>
+          Exclure <strong>{{ excludeTarget?.pseudo }}</strong> de la partie ?
+        </p>
+        <BAlert :model-value="true" variant="danger" class="small">
+          Son binôme sera éliminé avec lui, et il marquera 0 point.
+          C'est définitif, même s'il se reconnecte.
+        </BAlert>
+        <div class="text-center">
+          <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm"
+                  :disabled="excluding" @click="confirmExclude">
+            <BSpinner v-if="excluding" small class="me-1"/>
+            Exclure
+          </button>
+          <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm"
+                  @click="showExcludeModal = false">Annuler</button>
+        </div>
+      </BModal>
+
       <!-- ── ACTIONS (mon tour) ─────────────────────────────────────────── -->
       <div class="actions-section">
         <template v-if="isMyTurn && !hasPlayed">
@@ -738,8 +1167,12 @@ function backToHome() {
 
         <div v-else class="action-waiting">
           <i class="fa-solid fa-eye"></i>
-          Observe et prépare ta stratégie<span class="caret">_</span>
+          {{ isSpectator || amEliminated ? 'Profite du spectacle' : 'Observe et prépare ta stratégie' }}<span class="caret">_</span>
         </div>
+
+        <button type="button" class="notepad-btn" @click="showNotepad = true">
+          <i class="fa-solid fa-note-sticky"></i> Mon bloc-notes
+        </button>
       </div>
 
       <!-- ── HISTORIQUE DES ACTIONS ─────────────────────────────────────────── -->
@@ -778,12 +1211,12 @@ function backToHome() {
   <template v-else>❌</template>
 </span>
               <div class="history-content">
-                <span class="history-actor">{{ action.player?.pseudo }}</span>
+                <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.player?.pseudo" :url="avatarById[action.player?.id]" /></span><span class="history-actor">{{ action.player?.pseudo }}</span>
 
                 <!-- Question valide -->
                 <template v-if="action.type === 'question' && action.is_valid">
                   &nbsp;demande à
-                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   : <em>« {{ action.question }} »</em>
                   <span v-if="action.answer !== null && action.answer !== undefined"
                         :class="{
@@ -791,7 +1224,7 @@ function backToHome() {
             'answer-no':        action.answer === 'no',
             'answer-dont-know': action.answer === 'dont_know',
           }">
-      → {{ action.answer === 'yes' ? 'Oui ✅' : action.answer === 'no' ? 'Non ❌' : 'Je ne sais pas 🤷' }}
+      → {{ answerLabel(action.answer) }}
     </span>
                   <span v-else class="history-muted"> → en attente de réponse…</span>
                 </template>
@@ -804,7 +1237,7 @@ function backToHome() {
                 <!-- Accusation en attente ← EN PREMIER avant les autres cas accusation -->
                 <template v-else-if="action.type === 'accusation' && action.accusation_confirmed === null">
                   &nbsp;accuse
-                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   d'être <em>« {{ action.character_name }} »</em>
                   <span class="history-muted"> → en attente de confirmation…</span>
                 </template>
@@ -812,14 +1245,14 @@ function backToHome() {
                 <!-- Accusation correcte -->
                 <template v-else-if="action.type === 'accusation' && action.accusation_correct">
                   &nbsp;a correctement accusé
-                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   d'être <em>{{ action.character_name }}</em> ! 🎯
                 </template>
 
                 <!-- Accusation niée ou incorrecte -->
                 <template v-else-if="action.type === 'accusation' && action.accusation_confirmed === false">
                   &nbsp;a accusé
-                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   d'être <em>{{ action.character_name }}</em>
                   — <span class="history-muted">nié par le joueur.</span>
                 </template>
@@ -827,7 +1260,7 @@ function backToHome() {
                 <!-- Fallback -->
                 <template v-else>
                   &nbsp;a accusé
-                  <span class="history-target">{{ action.target_player?.pseudo }}</span>
+                  <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   — <span class="history-muted">mauvaise accusation.</span>
                 </template>
               </div>
@@ -860,6 +1293,7 @@ function backToHome() {
               :class="{
                 'is-active':     player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id),
                 'is-eliminated': eliminatedPlayerIds.has(player.id),
+                'is-offline':    !isOnline(player.id),
               }"
               :aria-label="`Voir la fiche de ${player.pseudo}`"
               @click="openPlayerSheet(player.id)"
@@ -869,7 +1303,7 @@ function backToHome() {
               <i class="fa-solid fa-comments"></i>{{ threadCountByPlayer[player.id] ?? 0 }}
             </span>
             <div class="player-token__avatar">
-              {{ player.pseudo.slice(0, 2).toUpperCase() }}
+              <PlayerAvatar :pseudo="player.pseudo" :url="player.avatar_url" />
             </div>
             <div class="player-token__name">{{ player.pseudo }}</div>
             <div class="player-token__badges">
@@ -878,11 +1312,23 @@ function backToHome() {
                     class="player-token__badge player-token__badge--active">joue</span>
               <span v-if="discoveredPlayerIds.has(player.id)"
                     class="player-token__badge player-token__badge--danger">découvert</span>
-              <span v-if="eliminatedPlayerIds.has(player.id)"
+              <span v-if="player.is_excluded"
+                    class="player-token__badge player-token__badge--danger">🚪 exclu</span>
+              <span v-else-if="eliminatedPlayerIds.has(player.id)"
                     class="player-token__badge player-token__badge--danger">💀 éliminé</span>
+              <span v-if="!isOnline(player.id) && !eliminatedPlayerIds.has(player.id)"
+                    class="player-token__badge player-token__badge--offline">hors ligne</span>
+              <span v-if="notes.players[player.id]?.trim()"
+                    class="player-token__badge" title="Tu as des notes sur ce joueur">📝</span>
             </div>
           </button>
         </div>
+
+        <p v-if="spectators.length" class="spectators-line">
+          <i class="fa-solid fa-eye"></i>
+          Spectateur{{ spectators.length > 1 ? 's' : '' }} :
+          {{ spectators.map(sp => sp.pseudo).join(', ') }}
+        </p>
       </section>
 
       <!-- ── MODAL : Fiche joueur (conversation) ────────────────────────── -->
@@ -899,7 +1345,7 @@ function backToHome() {
           <!-- En-tête : qui on consulte -->
           <div class="sheet-head">
             <span class="sheet-avatar">
-              {{ (selectedPlayer?.pseudo ?? '').slice(0, 2).toUpperCase() }}
+              <PlayerAvatar :pseudo="selectedPlayer?.pseudo" :url="selectedPlayer?.avatar_url" />
             </span>
             <div class="sheet-head__info">
               <p class="sheet-name">{{ selectedPlayer?.pseudo }}</p>
@@ -909,13 +1355,30 @@ function backToHome() {
                       class="player-token__badge player-token__badge--active">joue</span>
                 <span v-if="discoveredPlayerIds.has(selectedPlayer?.id)"
                       class="player-token__badge player-token__badge--danger">découvert</span>
-                <span v-if="eliminatedPlayerIds.has(selectedPlayer?.id)"
+                <span v-if="selectedPlayer?.is_excluded"
+                      class="player-token__badge player-token__badge--danger">🚪 exclu</span>
+                <span v-else-if="eliminatedPlayerIds.has(selectedPlayer?.id)"
                       class="player-token__badge player-token__badge--danger">💀 éliminé</span>
                 <span class="player-token__badge">
                   {{ selectedPlayerThread.length }} échange{{ selectedPlayerThread.length > 1 ? 's' : '' }}
                 </span>
               </div>
             </div>
+          </div>
+
+          <!-- Mes notes privées sur ce joueur (aussi dans le bloc-notes) -->
+          <div v-if="selectedPlayer && selectedPlayer.id !== myPlayerId" class="sheet-notes">
+            <label class="sheet-notes__label" for="sheet-notes">
+              <i class="fa-solid fa-note-sticky"></i> Mes notes <span>(privées)</span>
+            </label>
+            <textarea
+                id="sheet-notes"
+                v-model="notes.players[selectedPlayer.id]"
+                class="form-control"
+                rows="2"
+                maxlength="500"
+                placeholder="Personnage ? Univers ?"
+            ></textarea>
           </div>
 
           <p v-if="!selectedPlayerThread.length" class="sheet-empty">
@@ -997,7 +1460,7 @@ function backToHome() {
                 :aria-checked="questionTarget === p.id"
                 @click="questionTarget = p.id"
             >
-              <span class="target-chip__avatar">{{ p.pseudo.slice(0, 2).toUpperCase() }}</span>
+              <span class="target-chip__avatar"><PlayerAvatar :pseudo="p.pseudo" :url="p.avatar_url" /></span>
               <span class="target-chip__name">{{ p.pseudo }}</span>
               <span v-if="questionTarget === p.id" class="target-chip__check">
                 <i class="fa-solid fa-check"></i>
@@ -1086,12 +1549,17 @@ function backToHome() {
                   <span v-if="orphanPseudos.has(stat.player_pseudo)" class="stat-chip stat-chip-orphan">
               🚷 Orphelin
             </span>
+                  <span v-if="stat.is_excluded" class="stat-chip stat-chip-excluded">
+              🚪 Exclu
+            </span>
                 </div>
 
                 <!-- Score total -->
                 <span class="scoreboard-score">{{ stat.score }} pts</span>
               </div>
             </div>
+
+            <GameRecap v-if="recap" :recap="recap" />
 
             <button type="button" class="cabinet-btn mt-4" @click="backToHome">
               Retour à l'accueil
@@ -1183,7 +1651,7 @@ function backToHome() {
           <i class="fa-solid fa-triangle-exclamation"></i>
           <span>{{ modalError }}</span>
         </div>
-        <BAlert variant="warning" class="small">
+        <BAlert :model-value="true" variant="warning" class="small">
           ⚠️ Si le joueur confirme, il est éliminé et devient spectateur. Son binôme, lui, reste en jeu et n'est pas révélé.
         </BAlert>
         <div class="mb-3">
@@ -1199,7 +1667,7 @@ function backToHome() {
                 :aria-checked="accusationTarget === p.id"
                 @click="accusationTarget = p.id"
             >
-              <span class="target-chip__avatar">{{ p.pseudo.slice(0, 2).toUpperCase() }}</span>
+              <span class="target-chip__avatar"><PlayerAvatar :pseudo="p.pseudo" :url="p.avatar_url" /></span>
               <span class="target-chip__name">{{ p.pseudo }}</span>
               <span v-if="accusationTarget === p.id" class="target-chip__check">
                 <i class="fa-solid fa-check"></i>
@@ -1246,7 +1714,7 @@ function backToHome() {
             <p class="answer-question-text">« {{ pendingAccusation?.character_name }} »</p>
           </div>
 
-          <BAlert variant="danger" class="small mb-0">
+          <BAlert :model-value="true" variant="danger" class="small mb-0">
             ⚠️ Si tu confirmes, ton binôme sera éliminé de la partie !
           </BAlert>
 
@@ -1265,6 +1733,15 @@ function backToHome() {
           </div>
         </div>
       </BModal>
+
+      <GameNotepad
+          v-model="showNotepad"
+          :notes="notes"
+          :players="players"
+          :my-player-id="myPlayerId"
+      />
+
+      <QuickReactions :reactions="reactions" @send="sendReaction" />
 
     </template>
   </div>
@@ -1702,6 +2179,125 @@ function backToHome() {
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
+/* Bloc-notes privé : secondaire, donc volontairement discret */
+.notepad-btn {
+  align-self: center;
+  min-height: 44px;
+  padding: 0 1rem;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--arcade-beige);
+  background: transparent;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 8px;
+}
+
+.notepad-btn:active {
+  transform: translateY(1px);
+}
+
+/* ─── BANNIÈRES D'ÉTAT (spectateur, éliminé, joueur déconnecté) ─────────────── */
+.info-banner {
+  margin: 0.75rem 1rem 1.25rem;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 3px solid var(--arcade-blue-grey);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(90, 111, 125, 0.28), rgba(28, 34, 38, 0.9));
+  box-shadow: 0 5px 0 var(--arcade-blue-grey-dark);
+}
+
+.info-banner__icon {
+  flex-shrink: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  color: #c3d2db;
+}
+
+.info-banner__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.info-banner__title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.55rem;
+  line-height: 1.6;
+  color: #d3e0e8;
+  margin: 0 0 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.info-banner__sub {
+  font-size: 0.8rem;
+  color: #a7bac6;
+  margin: 0;
+}
+
+.info-banner--eliminated {
+  border-color: var(--arcade-danger);
+  background: linear-gradient(180deg, rgba(179, 69, 63, 0.3), rgba(28, 34, 38, 0.9));
+  box-shadow: 0 5px 0 var(--arcade-danger-dark);
+}
+
+.info-banner--eliminated .info-banner__icon { color: #e8a29e; }
+.info-banner--eliminated .info-banner__title { color: #f3c2bf; }
+.info-banner--eliminated .info-banner__sub { color: #d99a96; }
+
+.info-banner--afk {
+  border-color: var(--arcade-gold);
+  background: linear-gradient(180deg, rgba(224, 163, 28, 0.25), rgba(28, 34, 38, 0.9));
+  box-shadow: 0 5px 0 #a8720f;
+  animation: slideIn 0.3s ease;
+}
+
+.info-banner--afk .info-banner__icon { color: #ffd876; }
+.info-banner--afk .info-banner__title { color: #ffe4a3; }
+.info-banner--afk .info-banner__sub { color: #e6c98a; }
+
+.afk-hint {
+  margin-top: 0.35rem;
+}
+
+.afk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* Connexion WebSocket coupée */
+.net-banner {
+  margin: 0.75rem 1rem 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #4a2f00;
+  background: var(--arcade-gold);
+  border: 2px solid #a8720f;
+  border-radius: 8px;
+}
+
+/* Message éphémère */
+.turn-notice {
+  margin: 0.75rem 1rem 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--arcade-beige);
+  background: var(--arcade-dark-2);
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 8px;
+  animation: slideIn 0.3s ease;
+}
+
 /* ─── JOUEURS ───────────────────────────────────────────────────────────────── */
 .players-board {
   margin: 0 1rem;
@@ -1770,6 +2366,23 @@ function backToHome() {
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
 }
 
+.player-token.is-offline .player-token__avatar {
+  opacity: 0.45;
+}
+
+.player-token__badge--offline {
+  background: var(--arcade-taupe);
+  color: #fff;
+}
+
+.spectators-line {
+  margin: 0.9rem 0 0;
+  font-size: 0.8rem;
+  color: var(--arcade-blue-grey-dark);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .player-token__thread.is-empty {
   background: var(--arcade-taupe);
   color: #fff;
@@ -1816,6 +2429,22 @@ function backToHome() {
 
 .sheet-head__info .player-token__badges {
   margin-top: 0.3rem;
+}
+
+.sheet-notes {
+  margin-bottom: 0.9rem;
+}
+
+.sheet-notes__label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.sheet-notes__label span {
+  font-weight: 400;
+  color: #6c6259;
 }
 
 .sheet-empty {
@@ -2009,6 +2638,25 @@ function backToHome() {
   flex-shrink: 0;
   font-size: 0.9rem;
   margin-top: 1px;
+}
+
+/* Photo (ou initiales) devant un pseudo — voir PlayerAvatar */
+.mini-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.3rem;
+  vertical-align: middle;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--arcade-taupe);
+  color: #fff;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.5rem;
+  line-height: 1;
 }
 
 .history-actor {
@@ -2259,6 +2907,7 @@ function backToHome() {
 
 .answer-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -2274,6 +2923,8 @@ function backToHome() {
   transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s;
   background: var(--arcade-beige);
   white-space: nowrap;
+  /* Passe à la ligne plutôt que de déborder à 320px */
+  min-width: max-content;
 }
 
 .answer-btn:active:not(:disabled) {
@@ -2318,92 +2969,6 @@ function backToHome() {
 .answer-dont-know {
   color: var(--arcade-gold);
   font-weight: bold;
-}
-
-/* ─── TRANSITION ROUND ──────────────────────────────────────────────────────── */
-.round-transition-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(36, 36, 36, 0.94);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  animation: overlayFade 5s ease forwards;
-}
-
-@keyframes overlayFade {
-  0% {
-    opacity: 0;
-  }
-  15% {
-    opacity: 1;
-  }
-  75% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.round-transition-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.round-transition-text {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  animation: textPop 5s ease forwards;
-}
-
-@keyframes textPop {
-  0% {
-    opacity: 0;
-    transform: scale(0.7);
-  }
-  20% {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-  35% {
-    transform: scale(1);
-  }
-  75% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.1);
-  }
-}
-
-.round-transition-label {
-  font-family: 'Press Start 2P', cursive;
-  font-size: 0.7rem;
-  letter-spacing: 0.4em;
-  color: var(--arcade-gold);
-  text-transform: uppercase;
-}
-
-.round-transition-number {
-  font-size: 5rem;
-  color: var(--arcade-beige);
-  font-family: 'Press Start 2P', cursive;
-  line-height: 1;
-  text-shadow:
-      4px 4px 0 var(--arcade-taupe),
-      0 0 40px rgba(224, 163, 28, 0.6),
-      0 0 80px rgba(224, 163, 28, 0.3);
 }
 
 /* ─── FIN DE PARTIE ANIMATION ───────────────────────────────────────────────── */
@@ -2510,6 +3075,12 @@ function backToHome() {
   color: var(--arcade-blue-grey-dark);
   font-family: 'Baloo 2', sans-serif;
   white-space: nowrap;
+}
+
+.stat-chip-excluded {
+  background: rgba(179, 69, 63, 0.12);
+  border-color: var(--arcade-danger);
+  color: var(--arcade-danger-dark);
 }
 
 .stat-chip-orphan {

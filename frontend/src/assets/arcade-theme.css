@@ -26,6 +26,13 @@
   font-family: 'Baloo 2', system-ui, sans-serif;
 }
 
+/* Garde-fou : un débordement horizontal casse la lecture au pouce et fait
+   paraître l'écran « trop large ». Il doit être corrigé à la source, mais on
+   empêche ici qu'il se propage en scroll de page. */
+html {
+  overflow-x: hidden;
+}
+
 /* ── Fond "plateau" commun ─────────────────────────────────────── */
 .arcade-bg {
   background:
@@ -103,6 +110,8 @@
 
 .cabinet-btn--sm {
   min-width: auto;
+  /* 44px : sans ce plancher le padding seul donne 37px de haut. */
+  min-height: 44px;
   padding: 0.6rem 1.25rem;
   margin: 0.35rem;
   font-size: 0.95rem;
@@ -179,7 +188,8 @@
 }
 
 .play-btn--sm {
-  font-size: 0.7rem;
+  /* 0.75rem = 12px, plancher de lisibilité sur mobile. */
+  font-size: 0.75rem;
   padding: 0.65rem 1.2rem;
 }
 
@@ -439,6 +449,21 @@
 
 .arcade-modal .modal-title {
   font-weight: 800;
+}
+
+/* Contrôles Bootstrap des modales : la croix (32x32) et les champs (38px)
+   sont sous le seuil tactile de 44px. */
+.arcade-modal .btn-close {
+  width: 44px;
+  height: 44px;
+  background-size: 14px;
+}
+
+.arcade-modal .form-control {
+  min-height: 44px;
+  /* 16px minimum : sous ce seuil iOS zoome automatiquement à la mise au
+     point du champ et l'écran paraît « trop large » jusqu'au dézoom. */
+  font-size: 1rem;
 }
 
 /* ── Panneau "console" sombre (sections d'une partie) ──────────── */

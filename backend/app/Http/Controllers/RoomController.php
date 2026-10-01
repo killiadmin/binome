@@ -6,6 +6,7 @@ use App\Enums\GameMode;
 use App\Http\Requests\JoinRoomRequest;
 use App\Http\Requests\StoreRoomRequest;
 use App\Models\Player;
+use App\Models\PlayerAvatar;
 use App\Models\Room;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,6 +46,8 @@ class RoomController extends Controller
             'player' => [
                 'id' => $player->id,
                 'pseudo' => $player->pseudo,
+                // Photo déjà enregistrée sous ce pseudo lors d'une partie précédente
+                'avatar_url' => PlayerAvatar::urlsFor([$player])[$player->id],
             ],
         ], 201);
     }
@@ -96,15 +99,17 @@ class RoomController extends Controller
                 'game_mode' => $room->game_mode,
                 'cosmos_id' => $room->cosmos_id,
                 'cosmos_name' => $room->cosmos?->name,
-                'players' => $room->players()->get()->map(fn ($p) => [
-                    'id' => $p->id,
-                    'pseudo' => $p->pseudo,
-                    'is_ready' => $p->pivot->is_ready,
-                ]),
+                // Partie déjà lancée : le nouveau venu n'a pas de personnage,
+                // il peut la suivre en spectateur (le channel game.{id} accepte
+                // les membres du salon).
+                'current_game_id' => $room->currentGame()->value('id'),
+                'players' => $room->playersPayload(),
             ],
             'player' => [
                 'id' => $player->id,
                 'pseudo' => $player->pseudo,
+                // Photo déjà enregistrée sous ce pseudo lors d'une partie précédente
+                'avatar_url' => PlayerAvatar::urlsFor([$player])[$player->id],
             ],
         ]);
     }
@@ -148,11 +153,7 @@ class RoomController extends Controller
             'is_ready' => $newStatus,
             'all_ready' => $allReady,
             'can_start' => $allReady && $enoughPlayers,
-            'players' => $room->players()->get()->map(fn ($p) => [
-                'id' => $p->id,
-                'pseudo' => $p->pseudo,
-                'is_ready' => $p->pivot->is_ready,
-            ]),
+            'players' => $room->playersPayload(),
         ]);
     }
 
@@ -211,11 +212,8 @@ class RoomController extends Controller
                 'cosmos_id' => $room->cosmos_id,
                 'cosmos_name' => $room->cosmos?->name,
                 'created_by' => $room->created_by,
-                'players' => $room->players()->get()->map(fn ($p) => [
-                    'id' => $p->id,
-                    'pseudo' => $p->pseudo,
-                    'is_ready' => $p->pivot->is_ready,
-                ]),
+                'current_game_id' => $room->currentGame()->value('id'),
+                'players' => $room->playersPayload(),
             ],
         ]);
     }

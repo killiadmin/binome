@@ -1,13 +1,18 @@
 <script setup>
 import {ref, onMounted, onUnmounted, computed} from 'vue'
-import {useRouter} from 'vue-router'
+import {useRoute, useRouter} from 'vue-router'
 import {roomService} from '../../services/roomService'
 import {characterService} from '../../services/characterService'
 import {useReverb} from '../../sockets/useReverb'
 import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput, BAlert, BSpinner, BBadge} from 'bootstrap-vue-next'
 import {resetEcho} from "../../sockets/useReverb.js";
 import {copyToClipboard} from '../../services/copyToClipboard'
+import LobbyChat from '../../components/chat/LobbyChat.vue'
+import JoinQrCode from '../../components/room/JoinQrCode.vue'
+import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
+import AvatarEditor from '../../components/player/AvatarEditor.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -30,6 +35,18 @@ const startingGame = ref(false)
 const gameStarting = ref(false)
 const showRejoinModal = ref(false)
 const pendingGameId   = ref(null)
+
+// Partie déjà lancée dans ce salon (arrivée en retard) : on peut la suivre en spectateur.
+const currentGameId = ref(null)
+const showQr = ref(false)
+
+// Photo de profil : le joueur touche son propre jeton pour l'ouvrir
+const showAvatarEditor = ref(false)
+const me = computed(() => players.value.find(p => p.id === playerId.value) ?? null)
+
+function setAvatar(id, url) {
+  players.value = players.value.map(p => p.id === id ? {...p, avatar_url: url} : p)
+}
 
 // ─── MODE DE JEU ──────────────────────────────────────────────────────────────
 const gameMode = ref('random')          // 'random' | 'cosmos'
@@ -134,6 +151,7 @@ async function restoreSession() {
     players.value  = res.data.room.players
     gameMode.value = res.data.room.game_mode ?? 'random'
     cosmosId.value = res.data.room.cosmos_id ?? null
+    currentGameId.value = res.data.room.current_game_id ?? null
 
     resetEcho()
     initLobby(session.roomId)
@@ -146,6 +164,26 @@ async function restoreSession() {
 function handleRejoinGame() {
   showRejoinModal.value = false
   router.push({ name: 'RoundPage', params: { gameId: pendingGameId.value } })
+}
+
+// Arrivé après le lancement : pas de personnage, on suit la partie en spectateur.
+// Le gameId est sauvé en session comme pour un joueur, le refresh et la modale
+// « Partie en cours » fonctionnent donc de la même façon.
+function handleWatchGame() {
+  gameId.value = currentGameId.value
+  saveSession()
+  router.push({ name: 'RoundPage', params: { gameId: currentGameId.value } })
+}
+
+// Lien de partage / QR code : /rooms?code=XXXXXX ouvre directement la modale
+// « Rejoindre » avec le code rempli. Ignoré si on est déjà dans un salon.
+function prefillJoinFromLink() {
+  const code = String(route.query.code ?? '').trim().toUpperCase()
+  if (!code) return
+  router.replace({ query: {} })
+  if (gameCode.value || showRejoinModal.value) return
+  codeToJoin.value = code
+  showJoinModal.value = true
 }
 
 function handleAbandonGame() {
@@ -210,6 +248,7 @@ function initLobby(id) {
     onPlayerReady: (data) => {
       players.value = data.players
     },
+    onPlayerAvatarUpdated: (data) => setAvatar(data.player_id, data.avatar_url),
     onRoomSettingsUpdated: (data) => {
       gameMode.value = data.game_mode ?? 'random'
       cosmosId.value = data.cosmos_id ?? null
@@ -251,7 +290,12 @@ const handleCreateGame = async () => {
     playerId.value = res.data.player.id
     hostId.value = res.data.player.id
     isHost.value = true
-    players.value = [{id: res.data.player.id, pseudo: res.data.player.pseudo, is_ready: false}]
+    players.value = [{
+      id: res.data.player.id,
+      pseudo: res.data.player.pseudo,
+      is_ready: false,
+      avatar_url: res.data.player.avatar_url ?? null,
+    }]
 
     saveSession()
     resetEcho()
@@ -276,6 +320,7 @@ const handleJoinGame = async () => {
     players.value = res.data.room.players
     gameMode.value = res.data.room.game_mode ?? 'random'
     cosmosId.value = res.data.room.cosmos_id ?? null
+    currentGameId.value = res.data.room.current_game_id ?? null
     isHost.value = false
 
     saveSession()
@@ -347,6 +392,8 @@ const handleLeaveRoom = async () => {
     roomId.value = null
     gameCode.value = null
     playerId.value = null
+    currentGameId.value = null
+    showQr.value = false
     players.value = []
     isHost.value = false
     hostId.value = null
@@ -361,9 +408,10 @@ const isCurrentPlayerReady = computed(() => {
 
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
-onMounted(() => {
-  restoreSession()
+onMounted(async () => {
   loadCosmosOptions()
+  await restoreSession()
+  prefillJoinFromLink()
 })
 
 onUnmounted(() => {
@@ -404,7 +452,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
       <!-- Carte du salon actif -->
       <BRow v-if="gameCode" class="justify-content-center" :style="{ paddingBottom: '100px' }">
-        <BCol cols="12" md="7" lg="6" :style="{ minWidth: '360px' }">
+        <BCol cols="12" md="7" lg="6" :style="{ minWidth: 'min(360px, 100%)' }">
           <div class="board-card">
             <div class="board-card__rivet board-card__rivet--tl"></div>
             <div class="board-card__rivet board-card__rivet--tr"></div>
@@ -430,6 +478,25 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
               </span>
             </div>
 
+            <div class="qr-toggle-wrap">
+              <button type="button" class="qr-toggle" :aria-expanded="showQr" @click="showQr = !showQr">
+                <i class="fa-solid fa-qrcode"></i>
+                {{ showQr ? 'Masquer le QR code' : 'QR code pour rejoindre' }}
+              </button>
+            </div>
+            <JoinQrCode v-if="showQr" :code="gameCode" />
+
+            <div v-if="currentGameId" class="spectate-banner">
+              <p class="spectate-banner__text">
+                <i class="fa-solid fa-circle-play"></i>
+                Une partie est déjà en cours dans ce salon.
+                Tu joueras à la prochaine — en attendant, tu peux la regarder.
+              </p>
+              <button type="button" class="cabinet-btn cabinet-btn--sm" @click="handleWatchGame">
+                <i class="fa-solid fa-eye"></i> Regarder en spectateur
+              </button>
+            </div>
+
             <div class="status-pills">
               <span class="pill">
                 <i class="fa-solid fa-users"></i> {{ players.length }} joueur{{ players.length > 1 ? 's' : '' }}
@@ -453,12 +520,25 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
             <!-- Liste des joueurs -->
             <div class="roster">
               <h5 class="roster__title">Participants</h5>
+              <p v-if="me" class="roster__hint">
+                <i class="fa-solid fa-camera"></i>
+                Touche ton jeton pour {{ me.avatar_url ? 'changer' : 'ajouter' }} ta photo
+              </p>
               <div class="roster__grid">
                 <div
                     v-for="player in players"
                     :key="player.id"
                     class="player-token"
-                    :class="{ 'is-offline': player.online === false, 'is-ready': player.is_ready }"
+                    :class="{
+                      'is-offline': player.online === false,
+                      'is-ready': player.is_ready,
+                      'is-mine': player.id === playerId,
+                    }"
+                    :role="player.id === playerId ? 'button' : undefined"
+                    :tabindex="player.id === playerId ? 0 : undefined"
+                    :aria-label="player.id === playerId ? 'Changer ma photo' : undefined"
+                    @click="player.id === playerId && (showAvatarEditor = true)"
+                    @keydown.enter.prevent="player.id === playerId && (showAvatarEditor = true)"
                 >
                   <span v-if="player.id === hostId" class="player-token__crown">
                     <i class="fa-solid fa-crown"></i>
@@ -467,8 +547,11 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                     <i class="fa-solid fa-check"></i>
                   </span>
                   <div class="player-token__avatar">
-                    {{ player.pseudo?.charAt(0).toUpperCase() }}
+                    <PlayerAvatar :pseudo="player.pseudo" :url="player.avatar_url" :letters="1" />
                     <span class="player-token__online" :class="player.online === false ? 'is-off' : 'is-on'"></span>
+                    <span v-if="player.id === playerId" class="player-token__camera">
+                      <i class="fa-solid fa-camera"></i>
+                    </span>
                   </div>
                   <div class="player-token__name">{{ player.pseudo }}</div>
                 </div>
@@ -588,6 +671,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
               <BAlert
                   v-if="!isHost && gameStarting"
+                  :model-value="true"
                   variant="warning"
                   class="text-center mb-0"
               >
@@ -598,6 +682,15 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
           </div>
         </BCol>
       </BRow>
+
+      <AvatarEditor
+          v-model="showAvatarEditor"
+          :player="me"
+          @updated="url => setAvatar(playerId, url)"
+      />
+
+      <!-- Chat commun : déplié par défaut hors salon, replié dès qu'on en rejoint un -->
+      <LobbyChat :player-id="playerId" :is-in-room="!!gameCode" />
 
       <!-- Modal créer -->
       <BModal v-model="showCreateModal" title="Créer une partie" no-footer class="arcade-modal">
@@ -674,7 +767,9 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 }
 
 .arcade-title {
-  font-size: 1.9rem;
+  /* Fluide : Press Start 2P n'a pas de point de coupure dans un mot,
+     une taille fixe déborde du viewport sous ~360px. */
+  font-size: clamp(1.25rem, 6.5vw, 1.9rem);
   margin-top: 0.75rem;
 }
 
@@ -685,6 +780,45 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   justify-content: center;
   gap: 1.25rem;
   margin-bottom: 2.5rem;
+}
+
+/* ── QR code & spectateur ─────────────────────────────────────── */
+.qr-toggle-wrap {
+  display: flex;
+  justify-content: center;
+  margin: -0.5rem 0 1rem;
+}
+
+.qr-toggle {
+  min-height: 44px;
+  padding: 0 0.9rem;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--arcade-blue-grey-dark);
+  background: transparent;
+  border: 2px solid var(--arcade-blue-grey);
+  border-radius: 8px;
+}
+
+.spectate-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem;
+  text-align: center;
+  background: rgba(224, 163, 28, 0.15);
+  border: 2px solid var(--arcade-gold);
+  border-radius: 8px;
+}
+
+.spectate-banner__text {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--arcade-blue-grey-dark);
 }
 
 /* ── Plateau / carte de salon ─────────────────────────────────── */
@@ -745,6 +879,39 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   letter-spacing: 1px;
   font-size: 0.85rem;
   margin-bottom: 0.9rem;
+}
+
+.roster__hint {
+  margin: -0.4rem 0 0.75rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--arcade-blue-grey-dark);
+}
+
+/* Mon jeton : ouvre l'éditeur de photo */
+.player-token.is-mine {
+  cursor: pointer;
+}
+
+.player-token.is-mine:focus-visible {
+  outline: 3px solid var(--arcade-gold);
+  outline-offset: 2px;
+}
+
+.player-token__camera {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 0.55rem;
+  font-family: system-ui, sans-serif;
+  color: #4a2f00;
+  background: var(--arcade-gold);
+  border: 2px solid #fff;
+  border-radius: 50%;
 }
 
 .roster__grid {

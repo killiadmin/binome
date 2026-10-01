@@ -16,12 +16,14 @@ class GameStat extends Model
         'score',
         'is_winner',
         'is_eliminated',
+        'is_excluded',
     ];
 
     protected $casts = [
         'survived_full_game' => 'boolean',
         'is_winner'          => 'boolean',
         'is_eliminated'      => 'boolean',
+        'is_excluded'        => 'boolean',
     ];
 
     public function game()

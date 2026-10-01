@@ -1,9 +1,10 @@
 <script setup>
-import {ref, watch, onMounted} from 'vue';
+import {ref, watch, onMounted, onBeforeUnmount} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
 import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
 import {copyToClipboard} from '../../services/copyToClipboard';
+import {resolveJoinUrl} from '../../services/joinUrl';
 
 const isOpen = ref(false);
 const route = useRoute();
@@ -46,34 +47,58 @@ function lockAccess() {
   }
 }
 
-// ─── Copier l'URL de connexion (celle du réseau local que les autres joueurs utilisent) ──
-const copyState = ref('idle'); // 'idle' | 'done' | 'error'
-// URL que les autres joueurs doivent ouvrir. Par défaut l'origine courante ;
-// si l'hôte est sur localhost, on récupère l'IP LAN réelle écrite par
-// scripts/update-lan-ip.sh dans public/lan-url.json (adresse dynamique).
-const joinUrl = ref(window.location.origin + '/');
-let copyResetTimer = null;
+// ─── Partager l'URL de connexion (celle du réseau local que les autres joueurs utilisent) ──
+// L'URL est recalculée à chaque clic (voir services/joinUrl.js) : si l'hôte
+// change de Wi-Fi, le lien partagé suit sans recharger la page.
+const shareState = ref('idle'); // 'idle' | 'loading' | 'copied' | 'shared' | 'error'
+const shareError = ref('');
+const joinUrl = ref(null);
+let shareResetTimer = null;
 
-onMounted(async () => {
-  const host = window.location.hostname;
-  const onLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
-  if (!onLocalhost) return; // déjà ouvert via l'IP LAN : l'origine courante convient
-  try {
-    const res = await fetch('/lan-url.json?t=' + Date.now(), {cache: 'no-store'});
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data?.url) joinUrl.value = data.url;
-  } catch (e) {
-    /* pas de fichier lan-url.json : on garde l'origine courante */
-  }
+// Feuille de partage native seulement sur écran tactile (sur desktop, la copie
+// est plus directe). navigator.share n'existe qu'en contexte sécurisé.
+const canNativeShare = () =>
+  typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
+
+async function refreshJoinUrl() {
+  const {url, verified} = await resolveJoinUrl();
+  joinUrl.value = url;
+  return {url, verified};
+}
+
+onMounted(() => {
+  refreshJoinUrl();
+  window.addEventListener('online', refreshJoinUrl);
 });
+onBeforeUnmount(() => window.removeEventListener('online', refreshJoinUrl));
 
-async function copyJoinUrl() {
-  copyState.value = (await copyToClipboard(joinUrl.value)) ? 'done' : 'error';
-  clearTimeout(copyResetTimer);
-  copyResetTimer = setTimeout(() => {
-    copyState.value = 'idle';
-  }, 2000);
+function settle(state, error = '') {
+  shareState.value = state;
+  shareError.value = error;
+  clearTimeout(shareResetTimer);
+  shareResetTimer = setTimeout(() => {
+    shareState.value = 'idle';
+  }, state === 'error' ? 3500 : 2000);
+}
+
+async function shareJoinUrl() {
+  if (shareState.value === 'loading') return;
+  shareState.value = 'loading';
+  const {url, verified} = await refreshJoinUrl();
+  if (!url) return settle('error', 'Aucun réseau Wi-Fi détecté (relance ./start.sh)');
+  if (!verified) return settle('error', 'Adresse ' + url + ' injoignable — réseau changé ?');
+
+  if (canNativeShare()) {
+    try {
+      await navigator.share({title: 'Binome', text: 'Rejoins ma partie de Binome !', url});
+      return settle('shared');
+    } catch (e) {
+      if (e?.name === 'AbortError') return settle('idle');
+      /* partage refusé : repli sur la copie */
+    }
+  }
+  if (await copyToClipboard(url)) return settle('copied');
+  settle('error', 'Copie impossible — lien : ' + url);
 }
 </script>
 
@@ -101,6 +126,9 @@ async function copyJoinUrl() {
       <BNavItem to="/rules" class="arcade-nav-link">
         <i class="fa-solid fa-book"></i> Règles
       </BNavItem>
+      <BNavItem to="/historique" class="arcade-nav-link">
+        <i class="fa-solid fa-ranking-star"></i> Historique
+      </BNavItem>
       <BNavItem v-if="isCharactersUnlocked" to="/characters/list" class="arcade-nav-link">
         <i class="fa-solid fa-user-astronaut"></i> Personnages
       </BNavItem>
@@ -114,20 +142,37 @@ async function copyJoinUrl() {
         <button
           type="button"
           class="nav-link arcade-lock-btn"
-          :class="{ 'is-done': copyState === 'done', 'is-error': copyState === 'error' }"
-          :title="'Copier l\'URL pour rejoindre : ' + joinUrl"
-          @click="copyJoinUrl"
+          :class="{
+            'is-done': shareState === 'copied' || shareState === 'shared',
+            'is-error': shareState === 'error',
+          }"
+          :title="
+            shareState === 'error'
+              ? shareError
+              : joinUrl
+                ? 'Partager l\'URL pour rejoindre : ' + joinUrl
+                : 'Partager l\'URL pour rejoindre'
+          "
+          :disabled="shareState === 'loading'"
+          @click="shareJoinUrl"
         >
           <i
             class="fa-solid"
             :class="{
-              'fa-link': copyState === 'idle',
-              'fa-check': copyState === 'done',
-              'fa-triangle-exclamation': copyState === 'error',
+              'fa-share-nodes': shareState === 'idle',
+              'fa-spinner fa-spin': shareState === 'loading',
+              'fa-check': shareState === 'copied' || shareState === 'shared',
+              'fa-triangle-exclamation': shareState === 'error',
             }"
           ></i>
           <span class="arcade-copy-label">{{
-            copyState === 'done' ? 'Copié !' : copyState === 'error' ? 'Échec' : 'Copier le lien'
+            {
+              idle: 'Partager le lien',
+              loading: 'Analyse…',
+              copied: 'Copié !',
+              shared: 'Partagé !',
+              error: 'Lien indisponible',
+            }[shareState]
           }}</span>
         </button>
       </li>
@@ -204,6 +249,10 @@ async function copyJoinUrl() {
   color: var(--arcade-beige) !important;
   letter-spacing: 1px;
   text-decoration: none;
+  /* C'est aussi le lien de retour à l'accueil : cible tactile de 44px. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 0.5rem 0.25rem;
 }
 
@@ -215,6 +264,9 @@ async function copyJoinUrl() {
   font-size: 1.1rem;
   line-height: 1;
   padding: 0.4rem 0.6rem;
+  /* 44px : cible tactile minimale, c'est le seul point d'entrée du menu. */
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .arcade-burger:hover {
@@ -239,6 +291,9 @@ async function copyJoinUrl() {
 .arcade-nav-link :deep(.nav-link) {
   font-weight: 700;
   color: var(--arcade-beige) !important;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
   transition: background 0.15s ease;
@@ -258,6 +313,10 @@ async function copyJoinUrl() {
   border: none;
   font-weight: 700;
   color: var(--arcade-beige) !important;
+  display: flex;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
   cursor: pointer;

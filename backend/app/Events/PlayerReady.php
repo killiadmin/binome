@@ -33,11 +33,7 @@ class PlayerReady implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        $players = $this->room->players()->get()->map(fn($p) => [
-            'id'       => $p->id,
-            'pseudo'   => $p->pseudo,
-            'is_ready' => $p->pivot->is_ready,
-        ]);
+        $players = $this->room->playersPayload();
 
         return [
             'player_id' => $this->player->id,

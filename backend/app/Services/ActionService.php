@@ -7,12 +7,17 @@ use App\Events\AccusationConfirmed;
 use App\Events\ActionPlayed;
 use App\Events\AnswerGiven;
 use App\Events\GameEnded;
+use App\Events\PlayerExcluded;
+use App\Events\TurnSkipped;
+use App\Enums\GameStatus;
 use App\Models\Action;
 use App\Models\Game;
 use App\Models\Player;
 use App\Models\Round;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Exception;
+use RuntimeException;
 
 class ActionService
 {
@@ -20,6 +25,7 @@ class ActionService
         private readonly RoundService  $roundService,
         private readonly BinomeService $binomeService,
         private readonly ScoreService  $scoreService,
+        private readonly PresenceService $presenceService,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -199,17 +205,10 @@ class ActionService
     public function playAnswer(Action $action, Player $player, string $answer): Action
     {
         if ($action->target_player_id !== $player->id) {
-            throw new \RuntimeException("Tu n'es pas le joueur ciblé par cette question.");
+            throw new RuntimeException("Tu n'es pas le joueur ciblé par cette question.");
         }
 
-        if ($action->answer !== null) {
-            throw new \RuntimeException("Cette question a déjà reçu une réponse.");
-        }
-
-        $action->update(['answer' => $answer]);
-        $action->load(['player', 'targetPlayer', 'round']);
-
-        broadcast(new AnswerGiven($action));
+        $this->recordAnswer($action, $answer);
 
         $round = $action->round;
         $this->advanceRound($round, $round->game);
@@ -220,40 +219,282 @@ class ActionService
     public function confirmAccusation(Action $action, Player $player, bool $confirmed): Action
     {
         if ($action->target_player_id !== $player->id) {
-            throw new \RuntimeException("Tu n'es pas le joueur accusé.");
+            throw new RuntimeException("Tu n'es pas le joueur accusé.");
         }
 
-        if ($action->accusation_confirmed !== null) {
-            throw new \RuntimeException("Cette accusation a déjà été confirmée.");
+        $this->resolveAccusation($action, $confirmed);
+
+        return $action;
+    }
+
+    // -------------------------------------------------------------------------
+    // JOUEUR DÉCONNECTÉ (partie en pause, l'hôte décide)
+    // -------------------------------------------------------------------------
+
+    /**
+     * La partie est « en pause » tant que le joueur qu'elle attend est hors
+     * ligne. Seul l'hôte peut la débloquer, et seulement si le serveur
+     * confirme via Reverb que ce joueur est bien déconnecté :
+     *  - son tour de jouer             → le tour passe, sans action enregistrée ;
+     *  - sa confirmation d'accusation  → le serveur tranche en comparant le nom
+     *    proposé à son vrai personnage (sinon un accusé n'aurait qu'à se
+     *    déconnecter pour s'en tirer).
+     * Une question attend TOUJOURS sa réponse : pas de passage possible, il
+     * faut attendre le retour du joueur ou l'exclure (excludePlayer).
+     *
+     * @return array{reason: string, player: Player}
+     */
+    public function skipBlockedTurn(Game $game, Player $host): array
+    {
+        $this->assertHostOfRunningGame($game, $host);
+
+        $round = $game->currentRound()->first();
+
+        if (! $round) {
+            throw new RuntimeException('Aucun tour en cours.');
         }
+
+        [$blocker, $reason, $pending] = $this->findBlocker($round);
+
+        if ($reason === 'answer') {
+            throw new RuntimeException("{$blocker->pseudo} doit répondre à la question : attends son retour, ou exclus-le de la partie.");
+        }
+
+        if ($blocker->id === $host->id) {
+            throw new RuntimeException("C'est à toi de jouer : tu ne peux pas passer ton propre tour.");
+        }
+
+        $this->assertOffline($game, $blocker);
+
+        broadcast(new TurnSkipped($game, $blocker, $host, $reason, $pending?->id));
+
+        if ($reason === 'accusation') {
+            $this->resolveAccusation($pending, $this->accusationMatches($game, $pending));
+        } else {
+            $this->advanceRound($round, $game);
+        }
+
+        return ['reason' => $reason, 'player' => $blocker];
+    }
+
+    /**
+     * L'hôte exclut un joueur déconnecté : lui ET son binôme sont éliminés,
+     * l'exclu marque 0 point (ScoreService). Un orphelin exclu n'entraîne
+     * personne avec lui.
+     *
+     * Une question ou accusation en attente qui implique un joueur éliminé
+     * est supprimée : si elle venait du joueur courant (toujours en jeu), il
+     * rejoue ; si le joueur courant est lui-même éliminé, le tour avance.
+     *
+     * @return Player|null le partenaire éliminé avec lui
+     */
+    public function excludePlayer(Game $game, Player $host, Player $target): ?Player
+    {
+        $this->assertHostOfRunningGame($game, $host);
+
+        if ($target->id === $host->id) {
+            throw new RuntimeException('Tu ne peux pas t\'exclure toi-même.');
+        }
+
+        if (! $game->hasPlayer($target->id)) {
+            throw new RuntimeException("{$target->pseudo} ne joue pas dans cette partie.");
+        }
+
+        $binome   = $this->binomeService->getBinomeOfPlayer($game, $target);
+        $excluded = $binome->players->firstWhere('id', $target->id);
+
+        if ($excluded->pivot->is_eliminated) {
+            throw new RuntimeException("{$target->pseudo} est déjà éliminé.");
+        }
+
+        $this->assertOffline($game, $target);
+
+        $partner = $binome->players->first(
+            fn ($p) => $p->id !== $target->id && ! $p->pivot->is_eliminated
+        );
+
+        return DB::transaction(function () use ($game, $host, $target, $binome, $partner) {
+            $round       = $game->currentRound()->first();
+            $roundNumber = $round?->number ?? (int) $game->rounds()->max('number');
+            $removedIds  = array_values(array_filter([$target->id, $partner?->id]));
+
+            $binome->players()->updateExistingPivot($target->id, [
+                'is_eliminated'    => true,
+                'is_excluded'      => true,
+                'eliminated_round' => $roundNumber,
+            ]);
+
+            if ($partner) {
+                $binome->players()->updateExistingPivot($partner->id, [
+                    'is_eliminated'    => true,
+                    'eliminated_round' => $roundNumber,
+                ]);
+            }
+
+            $cancelled = null;
+            $advance   = false;
+
+            if ($round) {
+                $pending = $this->pendingActionOf($round);
+
+                if (in_array($round->current_player_id, $removedIds, true)) {
+                    $cancelled = $pending;
+                    $advance   = true;
+                } elseif ($pending && in_array($pending->target_player_id, $removedIds, true)) {
+                    $cancelled = $pending;
+                }
+            }
+
+            $cancelled?->delete();
+
+            broadcast(new PlayerExcluded($game, $target, $partner, $host, $cancelled?->id));
+
+            $winners = $this->binomeService->checkGameOver($game);
+
+            if ($winners !== null) {
+                $this->endGame($game, $winners);
+            } elseif ($advance) {
+                $this->advanceRound($round, $game);
+            }
+
+            return $partner;
+        });
+    }
+
+    private function assertHostOfRunningGame(Game $game, Player $player): void
+    {
+        if ($game->status !== GameStatus::InProgress) {
+            throw new RuntimeException("La partie n'est pas en cours.");
+        }
+
+        if ($game->room?->created_by !== $player->id) {
+            throw new RuntimeException("Seul l'hôte peut décider pour un joueur déconnecté.");
+        }
+    }
+
+    /**
+     * Reverb confirme-t-il que le joueur est hors ligne ? S'il ne répond pas,
+     * on laisse l'hôte décider : mieux vaut débloquer une partie que la geler.
+     */
+    private function assertOffline(Game $game, Player $player): void
+    {
+        $online = $this->presenceService->onlinePlayerIds("game.{$game->id}");
+
+        if ($online !== null && in_array($player->id, $online, true)) {
+            throw new RuntimeException("{$player->pseudo} est de nouveau connecté : laisse-lui le temps de jouer.");
+        }
+    }
+
+    /**
+     * Qui la partie attend-elle ? Le joueur dont c'est le tour, ou la cible de
+     * sa question / accusation encore sans réponse.
+     *
+     * @return array{0: Player, 1: string, 2: ?Action}
+     */
+    private function findBlocker(Round $round): array
+    {
+        $pending = $this->pendingActionOf($round);
+
+        if (! $pending) {
+            if ($round->actions()->where('player_id', $round->current_player_id)->exists()) {
+                throw new RuntimeException("Personne ne bloque la partie pour l'instant.");
+            }
+
+            return [$round->currentPlayer, 'turn', null];
+        }
+
+        return [
+            $pending->targetPlayer,
+            $pending->type === ActionType::Question ? 'answer' : 'accusation',
+            $pending,
+        ];
+    }
+
+    /**
+     * Question ou accusation du joueur courant qui attend encore la cible.
+     */
+    private function pendingActionOf(Round $round): ?Action
+    {
+        $last = $round->actions()
+            ->where('player_id', $round->current_player_id)
+            ->with('targetPlayer')
+            ->latest('id')
+            ->first();
+
+        if (! $last) {
+            return null;
+        }
+
+        $waiting = $last->type === ActionType::Question
+            ? $last->is_valid && $last->answer === null
+            : $last->accusation_confirmed === null;
+
+        return $waiting ? $last : null;
+    }
+
+    /**
+     * Le nom proposé correspond-il au personnage de la cible ? Insensible à la
+     * casse, aux accents et aux espaces superflus (« iron  man » = « Iron Man »).
+     */
+    private function accusationMatches(Game $game, Action $accusation): bool
+    {
+        $character = $accusation->targetPlayer->getCharacterInGame($game);
+
+        $normalize = fn (?string $name) => Str::of((string) $name)->ascii()->lower()->squish()->value();
+
+        return $character !== null
+            && $normalize($character->name) === $normalize($accusation->character_name ?? $accusation->content);
+    }
+
+    /**
+     * Enregistre la réponse à une question. Mise à jour conditionnelle : si la
+     * cible répond au moment même où un autre joueur passe son tour, un seul
+     * des deux l'emporte et le round n'avance qu'une fois.
+     */
+    private function recordAnswer(Action $action, string $answer): void
+    {
+        $updated = Action::whereKey($action->id)
+            ->whereNull('answer')
+            ->update(['answer' => $answer]);
+
+        if ($updated === 0) {
+            throw new RuntimeException('Cette question a déjà reçu une réponse.');
+        }
+
+        $action->refresh()->load(['player', 'targetPlayer', 'round']);
+
+        broadcast(new AnswerGiven($action));
+    }
+
+    /**
+     * Tranche une accusation (confirmée par la cible, ou par le serveur si la
+     * cible est hors ligne), puis avance le round. Même garde que recordAnswer().
+     */
+    private function resolveAccusation(Action $action, bool $correct): void
+    {
+        $updated = Action::whereKey($action->id)
+            ->whereNull('accusation_confirmed')
+            ->update([
+                'accusation_confirmed' => $correct,
+                'accusation_correct'   => $correct,
+            ]);
+
+        if ($updated === 0) {
+            throw new RuntimeException('Cette accusation a déjà été confirmée.');
+        }
+
+        $action->refresh()->load(['player', 'targetPlayer', 'round']);
 
         $round = $action->round;
         $game  = $round->game;
 
-        if ($confirmed) {
-            $action->update([
-                'accusation_confirmed' => true,
-                'accusation_correct'   => true,
-            ]);
+        broadcast(new AccusationConfirmed($action));
 
-            $action->load(['player', 'targetPlayer', 'round']);
-            broadcast(new AccusationConfirmed($action));
-
-            $this->handleCorrectAccusation($game, $action->player, $player);
-
-        } else {
-            $action->update([
-                'accusation_confirmed' => false,
-                'accusation_correct'   => false,
-            ]);
-
-            $action->load(['player', 'targetPlayer', 'round']);
-            broadcast(new AccusationConfirmed($action));
+        if ($correct) {
+            $this->handleCorrectAccusation($game, $action->player, $action->targetPlayer);
         }
 
         // Dans tous les cas on avance le round après confirmation
         $this->advanceRound($round, $game);
-
-        return $action;
     }
 }

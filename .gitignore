@@ -28,5 +28,8 @@ vendor
 
 # Généré par scripts/update-lan-ip.sh (IP LAN spécifique à la machine)
 frontend/public/lan-url.json
+frontend/public/lan-url.json.tmp.*
+# PID du watcher réseau lancé par start.sh
+.lan-watch.pid
 
 CLAUDE.MD

@@ -95,4 +95,47 @@ export const gameService = {
         )
         return res.data
     },
+
+    /**
+     * GET /games/{game}/recap
+     * Récap de fin de partie (409 tant qu'elle n'est pas terminée)
+     */
+    async recap(gameId) {
+        const res = await api.get(`/games/${gameId}/recap`)
+        return res.data
+    },
+
+    /**
+     * POST /games/{game}/reactions
+     * Réaction rapide (emoji) diffusée à toute la partie
+     */
+    async react(gameId, playerId, emoji) {
+        const res = await api.post(`/games/${gameId}/reactions`, {
+            player_id: playerId,
+            emoji,
+        })
+        return res.data
+    },
+
+    /**
+     * POST /games/{game}/skip-turn
+     * L'hôte passe le tour du joueur déconnecté qui met la partie en pause
+     */
+    async skipTurn(gameId, playerId) {
+        const res = await api.post(`/games/${gameId}/skip-turn`, {
+            player_id: playerId,
+        })
+        return res.data
+    },
+
+    /**
+     * POST /games/{game}/players/{player}/exclude
+     * L'hôte exclut un joueur déconnecté (lui et son binôme sont éliminés)
+     */
+    async excludePlayer(gameId, targetPlayerId, playerId) {
+        const res = await api.post(`/games/${gameId}/players/${targetPlayerId}/exclude`, {
+            player_id: playerId,
+        })
+        return res.data
+    },
 }
