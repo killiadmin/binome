@@ -116,9 +116,19 @@ export default {
   margin: 0 auto;
 }
 
+.arcade-title {
+  font-size: clamp(1.25rem, 6.5vw, 1.9rem);
+}
+
+.arcade-subtitle {
+  margin-top: 0.75rem;
+}
+
 .rules-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  /* min(280px, 100%) : sous 280px de large la piste suit le conteneur au lieu
+     de forcer une colonne plus large que l'écran. */
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1.25rem;
 }
 

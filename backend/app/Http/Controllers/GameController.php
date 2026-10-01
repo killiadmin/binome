@@ -6,7 +6,12 @@ use App\Enums\ActionType;
 use App\Models\Action;
 use App\Models\Game;
 use App\Models\Player;
+use App\Models\PlayerAvatar;
 use App\Models\Room;
+use App\Enums\GameStatus;
+use App\Events\ReactionSent;
+use App\Services\ActionService;
+use App\Services\GameRecapService;
 use App\Services\GameService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,8 +19,13 @@ use Illuminate\Routing\Controller;
 
 class GameController extends Controller
 {
+    /** Réactions rapides autorisées — à garder aligné sur QuickReactions.vue. */
+    public const REACTIONS = ['😂', '🤔', '😱', '👏', '🔥', '🤫', '😈', '💀'];
+
     public function __construct(
-        private readonly GameService $gameService
+        private readonly GameService $gameService,
+        private readonly ActionService $actionService,
+        private readonly GameRecapService $recapService,
     ) {}
 
     /**
@@ -87,6 +97,8 @@ class GameController extends Controller
             $actions = $actions->merge($roundActions);
         }
 
+        $avatars = PlayerAvatar::urlsFor($game->binomes->flatMap(fn ($binome) => $binome->players));
+
         return response()->json([
             'game_id' => $game->id,
             'status' => $game->status,
@@ -99,11 +111,15 @@ class GameController extends Controller
                     'id' => $player->id,
                     'pseudo' => $player->pseudo,
                     'is_eliminated' => (bool) $player->pivot->is_eliminated,
+                    'is_excluded' => (bool) $player->pivot->is_excluded,
+                    'avatar_url' => $avatars[$player->id] ?? null,
                 ])
                 ->sortBy('id')
                 ->values(),
             // Un orphelin est en jeu (nombre de joueurs impair) — sans dire qui.
             'has_orphan' => $game->hasOrphan(),
+            // L'hôte décide pour un joueur déconnecté (passer son tour / l'exclure).
+            'host_id' => $game->room?->created_by,
             'binomes' => $game->binomes
                 ->filter(fn ($binome) => $binome->is_discovered)
                 ->values()
@@ -155,13 +171,18 @@ class GameController extends Controller
             ]);
         }
 
+        // Le nom proposé est public : ActionPlayed le diffuse déjà à tout le
+        // channel. accusation_confirmed permet au front de distinguer une
+        // accusation en attente (null) d'une accusation niée (false) après un
+        // rechargement, et de rouvrir la modale de confirmation chez la cible.
         return array_merge($base, [
             'target_player' => $action->targetPlayer ? [
                 'id' => $action->targetPlayer->id,
                 'pseudo' => $action->targetPlayer->pseudo,
             ] : null,
             'accusation_correct' => $action->accusation_correct,
-            'character_name' => $action->accusation_correct ? $action->content : null,
+            'accusation_confirmed' => $action->accusation_confirmed,
+            'character_name' => $action->character_name ?? $action->content,
         ]);
     }
 
@@ -194,6 +215,98 @@ class GameController extends Controller
                 'cosmos' => $character->universe->cosmos?->name,
                 'forbidden_words' => $character->forbidden_words,
             ],
+        ]);
+    }
+
+    /**
+     * GET /games/{game}/recap
+     * Récap de fin de partie (scores, binomes révélés, trophées). Tout y est
+     * révélé : uniquement pour une partie terminée, comme l'historique public.
+     */
+    public function recap(Game $game): JsonResponse
+    {
+        if ($game->status !== GameStatus::Finished) {
+            return response()->json([
+                'message' => "La partie n'est pas terminée.",
+            ], 409);
+        }
+
+        return response()->json($this->recapService->build($game));
+    }
+
+    /**
+     * POST /games/{game}/reactions
+     * Réaction rapide (emoji) diffusée à tout le channel, spectateurs compris.
+     */
+    public function react(Request $request, Game $game): JsonResponse
+    {
+        $validated = $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+            'emoji' => ['required', 'string', 'in:'.implode(',', self::REACTIONS)],
+        ]);
+
+        if (! $game->canBeWatchedBy((int) $validated['player_id'])) {
+            return response()->json([
+                'message' => 'Tu ne participes pas à cette partie.',
+            ], 403);
+        }
+
+        broadcast(new ReactionSent($game, Player::find($validated['player_id']), $validated['emoji']));
+
+        return response()->json(['message' => 'Réaction envoyée.']);
+    }
+
+    /**
+     * POST /games/{game}/skip-turn
+     * L'hôte passe le tour du joueur déconnecté qui met la partie en pause
+     * (voir ActionService::skipBlockedTurn).
+     */
+    public function skipTurn(Request $request, Game $game): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+        ]);
+
+        try {
+            $result = $this->actionService->skipBlockedTurn(
+                $game,
+                Player::findOrFail($request->input('player_id')),
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        return response()->json([
+            'message' => "Tour de {$result['player']->pseudo} passé.",
+            'reason' => $result['reason'],
+        ]);
+    }
+
+    /**
+     * POST /games/{game}/players/{player}/exclude
+     * L'hôte exclut un joueur déconnecté : lui et son binôme sont éliminés
+     * (voir ActionService::excludePlayer).
+     */
+    public function excludePlayer(Request $request, Game $game, Player $player): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+        ]);
+
+        try {
+            $partner = $this->actionService->excludePlayer(
+                $game,
+                Player::findOrFail($request->input('player_id')),
+                $player,
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        return response()->json([
+            'message' => $partner
+                ? "{$player->pseudo} est exclu, son binôme {$partner->pseudo} est éliminé."
+                : "{$player->pseudo} est exclu.",
         ]);
     }
 }

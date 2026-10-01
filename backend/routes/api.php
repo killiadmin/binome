@@ -3,9 +3,12 @@
 use App\Http\Controllers\AccessController;
 use App\Http\Controllers\ActionController;
 use App\Http\Controllers\AdminGameController;
+use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\CharacterController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CosmosController;
 use App\Http\Controllers\GameController;
+use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\UniverseController;
 use Illuminate\Support\Facades\Route;
@@ -48,6 +51,31 @@ Route::prefix('admin/games')->middleware('characters.access')->group(function ()
     Route::delete('{game}', [AdminGameController::class, 'destroy']);
 });
 
+// Historique public — aucune authentification. Seules les parties TERMINÉES
+// sont exposées : publier une partie en cours révélerait les personnages à ses
+// propres joueurs (voir HistoryController).
+Route::prefix('history')->group(function () {
+    Route::get('games', [HistoryController::class, 'games']);
+    Route::get('games/{game}', [HistoryController::class, 'game']);
+    Route::get('leaderboard', [HistoryController::class, 'leaderboard']);
+    Route::get('players', [HistoryController::class, 'player']);
+});
+
+// Chat commun du hall (/rooms) — channel public `lobby`, ouvert aux visiteurs
+// qui n'ont ni créé ni rejoint de salon.
+Route::prefix('chat')->group(function () {
+    Route::get('messages', [ChatController::class, 'index']);
+    Route::post('messages', [ChatController::class, 'store'])->middleware('throttle:chat');
+});
+
+// Photos de profil des joueurs (remplacent le badge à initiales).
+// L'image est servie par URL versionnée, jamais incluse dans le JSON ni les events.
+Route::get('avatars/{avatar}', [AvatarController::class, 'show']);
+Route::prefix('players/{player}/avatar')->middleware('throttle:avatars')->group(function () {
+    Route::post('/', [AvatarController::class, 'update']);
+    Route::delete('/', [AvatarController::class, 'destroy']);
+});
+
 Route::prefix('rooms')->group(function () {
     Route::post('/', [RoomController::class, 'store']);
     Route::post('join', [RoomController::class, 'join']);
@@ -61,6 +89,10 @@ Route::prefix('rooms')->group(function () {
 Route::prefix('games/{game}')->group(function () {
     Route::get('/', [GameController::class, 'show']);
     Route::get('me', [GameController::class, 'myCharacter']);
+    Route::get('recap', [GameController::class, 'recap']);
+    Route::post('reactions', [GameController::class, 'react'])->middleware('throttle:reactions');
+    Route::post('skip-turn', [GameController::class, 'skipTurn']);
+    Route::post('players/{player}/exclude', [GameController::class, 'excludePlayer']);
 
     Route::prefix('rounds/{round}')->group(function () {
         Route::post('question', [ActionController::class, 'question']);

@@ -489,6 +489,15 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/universes/{universe}/characters` | `CharacterController@store` | Créer un personnage (`verif_manual = true`) |
 | `PUT` | `/api/characters/{character}` | `CharacterController@update` | Modifier un personnage (`universe_id` optionnel pour le réassigner à un autre univers) |
 | `DELETE` | `/api/characters/{character}` | `CharacterController@destroy` | Supprimer un personnage |
+| `GET` | `/api/chat/messages` | `ChatController@index` | 50 derniers messages du chat commun — **route ouverte** |
+| `POST` | `/api/chat/messages` | `ChatController@store` | Poster un message (`body`, `player_id` **ou** `anon_id`) → broadcast `ChatMessageSent` — `throttle:chat` |
+| `GET` | `/api/history/games` | `HistoryController@games` | Parties **terminées** uniquement — **route ouverte** |
+| `GET` | `/api/history/games/{game}` | `HistoryController@game` | Détail complet d'une partie terminée (`404` si en cours) — **route ouverte** |
+| `GET` | `/api/history/leaderboard` | `HistoryController@leaderboard` | Classement cumulé par pseudo — **route ouverte** |
+| `GET` | `/api/history/players?pseudo=…` | `HistoryController@player` | Totaux d'un joueur + détail partie par partie — **route ouverte** |
+| `GET` | `/api/avatars/{avatar}` | `AvatarController@show` | Image JPEG d'une photo de profil — URL versionnée (`?v=`), cache 1 an — **route ouverte** |
+| `POST` | `/api/players/{player}/avatar` | `AvatarController@update` | Enregistrer sa photo (`player_id` = `{player}`, `image` = data URI JPEG carrée 64–512 px, ≤ 200 ko) → broadcast `PlayerAvatarUpdated` — `throttle:avatars` (10/min) |
+| `DELETE` | `/api/players/{player}/avatar` | `AvatarController@destroy` | Retirer sa photo (retour aux initiales) |
 | `POST` | `/api/rooms` | `RoomController@store` | Créer un salon |
 | `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères |
 | `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs + `game_mode` / `cosmos_id` |
@@ -498,6 +507,10 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/rooms/{room}/start` | `GameController@start` | Lancer la partie (créateur uniquement) |
 | `GET` | `/api/games/{game}` | `GameController@show` | État de la partie (sans personnages) |
 | `GET` | `/api/games/{game}/me` | `GameController@myCharacter` | Mon personnage secret + mots interdits |
+| `GET` | `/api/games/{game}/recap` | `GameController@recap` | Récap de fin de partie (scores, binomes révélés, qui a trouvé qui, trophées) — `409` tant que la partie n'est pas terminée |
+| `POST` | `/api/games/{game}/reactions` | `GameController@react` | Réaction rapide (`player_id`, `emoji` parmi `GameController::REACTIONS`) → broadcast `ReactionSent` — joueurs **et** spectateurs, `throttle:reactions` (30/min par joueur) |
+| `POST` | `/api/games/{game}/skip-turn` | `GameController@skipTurn` | **Hôte** : passe le tour du joueur **déconnecté** qui met la partie en pause (voir *Joueur déconnecté* plus bas) — `409` si refusé |
+| `POST` | `/api/games/{game}/players/{player}/exclude` | `GameController@excludePlayer` | **Hôte** : exclut un joueur déconnecté — lui et son binôme sont éliminés, il marque 0 point |
 | `POST` | `/api/games/{game}/rounds/{round}/question` | `ActionController@question` | Poser une question |
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
 | `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
@@ -545,6 +558,7 @@ Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
 |---|---|---|
 | `room.{roomId}` | PresenceChannel | Lobby — joueurs qui rejoignent/quittent/sont prêts |
 | `game.{gameId}` | PresenceChannel | Partie en cours — actions, rounds, fin de partie |
+| `lobby` | Channel **public** | Chat commun du hall — aucune auth, ouvert aux visiteurs sans salon |
 | `AnswerGiven` | `game.{id}` | `answer.given` | Le joueur ciblé répond à une question |
 
 ### Auth PresenceChannel
@@ -573,6 +587,11 @@ La route par défaut de Laravel Broadcasting est désactivée — seule la route
 | `ActionPlayed` | `game.{id}` | `action.played` | Un joueur joue son tour |
 | `BinomeDiscovered` | `game.{id}` | `binome.discovered` | Accusation correcte |
 | `GameEnded` | `game.{id}` | `game.ended` | Dernier binome découvert |
+| `ReactionSent` | `game.{id}` | `reaction.sent` | Réaction rapide (emoji) — rien n'est stocké |
+| `TurnSkipped` | `game.{id}` | `turn.skipped` | L'hôte a passé le tour d'un joueur déconnecté (`reason` : `turn` \| `accusation`) |
+| `PlayerAvatarUpdated` | `room.{id}` + `game.{id}` en cours | `player.avatar.updated` | Un joueur change / retire sa photo (`player_id`, `avatar_url`) |
+| `PlayerExcluded` | `game.{id}` | `player.excluded` | L'hôte a exclu un joueur déconnecté (+ `partner` éliminé, `cancelled_action_id`) |
+| `ChatMessageSent` | `lobby` | `chat.message` | Un message est posté dans le chat commun |
 
 ### `ActionPlayed` — logique de masquage
 
@@ -684,6 +703,99 @@ $middleware->validateCsrfTokens(except: ['broadcasting/auth']);
 
 ### Leave room
 `DELETE /rooms/{room}/leave` supprime le joueur en base + détache le pivot. Si la room est vide → supprime la room. Si l'hôte part → transfère `created_by` au prochain joueur.
+
+### Joueur déconnecté : pause, l'hôte décide
+
+La partie est **en pause** quand le joueur qu'elle attend est hors ligne (déterminé par
+`ActionService::findBlocker()` sur le round courant). Un autre joueur déconnecté ne bloque rien
+tant que ce n'est pas à lui. **Seul l'hôte** (`rooms.created_by`) peut débloquer — si c'est lui
+qui est déconnecté, la partie attend son retour.
+
+**Passer son tour** — `POST /games/{game}/skip-turn` (`skipBlockedTurn()`) :
+
+| Ce qu'on attend | `reason` | Effet |
+|---|---|---|
+| Le joueur dont c'est le tour n'a rien joué | `turn` | Le tour passe, **aucune action** enregistrée |
+| La cible d'une accusation n'a pas confirmé | `accusation` | Le **serveur tranche** : nom proposé == vrai personnage (insensible casse / accents / espaces) — sinon un accusé n'aurait qu'à se déconnecter pour s'en tirer |
+| La cible d'une question n'a pas répondu | — | **Refusé (`409`)** : une question attend toujours sa réponse. Attendre le retour du joueur, ou l'exclure |
+
+**Exclure** — `POST /games/{game}/players/{player}/exclude` (`excludePlayer()`) :
+
+- L'exclu **et son binôme** sont éliminés (`binome_player.is_eliminated`) ; l'exclu est marqué
+  `is_excluded` et marque **0 point** (`ScoreService`). `eliminated_round` sert à leurs rounds
+  survécus. Un orphelin exclu n'entraîne personne. Révéler le partenaire est inhérent à la règle.
+- Une question / accusation en attente impliquant un joueur éliminé est **supprimée** : si elle
+  venait du joueur courant (toujours en jeu), il rejoue ; si le joueur courant est lui-même
+  éliminé, le tour avance (`RoundService::nextTurn()` prend le premier joueur actif d'id supérieur,
+  le joueur courant pouvant ne plus être dans la liste).
+- Puis `checkGameOver()` : l'exclusion peut terminer la partie.
+- Broadcast `PlayerExcluded` ; `game_stats.is_excluded` et `recap.exclusions` pour l'affichage.
+
+Dans les deux cas :
+
+- `PresenceService` interroge Reverb (`GET /channels/presence-game.{id}/users`, API Pusher) :
+  si le joueur visé est connecté → `409`. Un 404 de Reverb = channel vide = personne en ligne.
+  Si Reverb ne répond pas, on laisse l'hôte décider (mieux vaut débloquer que geler). Le délai
+  de 30 s avant de pouvoir décider est appliqué côté front.
+- `recordAnswer()` / `resolveAccusation()` font une mise à jour **conditionnelle**
+  (`whereNull('answer')`, `whereNull('accusation_confirmed')`) : si la cible répond pile au
+  moment où l'hôte passe son tour, un seul des deux l'emporte et le round n'avance qu'une fois.
+
+### Photos de profil (`player_avatars`)
+
+- Rattachées au **pseudo**, pas à la ligne `players` : `leave` supprime le joueur, alors que le
+  pseudo est l'identité durable (classement, historique). Un joueur retrouve sa photo à chaque
+  partie ; même collation que `players.pseudo` (« Killian » = « killian »).
+- Stockée en data URI base64 comme les images de personnages. Le **navigateur** recadre et
+  réencode en JPEG 256 px (~5–20 ko) : GD n'est pas chargé dans le conteneur, le serveur ne fait
+  que vérifier (vrai JPEG via `getimagesizefromstring`, carré, 64–512 px, ≤ 200 ko). Le
+  réencodage canvas supprime les métadonnées EXIF.
+- **Jamais d'image dans le JSON ni les events** (Reverb limite un message à 10 ko) : les listes de
+  joueurs portent `avatar_url` (`PlayerAvatar::urlsFor()`, une requête), servie par
+  `GET /api/avatars/{id}?v={updated_at}`. `Room::playersPayload()` centralise la liste du lobby
+  (réponses de `RoomController` + events `PlayerJoined` / `PlayerReady` / `PlayerLeft`) ;
+  `GET /games/{game}` l'inclut dans `players[]`.
+- L'historique ne connaît que des pseudos (`game_stats`, joueurs parfois supprimés) :
+  `PlayerAvatar::urlsForPseudos()` alimente `avatar_url` dans `GameHistoryService::detail()`
+  (joueurs, scores, journal) et `leaderboard()`.
+- Même modèle de confiance que le reste de l'API : `player_id` doit correspondre à `{player}`.
+
+### Spectateurs
+
+Un joueur qui rejoint un salon dont la partie est déjà lancée n'a pas de personnage.
+`GET /rooms/{room}` et `POST /rooms/join` renvoient `current_game_id` : le front lui propose de
+suivre la partie. Le PresenceChannel `game.{id}` accepte déjà les membres du salon
+(`routes/channels.php`), et `Game::canBeWatchedBy()` applique la même règle aux réactions.
+
+### Chat commun du hall (`lobby`)
+Le chat de la page `/rooms` diffuse sur un **channel public** `lobby`, pas sur une `PresenceChannel` : il doit rester lisible par un visiteur qui n'a ni créé ni rejoint de salon, donc sans `Player` à présenter à `BroadcastAuthController`.
+
+Conséquences sur `ChatController` :
+- **Le nom d'auteur est toujours dérivé côté serveur.** Si `player_id` est fourni et valide → `pseudo` du joueur ; sinon → `Anonyme#{anon_id}` (identifiant tiré au sort et stocké dans le `localStorage` du navigateur). Un client ne peut donc pas usurper le pseudo d'un joueur en le postant lui-même.
+- `chat_messages.player_id` est `nullOnDelete` et `author_name` est **dénormalisé** : `RoomController@leave` supprime le `Player`, le message doit survivre avec son auteur d'origine. `is_anonymous` se déduit du préfixe de `author_key` (`p:` / `a:`), immuable, et non de `player_id`.
+- `author_key` (`p:{id}` ou `a:{anonId}`) sert au front à reconnaître ses propres messages.
+- Les codes de partie cités dans un message sont extraits par `ChatMessage::mentionedRoomCodes()` et **confrontés à la table `rooms`** — sans cela n'importe quel mot de 6 caractères (« COUCOU ») passerait pour un code copiable.
+- **Durée de vie d'une heure** (`ChatController::RETENTION_MINUTES`) : `index()` filtre sur `created_at`, et la purge en base tourne à chaque lecture *et* chaque écriture — pas de tâche planifiée à prévoir. L'historique renvoyé est limité aux 50 derniers. `LobbyChat.vue` applique la même limite en local (balayage toutes les 30 s) pour qu'un onglet resté ouvert voie les messages disparaître sans rechargement.
+- **Anti-spam indexé sur l'auteur, pas sur l'IP** (limiteur nommé `chat`, défini dans `AppServiceProvider`).
+  Le proxy du serveur Vite ne transmet pas l'IP du client (pas de `xfwd` dans `vite.config.js`, pas de
+  `TrustProxies`) : tous les joueurs du réseau local arrivent avec l'IP du conteneur frontend. Un
+  `throttle:20,1` classique leur ferait donc partager un seul compteur.
+
+### Historique public et classement
+`GameHistoryService` centralise la lecture de l'historique. Le **même** formatage sert à la vue admin et à l'historique public : c'est le controller qui décide de ce qu'il autorise, pas le service. `AdminGameController` est passé de ~180 à ~60 lignes en le réutilisant.
+
+**Invariant de sécurité** — `HistoryController` n'expose que les parties `finished` :
+- `listGames(finishedOnly: true)` pour la liste ;
+- `404` explicite sur le détail d'une partie non terminée ;
+- `leaderboard()` et `playerBreakdown()` **joignent `games` et filtrent sur le statut**. En pratique `ScoreService` n'écrit dans `game_stats` qu'à la clôture (`ActionService::endGame`), mais ces endpoints étant publics, ils imposent l'invariant au lieu de le supposer.
+
+Publier le détail d'une partie en cours révélerait les personnages à ses propres joueurs : il suffirait d'ouvrir un second onglet pour tricher. La vue admin, elle, voit toujours tout.
+
+**Clé d'identité du classement : le pseudo.** `players.pseudo` est unique et `Player::firstOrCreate(['pseudo' => …])` réutilise donc la même personne d'une partie à l'autre. L'agrégation porte sur `game_stats.player_pseudo`, dénormalisé, qui **survit à la suppression du joueur** (`RoomController@leave` supprime la ligne `players`). Les points d'un même pseudo s'additionnent globalement tout en restant consultables partie par partie via `playerBreakdown()`.
+
+La collation de la base est `utf8mb4_0900_ai_ci` : « Killian », « killian » et « Killián » sont regroupés en une seule ligne de classement — exactement comme la contrainte d'unicité sur `players.pseudo` les considère déjà comme un seul joueur.
+
+Les ex æquo partagent leur rang (1, 2, 2, 4). Supprimer une partie côté admin la retire du classement par cascade DB sur `game_stats`.
 
 ### Enums natifs Laravel 11
 ```php

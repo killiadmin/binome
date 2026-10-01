@@ -41,19 +41,18 @@ class RoundService
         $game    = $round->game;
         $players = $this->getOrderedPlayers($game, $round->number);
 
-        $currentIndex = $players->search(
-            fn($p) => $p->id === $round->current_player_id
-        );
+        // Premier joueur actif après le joueur courant dans l'ordre par id.
+        // Pas de recherche d'index : le joueur courant peut ne plus être dans
+        // la liste s'il vient d'être exclu (ActionService::excludePlayer).
+        $next = $players->first(fn($p) => $p->id > $round->current_player_id);
 
-        $nextIndex = $currentIndex + 1;
-
-        if ($nextIndex >= $players->count()) {
+        if (! $next) {
             $round->update(['is_finished' => true]);
             return true;
         }
 
         $round->update([
-            'current_player_id' => $players[$nextIndex]->id,
+            'current_player_id' => $next->id,
         ]);
 
         $round->refresh();

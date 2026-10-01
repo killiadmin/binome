@@ -49,4 +49,21 @@ class Room extends Model
     {
         return $this->hasOne(Game::class)->where('status', 'in_progress');
     }
+
+    /**
+     * Joueurs du salon tels que le lobby les affiche : statut prêt + URL de
+     * la photo (jamais l'image elle-même, voir PlayerAvatar).
+     */
+    public function playersPayload(): \Illuminate\Support\Collection
+    {
+        $players = $this->players()->get();
+        $avatars = PlayerAvatar::urlsFor($players);
+
+        return $players->map(fn ($p) => [
+            'id' => $p->id,
+            'pseudo' => $p->pseudo,
+            'is_ready' => $p->pivot->is_ready,
+            'avatar_url' => $avatars[$p->id] ?? null,
+        ])->values();
+    }
 }

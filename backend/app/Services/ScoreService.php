@@ -36,6 +36,7 @@ class ScoreService
             foreach ($binome->players as $player) {
 
                 $isEliminated = (bool) $player->pivot->is_eliminated;
+                $isExcluded   = (bool) $player->pivot->is_excluded;
                 $isWinner     = in_array($player->id, $winnerIds);
 
                 // Personnage snapshot
@@ -43,7 +44,7 @@ class ScoreService
 
                 // Rounds survécus = rounds où le joueur n'était pas encore éliminé
                 // On compte les rounds où le joueur a joué OU était encore actif
-                $roundsSurvived = $this->countRoundsSurvived($game, $player->id);
+                $roundsSurvived = $this->countRoundsSurvived($game, $player);
 
                 // Éliminations causées par ce joueur
                 $eliminations = $game->rounds
@@ -55,8 +56,8 @@ class ScoreService
                     )
                     ->count();
 
-                // Score
-                $score = $eliminations * 1
+                // Score — un joueur exclu par l'hôte (déconnecté) marque 0.
+                $score = $isExcluded ? 0 : $eliminations * 1
                     + $roundsSurvived * 1
                     + ($isWinner && !$isEliminated && $teamIntact ? 5 : 0);
 
@@ -70,6 +71,7 @@ class ScoreService
                     'score'              => $score,
                     'is_winner'          => $isWinner,
                     'is_eliminated'      => $isEliminated,
+                    'is_excluded'        => $isExcluded,
                 ]);
 
                 $stats->push($stat);
@@ -79,8 +81,15 @@ class ScoreService
         return $stats;
     }
 
-    private function countRoundsSurvived(Game $game, int $playerId): int
+    private function countRoundsSurvived(Game $game, \App\Models\Player $player): int
     {
+        $playerId = $player->id;
+
+        // Éliminé hors accusation : exclu par l'hôte, ou binôme d'un exclu
+        if ($player->pivot->eliminated_round !== null) {
+            return (int) $player->pivot->eliminated_round;
+        }
+
         // Cherche dans quelle action le joueur a été éliminé
         $eliminationAction = $game->rounds
             ->flatMap(fn($r) => $r->actions)

@@ -5,6 +5,11 @@ window.Pusher = Pusher
 
 let echo = null
 
+// Abonnés prévenus quand le singleton est détruit : les channels qui ne sont
+// pas re-souscrits par la page appelante (le chat du hall) doivent se rebrancher
+// sur la nouvelle instance.
+const resetListeners = new Set()
+
 // The WebSocket connects back to whatever origin served the page; the Vite dev
 // server proxies /app to the Reverb container. Nothing here depends on the
 // host's LAN IP, so switching networks needs no config change.
@@ -82,11 +87,36 @@ export function useReverb(playerId = null) {
             channel.listen('.player.left', callbacks.onPlayerLeft)
         }
 
+        if (callbacks.onPlayerAvatarUpdated) {
+            channel.listen('.player.avatar.updated', callbacks.onPlayerAvatarUpdated)
+        }
+
         return channel
     }
 
     function leaveRoom(roomId) {
         echoInstance.leave(`room.${roomId}`)
+    }
+
+    /**
+     * Chat commun du hall — channel PUBLIC (aucune auth) : il doit rester
+     * accessible aux visiteurs qui n'ont ni créé ni rejoint de salon, et qui
+     * n'ont donc pas de Player à présenter au BroadcastAuthController.
+     */
+    function joinLobbyChat(callbacks = {}) {
+        const channel = echoInstance.channel('lobby')
+
+        channel.listen('.chat.message', (data) => callbacks.onChatMessage?.(data))
+        channel.error?.((error) => {
+            console.error('[Reverb] Erreur channel lobby :', error)
+            callbacks.onError?.(error)
+        })
+
+        return channel
+    }
+
+    function leaveLobbyChat() {
+        echoInstance.leave('lobby')
     }
 
     /**
@@ -141,6 +171,22 @@ export function useReverb(playerId = null) {
             channel.listen('.player.eliminated', callbacks.onPlayerEliminated)
         }
 
+        if (callbacks.onReactionSent) {
+            channel.listen('.reaction.sent', callbacks.onReactionSent)
+        }
+
+        if (callbacks.onTurnSkipped) {
+            channel.listen('.turn.skipped', callbacks.onTurnSkipped)
+        }
+
+        if (callbacks.onPlayerExcluded) {
+            channel.listen('.player.excluded', callbacks.onPlayerExcluded)
+        }
+
+        if (callbacks.onPlayerAvatarUpdated) {
+            channel.listen('.player.avatar.updated', callbacks.onPlayerAvatarUpdated)
+        }
+
         return channel
     }
 
@@ -152,18 +198,42 @@ export function useReverb(playerId = null) {
     }
 
     /**
-     * Vérifier l'état de la connexion WebSocket
+     * Suivre l'état de la connexion WebSocket (téléphone verrouillé, Wi-Fi qui
+     * saute…). Pusher se reconnecte et se réabonne tout seul, mais les events
+     * émis pendant la coupure sont perdus : l'appelant doit resynchroniser son
+     * état quand `current` repasse à 'connected'.
+     * Renvoie la fonction de désabonnement.
      */
-    function isConnected() {
-        return echoInstance.connector.pusher.connection.state === 'connected'
+    function onConnectionChange(callback) {
+        const connection = echoInstance.connector.pusher.connection
+        const handler = ({previous, current}) => callback({previous, current})
+        connection.bind('state_change', handler)
+        return () => connection.unbind('state_change', handler)
     }
 
     return {
         joinRoom,
         leaveRoom,
+        joinLobbyChat,
+        leaveLobbyChat,
         joinGame,
         leaveGame,
+        onConnectionChange,
     }
+}
+
+/** Le singleton existe-t-il ? Évite de rouvrir une connexion juste pour la fermer. */
+export function hasEcho() {
+    return echo !== null
+}
+
+/**
+ * S'abonner à la destruction du singleton Echo.
+ * Renvoie la fonction de désabonnement.
+ */
+export function onEchoReset(callback) {
+    resetListeners.add(callback)
+    return () => resetListeners.delete(callback)
 }
 
 export function resetEcho() {
@@ -171,4 +241,5 @@ export function resetEcho() {
         echo.disconnect()
         echo = null
     }
+    resetListeners.forEach((cb) => cb())
 }

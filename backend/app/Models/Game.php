@@ -46,6 +46,27 @@ class Game extends Model
             : $this->binomes()->where('is_orphan', true)->exists();
     }
 
+    /**
+     * Le joueur a-t-il un personnage dans cette partie (éliminé ou non) ?
+     */
+    public function hasPlayer(int $playerId): bool
+    {
+        return $this->binomes()
+            ->whereHas('players', fn ($q) => $q->where('player_id', $playerId))
+            ->exists();
+    }
+
+    /**
+     * Le joueur peut-il suivre la partie : joueur de la partie, ou membre du
+     * salon arrivé après le lancement (spectateur). Même règle que le
+     * PresenceChannel game.{id} dans routes/channels.php.
+     */
+    public function canBeWatchedBy(int $playerId): bool
+    {
+        return $this->hasPlayer($playerId)
+            || $this->room?->players()->where('player_id', $playerId)->exists();
+    }
+
     public function currentRound()
     {
         return $this->hasOne(Round::class)

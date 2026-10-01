@@ -857,7 +857,7 @@ onMounted(() => {
 }
 
 .arcade-title {
-  font-size: 1.9rem;
+  font-size: clamp(1.25rem, 6.5vw, 1.9rem);
   margin-top: 0.75rem;
 }
 

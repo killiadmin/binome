@@ -339,7 +339,7 @@ onMounted(loadGames)
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  min-width: 200px;
+  min-width: min(200px, 100%);
 }
 
 .game-code {
@@ -393,7 +393,7 @@ onMounted(loadGames)
 
 .players {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 0.5rem;
 }
 

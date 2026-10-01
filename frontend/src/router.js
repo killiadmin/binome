@@ -25,6 +25,12 @@ const routes = [
         component: RulePage,
     },
     {
+        // Historique public : aucune authentification (cf. HistoryController).
+        path: "/historique",
+        name: "History",
+        component: () => import("./pages/History/HistoryPage.vue"),
+    },
+    {
         path: '/game/:gameId',
         name: 'RoundPage',
         component: RoundPage

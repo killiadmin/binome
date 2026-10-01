@@ -6,6 +6,9 @@ import { BModal } from 'bootstrap-vue-next'
 
 const props = defineProps({
   imageSrc: { type: String, default: null },
+  // Sortie carrée en JPEG. Défaut : format des images de personnages.
+  outputSize: { type: Number, default: 512 },
+  quality: { type: Number, default: 0.9 },
 })
 
 const emit = defineEmits(['cropped', 'cancel'])
@@ -57,11 +60,11 @@ function handleCancel() {
 function handleValidate() {
   if (!cropper) return
 
-  cropper.getCroppedCanvas({ width: 512, height: 512 }).toBlob((blob) => {
+  cropper.getCroppedCanvas({ width: props.outputSize, height: props.outputSize }).toBlob((blob) => {
     if (!blob) return
     emit('cropped', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }))
     visible.value = false
-  }, 'image/jpeg', 0.9)
+  }, 'image/jpeg', props.quality)
 }
 </script>
 

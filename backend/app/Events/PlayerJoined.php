@@ -39,11 +39,7 @@ class PlayerJoined implements ShouldBroadcastNow
                 'pseudo'   => $this->player->pseudo,
                 'is_ready' => false,
             ],
-            'players' => $this->room->players->map(fn($p) => [
-                'id'       => $p->id,
-                'pseudo'   => $p->pseudo,
-                'is_ready' => $p->pivot->is_ready,
-            ]),
+            'players' => $this->room->playersPayload(),
         ];
     }
 }

@@ -36,6 +36,17 @@ src/
 ├── assets/
 │
 ├── components/
+│   ├── game/
+│   │   ├── GameNotepad.vue        # Bloc-notes privé (modale) : note libre + une note par joueur
+│   │   ├── GameRecap.vue          # Récap de fin : trophées, qui a trouvé qui, binômes, partage
+│   │   └── QuickReactions.vue     # Bouton flottant d'emojis + animation des réactions reçues
+│   ├── player/
+│   │   ├── PlayerAvatar.vue       # Contenu d'un badge joueur : photo, sinon initiales
+│   │   └── AvatarEditor.vue       # Prise de vue / import → recadrage → envoi de sa photo
+│   ├── room/
+│   │   └── JoinQrCode.vue         # QR code du salon → /rooms?code=XXXXXX sur l'IP LAN
+│   ├── chat/
+│   │   └── LobbyChat.vue         # Chat commun du hall (channel public `lobby`)
 │   └── cropper/
 │       ├── ImageDropzone.vue      # zone glisser-déposer / clic → File
 │       └── ImageCropperModal.vue  # recadrage carré imposé → 512×512 JPEG
@@ -51,6 +62,8 @@ src/
 │   │   └── CharacterListPage.vue  # Liste triée cosmos → univers → binômes, filtres, édition/suppression, validation des propositions
 │   ├── Game/
 │   │   └── RoundPage.vue       # Page de jeu (en cours de développement)
+│   ├── History/
+│   │   └── HistoryPage.vue     # Historique public + classement cumulé (2 onglets)
 │   ├── Home/
 │   │   └── HomePage.vue
 │   ├── Rooms/
@@ -63,11 +76,14 @@ src/
 │   ├── api.js                  # Instance Axios configurée
 │   ├── charactersAccess.js     # Déverrouillage par mot de passe des pages personnages (token en session)
 │   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
+│   ├── chatIdentity.js         # Identifiant anonyme persistant (`Anonyme#1234`) pour le chat
+│   ├── chatService.js          # Appels API chat commun (historique / envoi)
 │   ├── gameService.js          # Appels API partie
+│   ├── historyService.js       # Historique public + classement (aucune auth)
 │   └── roomService.js          # Appels API salon
 │
 ├── sockets/
-│   └── useReverb.js            # Singleton Echo + joinRoom/joinGame
+│   └── useReverb.js            # Singleton Echo + joinRoom/joinGame/joinLobbyChat
 │
 ├── stores/
 │   └── gameStore.js            # Store Pinia (en cours)
@@ -175,6 +191,13 @@ import { resetEcho } from './useReverb'
 resetEcho() // déconnecte et recrée l'instance
 ```
 
+Deux helpers complètent le singleton :
+
+- `onEchoReset(cb)` — s'abonner à la destruction de l'instance (renvoie la fonction de désabonnement).
+  Utilisé par les channels qui ne sont pas re-souscrits par la page appelante, comme le chat du hall.
+- `hasEcho()` — savoir si le singleton existe, pour éviter de rouvrir une connexion juste pour la fermer
+  dans un `onUnmounted`.
+
 **Headers d'auth envoyés à chaque requête `/broadcasting/auth` :**
 ```js
 auth: {
@@ -191,6 +214,8 @@ auth: {
 |---|---|---|
 | `joinRoom(roomId, callbacks)` | `presence-room.{id}` | Rejoindre le lobby WebSocket |
 | `leaveRoom(roomId)` | `presence-room.{id}` | Quitter le lobby |
+| `joinLobbyChat(callbacks)` | `lobby` (**public**) | Chat commun du hall — aucune auth, donc accessible sans `playerId` |
+| `leaveLobbyChat()` | `lobby` | Quitter le chat commun |
 | `joinGame(gameId, callbacks)` | `presence-game.{id}` | Rejoindre la partie WebSocket |
 | `leaveGame(gameId)` | `presence-game.{id}` | Quitter la partie |
 
@@ -210,6 +235,15 @@ joinRoom(roomId, {
 })
 ```
 
+#### Callbacks disponibles pour `joinLobbyChat`
+
+```js
+joinLobbyChat({
+    onChatMessage: (data) => {},   // event: nouveau message dans le chat commun
+    onError:       (error) => {},
+})
+```
+
 #### Callbacks disponibles pour `joinGame`
 
 ```js
@@ -222,6 +256,9 @@ joinGame(gameId, {
     onAnswerGiven:       (data)    => {},
     onBinomeDiscovered:  (data)    => {},
     onGameEnded:         (data)    => {},
+    onReactionSent:      (data)    => {},   // réaction rapide (emoji)
+    onTurnSkipped:       (data)    => {},   // l'hôte a passé le tour d'un joueur déconnecté
+    onPlayerExcluded:    (data)    => {},   // l'hôte a exclu un joueur déconnecté
     onError:             (error)   => {},
 })
 ```
@@ -281,6 +318,7 @@ Page principale du lobby. Gère :
 - **Lancer la partie** → `POST /api/rooms/{room}/start` (hôte uniquement ; bouton désactivé tant
   qu'un cosmos infaisable ou aucun cosmos n'est choisi en mode « Cosmos imposé »)
 - **WebSocket lobby** → `presence-room.{roomId}`
+- **Chat commun** → `<LobbyChat>` monté sous les boutons « Créer / Rejoindre »
 - **Session** → sauvegarde/restauration localStorage
 
 #### State principal
@@ -310,6 +348,84 @@ Page principale du lobby. Gère :
 | `player.left` | `players.value = data.players` + update `hostId` si transfert |
 | `game.started` | Redirect vers `RoundPage` avec `gameId` (payload : `players[]` à plat + `has_orphan`, jamais les binômes) |
 
+#### Photo de profil
+
+- Dans le lobby, toucher **son propre jeton** (badge 📷) ouvre `AvatarEditor` : « Prendre une
+  photo » / « Importer une photo » → `ImageCropperModal` (carré, sortie **256 px JPEG q0.85**,
+  via les props `output-size` / `quality`) → `avatarService.upload()` (data URI).
+- Prise de vue : sur téléphone, `<input type="file" capture="user">` ouvre la caméra frontale et
+  marche en `http://` sur l'IP LAN. Sur ordinateur, `getUserMedia` n'existe qu'en contexte
+  sécurisé (https / **localhost**) : webcam dans la modale pour l'hôte sur localhost, bouton
+  masqué pour un PC qui passe par l'IP LAN (l'import reste possible).
+- Affichage : `PlayerAvatar` remplit les badges existants (lobby, jetons et fiche en partie,
+  choix de la cible, bloc-notes) avec `avatar_url`, et retombe sur les initiales si l'image
+  échoue. Mise à jour en direct via `player.avatar.updated` (lobby et partie).
+- Mini-avatar (`.mini-avatar`, décoratif : `aria-hidden`) devant les pseudos du panneau
+  « Historique de la partie » (photo retrouvée par id via `avatarById`) et de `/historique`
+  (joueurs, scores, journal, classement — `avatar_url` fourni par l'API).
+
+#### Lien de salon, QR code, spectateur
+
+- **`/rooms?code=XXXXXX`** ouvre directement la modale « Rejoindre » avec le code rempli
+  (`prefillJoinFromLink()`, ignoré si on est déjà dans un salon), puis retire la query de l'URL.
+- **QR code** (bouton sous l'écran LCD) → `JoinQrCode.vue` : même résolution d'adresse que
+  « Partager le lien » (`resolveJoinUrl()`, donc `lan-url.json` quand l'hôte est sur localhost),
+  SVG généré localement par la lib `qrcode`.
+- **Partie déjà en cours** (`current_game_id` renvoyé par `join` / `show`) : bannière
+  « Regarder en spectateur » → `gameId` sauvé en session, redirection vers `RoundPage`.
+
+### `LobbyChat.vue` (composant)
+
+Chat commun affiché sur `/rooms`, sous les boutons « Créer une partie » / « Rejoindre une partie »
+(et sous la carte du salon une fois celui-ci rejoint).
+
+- **Visibilité** : déplié par défaut tant que le visiteur n'a ni créé ni rejoint de salon ; replié
+  par défaut dès qu'il en rejoint un (bouton **Afficher / Masquer**, avec pastille de messages non lus).
+  Un `watch` sur `isInRoom` remet la visibilité à sa valeur par défaut à chaque entrée/sortie de salon.
+- **Identité** : `player-id` quand le joueur est dans un salon → le backend signe le message avec son
+  pseudo. Sinon, `chatIdentity.js` tire un identifiant stocké dans le `localStorage` (clé `chatAnonId`)
+  et le message est signé `Anonyme#1234`. Le nom affiché est **toujours** calculé côté serveur.
+- **Codes de partie copiables** : le backend renvoie, pour chaque message, la liste `codes` des codes
+  de salon **réellement existants** qu'il contient. Le front découpe le corps du message sur ces codes
+  et en fait des puces cliquables → `copyToClipboard()`. Un mot de 6 caractères qui ne correspond à
+  aucun salon reste du texte normal.
+- **Expiration silencieuse** : un message vit une heure (`MESSAGE_TTL_MS`, aligné sur
+  `ChatController::RETENTION_MINUTES`). Le backend ne le sert plus au-delà ; un `setInterval` de 30 s
+  (`expireOldMessages()`) le retire aussi de la liste locale, pour qu'un onglet laissé ouvert le voie
+  disparaître sans rechargement. Aucun message système : il s'efface, point.
+- **Re-souscription** : le channel `lobby` est public, mais il vit sur le singleton Echo que `RoomPage`
+  détruit via `resetEcho()` à chaque changement d'identité. Le composant s'abonne donc à `onEchoReset()`
+  et se rebranche **au `nextTick` suivant** — jamais de façon synchrone, sinon il recréerait le
+  singleton avec l'ancien `X-Player-Id` et le `presence-room.{roomId}` de la page se ferait refuser.
+
+| Event reçu | Action |
+|---|---|
+| `chat.message` (channel `lobby`) | `pushMessage()` — dédoublonné par `id` (le message posté arrive aussi par la réponse HTTP) |
+
+### `HistoryPage.vue`
+
+Route publique `/historique` — aucune authentification. Deux onglets :
+
+- **Parties** : les parties **terminées** uniquement (le backend refuse le reste, cf. `HistoryController`).
+  Chaque carte se déplie sur le détail complet : binômes, personnages révélés avec leurs mots interdits,
+  scores de la partie et journal intégral des questions et accusations.
+- **Classement** : une ligne par pseudo, triée sur le total cumulé, avec médailles pour le podium,
+  rangs partagés en cas d'ex æquo et recherche par pseudo. Déplier un joueur charge son détail
+  **partie par partie** (`/history/players?pseudo=…`) : le cumul global d'un côté, le split de l'autre.
+
+Le détail d'une partie et celui d'un joueur sont chargés à la demande puis mémorisés (`details`,
+`breakdowns`) pour éviter de recharger au repliage.
+
+#### Pièges évités dans cette page
+
+- **Ne jamais nommer une classe `card` / `card-title`** : ce sont des classes Bootstrap, chargé
+  globalement par `main.js`. Bootstrap impose alors `color: var(--bs-body-color)` (texte sombre) sur
+  un fond sombre et le texte devient illisible. Les classes sont préfixées `hist-card__…`, comme
+  `AdminGamesPage.vue` utilise `game-card`.
+- **`min-width: 0` sur `.table-scroll`** : enfant flex de `.detail`, sa largeur min-content (celle du
+  tableau) remonterait sinon jusqu'au conteneur. Le tableau défile horizontalement dans la carte au
+  lieu d'élargir la page.
+
 ### `RoundPage.vue`
 
 Page de jeu principale. Gère :
@@ -324,6 +440,45 @@ Page de jeu principale. Gère :
 - Notifications de binôme découvert
 - Bannière « un orphelin dans la partie » (voir ci-dessous)
 - Modale de fin de partie
+
+#### Spectateur, présence et reconnexion
+
+- **Spectateur** (`isSpectator`) : pas dans `players[]` → pas d'appel à `/me` (404), pas de
+  carte personnage, bannière dédiée. Un joueur **éliminé** garde sa carte et voit une bannière
+  « Tu as été démasqué ». Les spectateurs connectés sont listés sous les joueurs.
+- **Présence** : `here` / `joining` / `leaving` du channel `game.{id}` alimentent `members` et
+  `offlineSince` (badge « hors ligne »). Un `leaving` n'est pris en compte qu'après 3 s
+  (`LEAVE_GRACE_MS`) : un rechargement de page produit un leaving immédiatement suivi d'un joining.
+- **Partie en pause** : `blocker` (miroir de `ActionService::findBlocker`) + `afkBlocker` →
+  bannière « Partie en pause » quand le joueur attendu est hors ligne. **Seul l'hôte**
+  (`host_id` de `GET /games/{game}`) voit les boutons, actifs après `AFK_GRACE_SECONDS` (30 s) :
+  « Passer son tour » (absent quand le joueur doit répondre à une question — une réponse est
+  obligatoire) et « Exclure » (modale de confirmation). Les autres voient « en attente de son
+  retour ou de la décision de l'hôte », ou « la partie attend son retour » si c'est l'hôte qui
+  est parti. Le serveur revérifie la présence via Reverb.
+- **Exclusion** (`player.excluded`) : l'exclu et son binôme passent éliminés (badge « 🚪 exclu »),
+  l'action annulée (`cancelled_action_id`) est retirée de l'historique et son auteur peut rejouer.
+- **Reconnexion** : `onConnectionChange()` (useReverb) affiche « Connexion perdue » et, au retour
+  à `connected`, appelle `resync()` → `loadGameState()` (même fonction que le chargement initial :
+  actions, round, `hasPlayed`, modales en attente via `restorePendingPrompts()`). Même resync au
+  retour sur l'onglet après plus de 3 s masqué (`visibilitychange`, téléphone verrouillé).
+- Les modales réponse / confirmation se referment si `answer.given` / `accusation.confirmed`
+  concerne leur action (réponse donnée depuis un autre onglet, tour passé) et à la fin de partie.
+
+#### Bloc-notes, réactions, récap
+
+- **Bloc-notes** (`composables/useGameNotes.js`) : `localStorage` uniquement, clé
+  `binome:notes:{gameId}:{playerId}`, jamais envoyé au serveur ; les notes des autres parties
+  sont purgées au chargement. Éditable depuis la fiche d'un joueur ou la modale `GameNotepad`.
+- **Réactions** : `QuickReactions.vue` (liste d'emojis alignée sur `GameController::REACTIONS`),
+  1,2 s de délai local entre deux envois + throttle serveur. La couche d'animation passe
+  au-dessus des modales (z-index 1060) pour rester visible sur l'écran de fin.
+- **Fin de partie** : `handleGameEnded()` charge `GET /games/{game}/recap` (avec reprises : l'event
+  part depuis la transaction qui clôt la partie, le récap peut répondre 409 un court instant)
+  puis affiche le tableau des scores + `GameRecap`. Une partie déjà terminée au chargement
+  (refresh, reconnexion tardive) affiche directement le récap.
+- Le récap liste aussi les exclusions (`recap.exclusions`) et le tableau des scores affiche
+  « 🚪 Exclu » (score 0).
 
 #### Orphelin (nombre de joueurs impair)
 
@@ -365,6 +520,26 @@ L'orphelin marque comme un binôme intact (bonus de +5) s'il finit dernier en je
 | `playQuestion(gameId, roundId, playerId, targetPlayerId, question)` | POST | `/games/{id}/rounds/{id}/question` | `{ player_id, target_player_id, question }` |
 | `playAccusation(gameId, roundId, playerId, targetId, characterId)` | POST | `/games/{id}/rounds/{id}/accusation` | `{ player_id, target_player_id, character_id }` |
 | `playAnswer(gameId, roundId, actionId, playerId, answer)` | POST | `/games/{id}/rounds/{id}/actions/{id}/answer` | `{ player_id, answer }` |
+| `recap(gameId)` | GET | `/games/{id}/recap` | — |
+| `react(gameId, playerId, emoji)` | POST | `/games/{id}/reactions` | `{ player_id, emoji }` |
+| `skipTurn(gameId, playerId)` | POST | `/games/{id}/skip-turn` | `{ player_id }` (hôte) |
+| `excludePlayer(gameId, targetPlayerId, playerId)` | POST | `/games/{id}/players/{target}/exclude` | `{ player_id }` (hôte) |
+
+### `historyService.js`
+
+| Méthode | HTTP | Endpoint | Body |
+|---|---|---|---|
+| `listGames()` | GET | `/history/games` | — |
+| `getGame(id)` | GET | `/history/games/{id}` | — |
+| `leaderboard()` | GET | `/history/leaderboard` | — |
+| `player(pseudo)` | GET | `/history/players` | `?pseudo=X` |
+
+### `chatService.js`
+
+| Méthode | HTTP | Endpoint | Body |
+|---|---|---|---|
+| `list()` | GET | `/chat/messages` | — |
+| `send({ body, playerId, anonId })` | POST | `/chat/messages` | `{ body, player_id, anon_id }` |
 
 ---
 
@@ -452,6 +627,17 @@ api.delete(`/rooms/${roomId}/leave`, {
 ### `ShouldBroadcastNow` côté backend
 
 Tous les events backend utilisent `ShouldBroadcastNow`. Si tu vois qu'un event ne se déclenche pas côté front, vérifie que l'event backend n'utilise pas `ShouldBroadcast` (qui nécessite une queue).
+
+### `#app { min-width: 0 }` — sans lui, tout élément large élargit la page
+`style.css` met `body` en `display: flex`. Un enfant flex a `min-width: auto` par défaut et **refuse
+de rétrécir sous la largeur min-content de son contenu** : un seul tableau (ou la navbar) suffisait
+alors à faire passer toute la page de 320 à 389 px sur mobile, au lieu de la laisser défiler ou se
+replier. Mesuré via le protocole DevTools : `docScrollWidth=389` avant, `320` après.
+
+À garder en tête pour toute nouvelle page : c'est la largeur **min-content** du contenu qui compte,
+pas sa largeur souhaitée. Un tableau, un mot très long ou un titre en « Press Start 2P » peuvent
+dépasser. Le repli habituel est `min-width: 0` sur l'enfant flex + `overflow-x: auto` sur un conteneur
+dédié.
 
 ### Vider le cache Vite si les variables `.env` ne sont pas prises en compte
 

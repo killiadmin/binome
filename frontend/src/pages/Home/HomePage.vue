@@ -70,7 +70,7 @@ export default {
 }
 
 .home-title {
-  font-size: 2.6rem;
+  font-size: clamp(1.75rem, 9vw, 2.6rem);
 }
 
 .home-subtitle {
