@@ -90,6 +90,7 @@ Route::prefix('games/{game}')->group(function () {
     Route::get('/', [GameController::class, 'show']);
     Route::get('me', [GameController::class, 'myCharacter']);
     Route::get('recap', [GameController::class, 'recap']);
+    Route::post('character-vote', [GameController::class, 'voteCharacter']);
     Route::post('reactions', [GameController::class, 'react'])->middleware('throttle:reactions');
     Route::post('skip-turn', [GameController::class, 'skipTurn']);
     Route::post('players/{player}/exclude', [GameController::class, 'excludePlayer']);

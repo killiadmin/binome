@@ -367,6 +367,10 @@ class ActionService
             throw new RuntimeException("La partie n'est pas en cours.");
         }
 
+        if ($game->isVotingCharacters()) {
+            throw new RuntimeException('Les joueurs choisissent encore leurs personnages.');
+        }
+
         if ($game->room?->created_by !== $player->id) {
             throw new RuntimeException("Seul l'hôte peut décider pour un joueur déconnecté.");
         }

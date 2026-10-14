@@ -9,10 +9,16 @@ class Game extends Model
     protected $fillable = [
         'room_id',
         'status',
+        'characters_confirmed_at',
+        'draw_number',
+        'rejected_character_ids',
     ];
 
     protected $casts = [
         'status' => \App\Enums\GameStatus::class,
+        'characters_confirmed_at' => 'datetime',
+        'draw_number' => 'integer',
+        'rejected_character_ids' => 'array',
     ];
 
     public function room()
@@ -44,6 +50,16 @@ class Game extends Model
         return $this->relationLoaded('binomes')
             ? $this->binomes->contains(fn ($binome) => $binome->is_orphan)
             : $this->binomes()->where('is_orphan', true)->exists();
+    }
+
+    /**
+     * Les joueurs votent-ils encore sur leurs personnages ? Tant que oui, aucun
+     * round n'existe : personne ne peut jouer (voir GameService::voteCharacter).
+     */
+    public function isVotingCharacters(): bool
+    {
+        return $this->status === \App\Enums\GameStatus::InProgress
+            && $this->characters_confirmed_at === null;
     }
 
     /**

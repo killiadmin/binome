@@ -33,7 +33,8 @@ class GameStarted implements ShouldBroadcastNow
 
     /**
      * Ce que reçoit le front :
-     * - La liste à plat des joueurs et le premier round
+     * - La liste à plat des joueurs. Pas encore de round : les joueurs votent
+     *   d'abord sur leurs personnages (GameService::voteCharacter)
      * - La composition des binomes n'est JAMAIS diffusée : c'est tout l'enjeu
      *   de la partie. On annonce seulement qu'un orphelin existe (nombre de
      *   joueurs impair), sans dire de qui il s'agit.
@@ -53,11 +54,7 @@ class GameStarted implements ShouldBroadcastNow
                 ->sortBy('id')
                 ->values(),
             'has_orphan' => $this->game->hasOrphan(),
-            'first_round' => [
-                'id'                => $this->game->rounds->first()->id,
-                'number'            => 1,
-                'current_player_id' => $this->game->rounds->first()->current_player_id,
-            ],
+            'draw_number' => $this->game->draw_number ?? 1,
         ];
     }
 }

@@ -37,6 +37,20 @@ export const gameService = {
     },
 
     /**
+     * POST /games/{game}/character-vote
+     * Accepter son personnage, ou demander un nouveau tirage pour tout le monde.
+     * characterId = le personnage affiché : périmé après un retirage → 409.
+     */
+    async voteCharacter(gameId, playerId, characterId, accepted) {
+        const res = await api.post(`/games/${gameId}/character-vote`, {
+            player_id:    playerId,
+            character_id: characterId,
+            accepted,
+        })
+        return res.data
+    },
+
+    /**
      * POST /games/{game}/rounds/{round}/question
      * Poser une question à un joueur
      */

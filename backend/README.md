@@ -57,6 +57,19 @@ un niveau. L'orphelin consomme lui aussi un univers : le mode `cosmos` exige don
 erreur `422` (message nommant le cosmos et les compteurs).
 `GET /cosmos` expose `playable_universe_count` par cosmos pour l'affichage côté lobby.
 
+### Vote des personnages
+Avant le round 1, chaque joueur **accepte son personnage** ou demande à en **changer** : un joueur
+qui ne connaît pas son personnage donnerait de fausses réponses.
+
+- **Un refus suffit** : binomes, univers et personnages sont **retirés pour tout le monde**
+  (`games.draw_number` + 1), et chacun revote. Le personnage refusé est noté dans
+  `games.rejected_character_ids` et écarté des tirages suivants — sauf si le catalogue ne
+  suffit plus sans lui, auquel cas on tire sur tous les personnages.
+- **Tous ont accepté** → `games.characters_confirmed_at` est renseigné et le round 1 est créé.
+- Le joueur qui a refusé n'est pas nommé. Un vote déjà accepté ne peut plus être changé.
+- Tant que le vote dure, il n'existe aucun round : personne ne peut jouer, et l'hôte ne peut
+  ni passer un tour ni exclure (`409`). Un joueur déconnecté bloque donc le vote jusqu'à son retour.
+
 ### Déroulement
 - Les joueurs jouent **chacun leur tour**, dans le même ordre à chaque round
 - À son tour, un joueur peut effectuer **une seule action** parmi deux :
@@ -382,6 +395,7 @@ Action
 | player_id | FK | |
 | character_id | FK | Personnage secret assigné à ce joueur |
 | score | integer | Score du joueur dans cette partie |
+| character_accepted | boolean | Le joueur a accepté son personnage (vote avant le round 1) |
 | is_eliminated | boolean | Le joueur a été correctement accusé — il devient spectateur |
 
 ### Champs importants sur `rooms`
@@ -405,10 +419,22 @@ Point d'entrée : `start(Room $room): Game`
    - **Nombre impair** : la dernière « paire » ne contient qu'un joueur → binome `is_orphan = true` avec un seul personnage (voir « L'orphelin » plus haut)
    - **Seuls les personnages `playable()` sont tirés** (`verif_manual = true`, `hidden = false`) ; la sélection d'univers ne retient que ceux ayant au moins un binôme jouable au même niveau. Une proposition non validée n'arrive donc jamais en partie.
    - `resolveUniverses()` respecte `room.game_mode` : en mode `cosmos`, les univers sont filtrés sur `room.cosmos_id` ; s'il n'y en a pas assez, une `Exception` est levée (renvoyée en `422` par `GameController::start`, qui enveloppe désormais l'appel dans un `try/catch`).
-4. Délègue la création du premier round à `RoundService::createRound()`
-5. Broadcast `GameStarted`
+4. Broadcast `GameStarted` — **sans round** : `characters_confirmed_at` reste `null`, le vote commence
 
 > Tout est wrappé dans une `DB::transaction()`.
+
+**`voteCharacter(Game, Player, int $characterId, bool $accepted)`** — voir *Vote des personnages*
+- Verrouille la ligne `games` (`lockForUpdate`) : un refus remplace tous les personnages, les votes
+  simultanés passent l'un après l'autre.
+- `$characterId` = le personnage que le joueur a sous les yeux. S'il ne correspond plus (retirage
+  passé entre-temps), le vote est rejeté — sinon il validerait un personnage jamais vu.
+- Refus → `redraw()` : supprime les binomes (cascade `binome_player`) et relance `assignBinomes()`
+  avec **les joueurs de la partie**, pas ceux du salon (un spectateur arrivé depuis n'entre pas).
+- Dernier accepté → `characters_confirmed_at = now()` puis `RoundService::createRound(1)`.
+- `CharacterVoteCast` / `CharactersRedrawn` sont diffusés **après le commit** : à la réception,
+  les clients relisent `/me` et doivent trouver le nouveau tirage.
+
+**`characterVotes(Game)`** → `{accepted: ids des joueurs ayant accepté, total}`.
 
 ---
 
@@ -507,6 +533,7 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/rooms/{room}/start` | `GameController@start` | Lancer la partie (créateur uniquement) |
 | `GET` | `/api/games/{game}` | `GameController@show` | État de la partie (sans personnages) |
 | `GET` | `/api/games/{game}/me` | `GameController@myCharacter` | Mon personnage secret + mots interdits |
+| `POST` | `/api/games/{game}/character-vote` | `GameController@voteCharacter` | Accepter son personnage ou demander un retirage (`player_id`, `character_id` affiché, `accepted`) — `409` si vote clos, déjà accepté ou personnage périmé |
 | `GET` | `/api/games/{game}/recap` | `GameController@recap` | Récap de fin de partie (scores, binomes révélés, qui a trouvé qui, trophées) — `409` tant que la partie n'est pas terminée |
 | `POST` | `/api/games/{game}/reactions` | `GameController@react` | Réaction rapide (`player_id`, `emoji` parmi `GameController::REACTIONS`) → broadcast `ReactionSent` — joueurs **et** spectateurs, `throttle:reactions` (30/min par joueur) |
 | `POST` | `/api/games/{game}/skip-turn` | `GameController@skipTurn` | **Hôte** : passe le tour du joueur **déconnecté** qui met la partie en pause (voir *Joueur déconnecté* plus bas) — `409` si refusé |
@@ -588,6 +615,8 @@ La route par défaut de Laravel Broadcasting est désactivée — seule la route
 | `BinomeDiscovered` | `game.{id}` | `binome.discovered` | Accusation correcte |
 | `GameEnded` | `game.{id}` | `game.ended` | Dernier binome découvert |
 | `ReactionSent` | `game.{id}` | `reaction.sent` | Réaction rapide (emoji) — rien n'est stocké |
+| `CharacterVoteCast` | `game.{id}` | `character.vote.cast` | Un joueur a accepté son personnage (`draw_number`, `accepted_player_ids`) |
+| `CharactersRedrawn` | `game.{id}` | `characters.redrawn` | Un joueur a refusé : nouveau tirage pour tous (`draw_number`) — chacun relit `/me` |
 | `TurnSkipped` | `game.{id}` | `turn.skipped` | L'hôte a passé le tour d'un joueur déconnecté (`reason` : `turn` \| `accusation`) |
 | `PlayerAvatarUpdated` | `room.{id}` + `game.{id}` en cours | `player.avatar.updated` | Un joueur change / retire sa photo (`player_id`, `avatar_url`) |
 | `PlayerExcluded` | `game.{id}` | `player.excluded` | L'hôte a exclu un joueur déconnecté (+ `partner` éliminé, `cancelled_action_id`) |
@@ -627,9 +656,15 @@ type = accusation
    - Formation des binomes par paires
    - Assignation d'un univers par binome
    - Assignation d'un personnage distinct par joueur
-   - Création du Round n°1
    → broadcast: GameStarted (sur room.{id} ET game.{id})
-   → broadcast: RoundStarted
+
+2 bis. VOTE DES PERSONNAGES
+   POST /api/games/{game}/character-vote
+   body: { player_id, character_id, accepted }
+     ├── refus    → nouveau tirage pour tous → broadcast: CharactersRedrawn
+     └── accepté  → broadcast: CharacterVoteCast
+                    └── tous ont accepté ? → Création du Round n°1
+                                            → broadcast: RoundStarted
 
 3. TOUR D'UN JOUEUR
    GET /api/games/{game}/me             → récupère son personnage + mots interdits
