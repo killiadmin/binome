@@ -431,6 +431,11 @@ Le détail d'une partie et celui d'un joueur sont chargés à la demande puis m�
 Page de jeu principale. Gère :
 
 - Affichage du personnage secret assigné au joueur (avec toggle flou)
+- Vote des personnages avant le round 1 : bannière « Prêts : x / n », boutons **Je le connais** /
+  **Changer** (avec confirmation, car un refus retire les personnages de tout le monde), badge
+  `✓ prêt` / `⏳` sur chaque joueur. `characters.redrawn` → relit `/me` et refloute la carte ;
+  `round.started` clôt le vote. Le vote envoie l'id du personnage affiché : un `409` (retirage
+  passé entre-temps) déclenche `resync()`. Pendant le vote, `loadGameState()` relit toujours `/me`.
 - Mots interdits du joueur
 - Bannière de tour en cours (temps réel)
 - Actions : poser une question ou faire une accusation
@@ -591,6 +596,7 @@ L'orphelin marque comme un binôme intact (bonus de +5) s'il finit dernier en je
 7. PAGE DE JEU (RoundPage)
    → GET /api/games/{game}/me  (personnage secret + mots interdits)
    → joinGame(gameId, callbacks)
+   → vote des personnages (character.vote.cast, characters.redrawn) jusqu'au round.started du round 1
    → écoute round.started, action.played, binome.discovered, game.ended
 ```
 

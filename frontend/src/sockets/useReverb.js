@@ -143,6 +143,14 @@ export function useReverb(playerId = null) {
             })
         }
 
+        if (callbacks.onCharacterVoteCast) {
+            channel.listen('.character.vote.cast', callbacks.onCharacterVoteCast)
+        }
+
+        if (callbacks.onCharactersRedrawn) {
+            channel.listen('.characters.redrawn', callbacks.onCharactersRedrawn)
+        }
+
         if (callbacks.onRoundStarted) {
             channel.listen('.round.started', callbacks.onRoundStarted)
         }

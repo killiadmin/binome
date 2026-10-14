@@ -69,6 +69,37 @@ class GameController extends Controller
     }
 
     /**
+     * POST /games/{game}/character-vote
+     * Le joueur accepte son personnage, ou demande un nouveau tirage pour
+     * tout le monde (voir GameService::voteCharacter).
+     */
+    public function voteCharacter(Request $request, Game $game): JsonResponse
+    {
+        $validated = $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+            'character_id' => ['required', 'integer'],
+            'accepted' => ['required', 'boolean'],
+        ]);
+
+        try {
+            $this->gameService->voteCharacter(
+                $game,
+                Player::findOrFail($validated['player_id']),
+                (int) $validated['character_id'],
+                (bool) $validated['accepted'],
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        return response()->json([
+            'message' => $validated['accepted']
+                ? 'Personnage accepté.'
+                : 'Nouveau tirage des personnages.',
+        ]);
+    }
+
+    /**
      * GET /games/{game}
      * Récupère l'état courant de la partie
      */
@@ -120,6 +151,12 @@ class GameController extends Controller
             'has_orphan' => $game->hasOrphan(),
             // L'hôte décide pour un joueur déconnecté (passer son tour / l'exclure).
             'host_id' => $game->room?->created_by,
+            // Vote des personnages avant le round 1 : qui a accepté le sien.
+            'characters_confirmed' => ! $game->isVotingCharacters(),
+            'draw_number' => $game->draw_number,
+            'accepted_player_ids' => $game->isVotingCharacters()
+                ? $this->gameService->characterVotes($game)['accepted']
+                : [],
             'binomes' => $game->binomes
                 ->filter(fn ($binome) => $binome->is_discovered)
                 ->values()

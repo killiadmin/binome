@@ -90,6 +90,15 @@ const showPlayerSheet  = ref(false)
 const hasOrphan      = ref(false)
 const orphanPseudos  = ref(new Set())
 
+// Vote des personnages avant le round 1 : chacun accepte le sien, ou demande
+// un nouveau tirage — et alors TOUS les personnages sont retirés. Un joueur qui
+// ne connaît pas son personnage donnerait de fausses réponses.
+const votingCharacters  = ref(false)
+const drawNumber        = ref(1)
+const acceptedPlayerIds = ref(new Set())
+const submittingVote    = ref(false)
+const confirmingReject  = ref(false)
+
 // Bloc-notes privé (localStorage uniquement, voir composables/useGameNotes.js)
 const notes = useGameNotes(gameId, myPlayerId.value)
 const showNotepad = ref(false)
@@ -269,6 +278,8 @@ const afkBlocker = computed(() => {
   }
 })
 
+const amAccepted = computed(() => acceptedPlayerIds.value.has(myPlayerId.value))
+
 const amExcluded = computed(() =>
     !!players.value.find(p => p.id === myPlayerId.value)?.is_excluded
 )
@@ -338,9 +349,14 @@ async function loadGameState() {
       a.round_id === currentRound.value.id && a.player?.id === myPlayerId.value
   )
 
+  votingCharacters.value = game.characters_confirmed === false
+  drawNumber.value = game.draw_number ?? 1
+  acceptedPlayerIds.value = new Set(game.accepted_player_ids ?? [])
+
   // Un spectateur n'a pas de personnage : /me répondrait 404.
+  // Pendant le vote, un retirage a pu passer pendant une coupure : on relit.
   const inGame = players.value.some(p => p.id === myPlayerId.value)
-  if (inGame && !myCharacter.value) {
+  if (inGame && (!myCharacter.value || votingCharacters.value)) {
     myCharacter.value = await gameService.myCharacter(gameId, myPlayerId.value)
   }
 
@@ -425,6 +441,8 @@ onMounted(async () => {
     onHere:               handleHere,
     onJoining:            handleJoining,
     onLeaving:            handleLeaving,
+    onCharacterVoteCast:  handleCharacterVoteCast,
+    onCharactersRedrawn:  handleCharactersRedrawn,
     onRoundStarted:       handleRoundStarted,
     onActionPlayed:       handleActionPlayed,
     onAnswerGiven:        handleAnswerGiven,
@@ -590,7 +608,50 @@ function formatDuration(seconds) {
   return m ? `${m} min ${String(s).padStart(2, '0')} s` : `${s} s`
 }
 
+function handleCharacterVoteCast(data) {
+  // Vote d'un tirage qu'on n'a pas vu passer (event manqué) : état complet
+  if (data.draw_number !== drawNumber.value) {
+    resync()
+    return
+  }
+  acceptedPlayerIds.value = new Set(data.accepted_player_ids)
+}
+
+async function handleCharactersRedrawn(data) {
+  drawNumber.value = data.draw_number
+  acceptedPlayerIds.value = new Set()
+  confirmingReject.value = false
+  isBlurred.value = true
+  showNotice('Un joueur ne connaissait pas son personnage : nouveau tirage pour tout le monde !')
+
+  if (isSpectator.value) return
+  try {
+    myCharacter.value = await gameService.myCharacter(gameId, myPlayerId.value)
+  } catch {
+    resync()
+  }
+}
+
+async function voteCharacter(accepted) {
+  if (submittingVote.value || !myCharacter.value) return
+  submittingVote.value = true
+  try {
+    await gameService.voteCharacter(gameId, myPlayerId.value, myCharacter.value.id, accepted)
+    if (accepted) acceptedPlayerIds.value = new Set([...acceptedPlayerIds.value, myPlayerId.value])
+  } catch (e) {
+    showNotice(apiErrorMessage(e, "Impossible d'enregistrer ton choix."))
+    // 409 : retirage passé entre-temps ou vote déjà clos → on se recale
+    if (e.response?.status === 409) resync()
+  } finally {
+    submittingVote.value = false
+    confirmingReject.value = false
+  }
+}
+
 async function handleRoundStarted(data) {
+  // Le round 1 démarre quand tous ont accepté leur personnage
+  votingCharacters.value = false
+
   if (data.is_new_round) {
     await playRoundTransition(data.number)
   }
@@ -937,9 +998,13 @@ function backToHome() {
       <div class="turn-marquee" :class="isMyTurn ? 'is-mine' : 'is-other'">
         <div class="turn-marquee__inner">
           <span class="turn-marquee__icon">
-            <i :class="isMyTurn ? 'fa-solid fa-bolt' : 'fa-solid fa-hourglass-half'"></i>
+            <i :class="votingCharacters ? 'fa-solid fa-dice' : isMyTurn ? 'fa-solid fa-bolt' : 'fa-solid fa-hourglass-half'"></i>
           </span>
-          <div class="turn-marquee__text">
+          <div v-if="votingCharacters" class="turn-marquee__text">
+            <span class="turn-marquee__main">Choix des personnages</span>
+            <span class="turn-marquee__sub">Tirage n°{{ drawNumber }}</span>
+          </div>
+          <div v-else class="turn-marquee__text">
             <span class="turn-marquee__main">
               {{ isMyTurn ? 'Ton tour !' : `Tour de ${currentPlayerName}` }}
             </span>
@@ -1029,6 +1094,63 @@ function backToHome() {
           </div>
         </div>
       </section>
+
+      <!-- ── VOTE : chacun accepte son personnage avant le round 1 ──────── -->
+      <div v-if="votingCharacters" class="info-banner info-banner--vote" role="status">
+        <span class="info-banner__icon"><i class="fa-solid fa-dice"></i></span>
+        <div class="info-banner__body">
+          <p class="info-banner__title">
+            Prêts : {{ acceptedPlayerIds.size }} / {{ players.length }}
+          </p>
+
+          <p v-if="isSpectator" class="info-banner__sub">
+            Les joueurs vérifient qu'ils connaissent leur personnage. La partie démarre dès que tous ont accepté.
+          </p>
+
+          <p v-else-if="amAccepted" class="info-banner__sub">
+            <i class="fa-solid fa-circle-check"></i>
+            Personnage accepté — en attente des autres joueurs<span class="caret">_</span>
+          </p>
+
+          <template v-else-if="confirmingReject">
+            <p class="info-banner__sub">
+              Tous les joueurs recevront un nouveau personnage, et chacun devra revoter.
+            </p>
+            <div class="afk-actions">
+              <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
+                      :disabled="submittingVote" @click="voteCharacter(false)">
+                <BSpinner v-if="submittingVote" small class="me-1"/>
+                <i v-else class="fa-solid fa-shuffle"></i>
+                Oui, nouveau tirage
+              </button>
+              <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--ghost"
+                      :disabled="submittingVote" @click="confirmingReject = false">
+                Annuler
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <p class="info-banner__sub">
+              Révèle ton personnage : le connais-tu assez pour répondre aux questions ?
+              Si quelqu'un le refuse, tout le monde en reçoit un nouveau.
+            </p>
+            <div class="afk-actions">
+              <button type="button" class="cabinet-btn cabinet-btn--sm"
+                      :disabled="submittingVote || !myCharacter" @click="voteCharacter(true)">
+                <BSpinner v-if="submittingVote" small class="me-1"/>
+                <i v-else class="fa-solid fa-check"></i>
+                Je le connais
+              </button>
+              <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
+                      :disabled="submittingVote || !myCharacter" @click="confirmingReject = true">
+                <i class="fa-solid fa-shuffle"></i>
+                Changer
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
 
       <!-- ── ÉLIMINÉ : il regarde la fin ───────────────────────────────── -->
       <div v-if="amEliminated && !gameEnded" class="info-banner info-banner--eliminated">
@@ -1148,7 +1270,7 @@ function backToHome() {
       </BModal>
 
       <!-- ── ACTIONS (mon tour) ─────────────────────────────────────────── -->
-      <div class="actions-section">
+      <div v-if="!votingCharacters" class="actions-section">
         <template v-if="isMyTurn && !hasPlayed">
           <button type="button" class="cabinet-btn action-cabinet" @click="openActionModal('question')">
             <span class="cabinet-btn__icon"><i class="fa-solid fa-comment-dots"></i></span>
@@ -1308,6 +1430,11 @@ function backToHome() {
             <div class="player-token__name">{{ player.pseudo }}</div>
             <div class="player-token__badges">
               <span v-if="player.id === myPlayerId" class="player-token__badge">moi</span>
+              <template v-if="votingCharacters">
+                <span v-if="acceptedPlayerIds.has(player.id)"
+                      class="player-token__badge player-token__badge--active">✓ prêt</span>
+                <span v-else class="player-token__badge" title="N'a pas encore accepté son personnage">⏳</span>
+              </template>
               <span v-if="player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id)"
                     class="player-token__badge player-token__badge--active">joue</span>
               <span v-if="discoveredPlayerIds.has(player.id)"
@@ -2258,6 +2385,15 @@ function backToHome() {
   box-shadow: 0 5px 0 #a8720f;
   animation: slideIn 0.3s ease;
 }
+
+.info-banner--vote {
+  border-color: var(--arcade-gold);
+  background: linear-gradient(180deg, rgba(224, 163, 28, 0.18), rgba(28, 34, 38, 0.9));
+  box-shadow: 0 5px 0 #a8720f;
+}
+
+.info-banner--vote .info-banner__icon { color: #ffd876; }
+.info-banner--vote .info-banner__title { color: #ffe4a3; }
 
 .info-banner--afk .info-banner__icon { color: #ffd876; }
 .info-banner--afk .info-banner__title { color: #ffe4a3; }
