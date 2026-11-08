@@ -92,10 +92,14 @@ services:
       - backend
     networks:
       - binome
+      # Réseau partagé avec le portail (../portail), qui sert l'app sur http://killiadmin.local:8095/binome/
+      - meszappli
 
 networks:
   binome:
     driver: bridge
+  meszappli:
+    name: meszappli
 
 volumes:
   backend_vendor:

@@ -25,6 +25,11 @@ class Round extends Model
         return $this->belongsTo(Player::class, 'current_player_id');
     }
 
+    public function questionVotes()
+    {
+        return $this->hasMany(QuestionVote::class);
+    }
+
     public function actions()
     {
         return $this->hasMany(Action::class);

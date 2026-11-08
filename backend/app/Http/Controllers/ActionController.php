@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\CardWordShared;
 use App\Http\Requests\PlayQuestionRequest;
 use App\Http\Requests\PlayAccusationRequest;
 use App\Models\Action;
@@ -92,6 +93,47 @@ class ActionController extends Controller
         return response()->json([
             'action'  => $action,
             'message' => 'Réponse enregistrée.',
+        ]);
+    }
+
+    /**
+     * POST /games/{game}/rounds/{round}/actions/{action}/draw
+     * Le questionneur retourne une carte après un « Je ne sais pas ».
+     * Le mot n'est renvoyé qu'ici, à lui seul.
+     */
+    public function drawCard(Request $request, Game $game, Round $round, Action $action): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+            'card'      => ['required', 'integer', 'min:0'],
+        ]);
+
+        $player = Player::findOrFail($request->input('player_id'));
+        $word   = $this->actionService->drawCard($action, $player, $request->integer('card'));
+
+        return response()->json([
+            'word'           => $word,
+            'reveal_seconds' => CardWordShared::REVEAL_SECONDS,
+        ]);
+    }
+
+    /**
+     * POST /games/{game}/rounds/{round}/actions/{action}/draw/decision
+     * Montrer le mot tiré à tous sauf la cible (share: true), ou le garder.
+     */
+    public function decideCardDraw(Request $request, Game $game, Round $round, Action $action): JsonResponse
+    {
+        $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+            'share'     => ['required', 'boolean'],
+        ]);
+
+        $player = Player::findOrFail($request->input('player_id'));
+        $share  = $request->boolean('share');
+        $this->actionService->decideCardDraw($action, $player, $share);
+
+        return response()->json([
+            'message' => $share ? 'Mot montré aux autres joueurs.' : 'Mot gardé pour toi.',
         ]);
     }
 }

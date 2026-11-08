@@ -14,12 +14,16 @@ class Room extends Model
         'max_players',
         'game_mode',
         'cosmos_id',
+        'reveal_to_eliminated',
+        'best_question_vote',
         'created_by',
     ];
 
     protected $casts = [
         'is_private' => 'boolean',
         'is_locked' => 'boolean',
+        'reveal_to_eliminated' => 'boolean',
+        'best_question_vote' => 'boolean',
         'game_mode' => GameMode::class,
     ];
 
@@ -48,6 +52,34 @@ class Room extends Model
     public function currentGame()
     {
         return $this->hasOne(Game::class)->where('status', 'in_progress');
+    }
+
+    /**
+     * Retire un joueur du salon : salon supprimé s'il est vide, sinon l'hôte
+     * passe au joueur suivant, puis broadcast PlayerLeft. Partagé par le
+     * départ volontaire (RoomController::leave) et le retrait par un
+     * administrateur (AdminPlayerController).
+     *
+     * À appeler AVANT toute suppression du joueur : rooms.created_by est en
+     * cascade, supprimer l'hôte d'abord emporterait le salon et ses joueurs.
+     */
+    public function removePlayer(int $playerId): void
+    {
+        $this->players()->detach($playerId);
+
+        if ($this->players()->count() === 0) {
+            $this->delete();
+
+            return;
+        }
+
+        $newHost = null;
+        if ((int) $this->created_by === $playerId) {
+            $newHost = $this->players()->first();
+            $this->update(['created_by' => $newHost->id]);
+        }
+
+        broadcast(new \App\Events\PlayerLeft($this->load('players'), $newHost));
     }
 
     /**

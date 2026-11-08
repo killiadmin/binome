@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\CustomReaction;
 use App\Models\Game;
 use App\Models\Player;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -10,8 +11,9 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Réaction rapide (emoji) envoyée pendant une partie. Rien n'est stocké :
- * l'event n'existe que pour l'animation chez les autres joueurs.
+ * Réaction rapide envoyée pendant une partie. Rien n'est stocké : l'event
+ * n'existe que pour l'animation chez les autres joueurs. `reaction` porte
+ * soit `emoji` (Unicode), soit `url` (image — jamais l'image elle-même).
  */
 class ReactionSent implements ShouldBroadcastNow
 {
@@ -20,7 +22,7 @@ class ReactionSent implements ShouldBroadcastNow
     public function __construct(
         public readonly Game $game,
         public readonly Player $player,
-        public readonly string $emoji,
+        public readonly CustomReaction $reaction,
     ) {}
 
     public function broadcastOn(): array
@@ -40,7 +42,7 @@ class ReactionSent implements ShouldBroadcastNow
                 'id' => $this->player->id,
                 'pseudo' => $this->player->pseudo,
             ],
-            'emoji' => $this->emoji,
+            'reaction' => $this->reaction->toPublicArray(),
         ];
     }
 }

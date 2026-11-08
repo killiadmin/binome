@@ -111,6 +111,31 @@ export const gameService = {
     },
 
     /**
+     * POST /games/{game}/rounds/{round}/actions/{action}/draw
+     * Après un « Je ne sais pas », le questionneur retourne une carte face
+     * cachée (index 0..card_count-1) → { word, reveal_seconds }, à lui seul.
+     */
+    async drawCard(gameId, roundId, actionId, playerId, card) {
+        const res = await api.post(
+            `/games/${gameId}/rounds/${roundId}/actions/${actionId}/draw`,
+            { player_id: playerId, card }
+        )
+        return res.data
+    },
+
+    /**
+     * POST /games/{game}/rounds/{round}/actions/{action}/draw/decision
+     * Montrer le mot tiré à tous sauf la cible (share = true), ou le garder.
+     */
+    async decideCardDraw(gameId, roundId, actionId, playerId, share) {
+        const res = await api.post(
+            `/games/${gameId}/rounds/${roundId}/actions/${actionId}/draw/decision`,
+            { player_id: playerId, share }
+        )
+        return res.data
+    },
+
+    /**
      * GET /games/{game}/recap
      * Récap de fin de partie (409 tant qu'elle n'est pas terminée)
      */
@@ -118,15 +143,47 @@ export const gameService = {
         const res = await api.get(`/games/${gameId}/recap`)
         return res.data
     },
+    /**
+     * Vue omnisciente d'un joueur éliminé (option de l'hôte)
+     * GET /api/games/{game}/reveal?player_id=
+     */
+    async reveal(gameId, playerId) {
+        const res = await api.get(`/games/${gameId}/reveal`, { params: { player_id: playerId } })
+        return res.data.binomes
+    },
+    /**
+     * Vote d'un éliminé pour la meilleure question d'un round
+     * POST /api/games/{game}/question-votes
+     */
+    async voteQuestion(gameId, playerId, actionId) {
+        const res = await api.post(`/games/${gameId}/question-votes`, {
+            player_id: playerId,
+            action_id: actionId,
+        })
+        return res.data
+    },
 
     /**
      * POST /games/{game}/reactions
-     * Réaction rapide (emoji) diffusée à toute la partie
+     * Réaction rapide diffusée à toute la partie.
+     * reaction : { reaction_id } (voir GET /reactions)
      */
-    async react(gameId, playerId, emoji) {
+    async react(gameId, playerId, reaction) {
         const res = await api.post(`/games/${gameId}/reactions`, {
             player_id: playerId,
-            emoji,
+            ...reaction,
+        })
+        return res.data
+    },
+
+    /**
+     * POST /games/{game}/actions/{action}/correct-answer
+     * L'hôte corrige une réponse oui / non.
+     */
+    async correctAnswer(gameId, actionId, playerId, answer) {
+        const res = await api.post(`/games/${gameId}/actions/${actionId}/correct-answer`, {
+            player_id: playerId,
+            answer,
         })
         return res.data
     },

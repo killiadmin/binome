@@ -33,7 +33,16 @@ Broadcast::channel('game.{gameId}', function ($user, int $gameId) {
     return ['id' => $player->id, 'pseudo' => $player->pseudo];
 });
 
-Broadcast::channel('room.{roomId}', function ($user, int $roomId) {
+/*
+ * PrivateChannel player.{playerId}
+ * Messages destinés à un seul joueur (mot interdit montré après un tirage de
+ * carte). Seul le joueur lui-même peut s'y abonner.
+ */
+Broadcast::channel('player.{playerId}', function ($user, int $playerId) {
+    return (int) request()->header('X-Player-Id') === $playerId;
+});
+
+Broadcast::channel('room.{roomId}',function ($user, int $roomId) {
     $playerId = request()->header('X-Player-Id');
     if (!$playerId) return false;
 

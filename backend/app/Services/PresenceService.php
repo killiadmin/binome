@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Player;
+use App\Models\Room;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 use Pusher\ApiErrorException;
@@ -41,6 +43,30 @@ class PresenceService
         } catch (\Throwable $e) {
             return $this->unavailable($presenceChannel, $e);
         }
+    }
+
+    /**
+     * Salon où ce joueur est connecté en ce moment (lobby ou partie en cours),
+     * ou null. Les pseudos identifiant les joueurs, deux appareils avec le même
+     * pseudo seraient le même joueur : on s'en sert pour refuser le second.
+     * Reverb muet : null, on ne bloque pas sur une présence incertaine.
+     */
+    public function connectedRoomFor(Player $player): ?Room
+    {
+        foreach ($player->rooms()->with('currentGame')->get() as $room) {
+            $channels = ["room.{$room->id}"];
+            if ($room->currentGame) {
+                $channels[] = "game.{$room->currentGame->id}";
+            }
+
+            foreach ($channels as $channel) {
+                if (in_array($player->id, $this->onlinePlayerIds($channel) ?? [], true)) {
+                    return $room;
+                }
+            }
+        }
+
+        return null;
     }
 
     private function unavailable(string $presenceChannel, \Throwable $e): ?array

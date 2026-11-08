@@ -35,32 +35,57 @@ const routes = [
         name: 'RoundPage',
         component: RoundPage
     },
+    // Anciennes adresses de la gestion des personnages → espace admin.
+    { path: '/characters', redirect: '/admin/binomes/new' },
+    { path: '/characters/list', redirect: '/admin/binomes' },
     {
-        path: '/characters',
-        name: 'Character',
-        component: CharacterPage,
+        // Espace d'administration (cadenas de la navbar). meta est héritée
+        // par les enfants : la garde ci-dessous protège toutes les sections.
+        path: '/admin',
+        component: () => import('./pages/Admin/AdminLayout.vue'),
         meta: { requiresCharactersAccess: true },
+        children: [
+            { path: '', redirect: { name: 'AdminGames' } },
+            {
+                path: 'games',
+                name: 'AdminGames',
+                component: () => import('./pages/Admin/AdminGamesPage.vue'),
+            },
+            {
+                path: 'binomes',
+                name: 'CharacterList',
+                component: CharacterListPage,
+            },
+            {
+                path: 'binomes/new',
+                name: 'Character',
+                component: CharacterPage,
+            },
+            {
+                path: 'prompts',
+                name: 'AdminPrompts',
+                component: () => import('./pages/Admin/AdminPromptsPage.vue'),
+            },
+            {
+                path: 'players',
+                name: 'AdminPlayers',
+                component: () => import('./pages/Admin/AdminPlayersPage.vue'),
+            },
+            {
+                path: 'reactions',
+                name: 'AdminReactions',
+                component: () => import('./pages/Admin/AdminReactionsPage.vue'),
+            },
+        ],
     },
-    {
-        path: '/characters/list',
-        name: 'CharacterList',
-        component: CharacterListPage,
-        meta: { requiresCharactersAccess: true },
-    },
-    {
-        path: '/admin/games',
-        name: 'AdminGames',
-        component: () => import('./pages/Admin/AdminGamesPage.vue'),
-        meta: { requiresCharactersAccess: true },
-    }
 ];
 
 const router = createRouter({
-    history: createWebHistory(),
+    history: createWebHistory(import.meta.env.BASE_URL),
     routes,
 });
 
-// Accès direct à une page « personnages » sans token -> retour à l'accueil.
+// Accès direct à une page d'administration sans token -> retour à l'accueil.
 router.beforeEach((to) => {
     if (to.meta.requiresCharactersAccess && !getCharactersAccessToken()) {
         return { name: 'Home' };

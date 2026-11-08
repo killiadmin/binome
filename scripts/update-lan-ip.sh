@@ -6,7 +6,8 @@
 # /broadcasting et le WebSocket /app vers les conteneurs backend & Reverb : rien
 # à régénérer côté proxy quand le réseau change. Ce fichier lan-url.json sert
 # uniquement au bouton « Partager le lien » de la navbar, pour que l'hôte (qui
-# ouvre souvent http://localhost:5173) puisse partager l'URL LAN réelle.
+# ouvre souvent http://localhost:8095/binome/) puisse partager l'URL LAN réelle.
+# Le lien passe par le portail nginx (../portail), qui tient le port 8095.
 #
 # Usage :
 #   scripts/update-lan-ip.sh               détection unique
@@ -18,7 +19,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAN_FILE="$ROOT_DIR/frontend/public/lan-url.json"
-PORT=5173
+PORT=8095
+APP_PATH=/binome/
 
 detect_ip() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -44,7 +46,7 @@ write_file() {
     mkdir -p "$(dirname "$LAN_FILE")"
     local tmp="$LAN_FILE.tmp.$$"
     printf '{\n  "url": "%s",\n  "ip": "%s",\n  "port": %s,\n  "detectedAt": "%s"\n}\n' \
-        "http://${ip}:${PORT}/" "$ip" "$PORT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
+        "http://${ip}:${PORT}${APP_PATH}" "$ip" "$PORT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
     mv -f "$tmp" "$LAN_FILE"
 }
 
@@ -56,7 +58,7 @@ if [[ "${1:-}" == "--watch" ]]; then
         if [[ "$ip" != "$last" ]]; then
             write_file "$ip"
             if [[ -n "$ip" ]]; then
-                [[ "$last" != "__init__" ]] && echo "[lan-ip] Réseau changé → nouveau lien : http://${ip}:${PORT}/"
+                [[ "$last" != "__init__" ]] && echo "[lan-ip] Réseau changé → nouveau lien : http://${ip}:${PORT}${APP_PATH}"
             else
                 echo "[lan-ip] Plus de réseau détecté — lien de partage indisponible."
             fi
@@ -74,9 +76,9 @@ write_file "$IP"
 
 if [[ -z "$IP" ]]; then
     echo "Impossible de détecter l'IP LAN automatiquement." >&2
-    echo "Trouve-la à la main (Préférences Réseau) — tes amis ouvriront http://<IP>:${PORT}" >&2
+    echo "Trouve-la à la main (Préférences Réseau) — tes amis ouvriront http://<IP>:${PORT}${APP_PATH}" >&2
     exit 0
 fi
 
 echo "IP LAN détectée : $IP"
-echo "Tes amis rejoignent la partie via : http://${IP}:${PORT}/"
+echo "Tes amis rejoignent la partie via : http://${IP}:${PORT}${APP_PATH}"

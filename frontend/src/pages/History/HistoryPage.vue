@@ -124,7 +124,10 @@ const ANSWER_LABEL = { yes: 'Oui', no: 'Non', dont_know: 'Je ne sais pas' }
 function actionTail(a) {
   if (a.type === 'question') {
     if (!a.is_valid) return `: question refusée (${a.refused_reason || 'mot interdit'})`
-    const ans = a.answer ? ` — ${ANSWER_LABEL[a.answer] ?? a.answer}` : ''
+    const fixed = a.answer_corrected_from
+        ? ` (corrigé par l'hôte, était ${ANSWER_LABEL[a.answer_corrected_from] ?? a.answer_corrected_from})`
+        : ''
+    const ans = a.answer ? ` — ${ANSWER_LABEL[a.answer] ?? a.answer}${fixed}` : ''
     return `: « ${a.content} »${ans}`
   }
   const verdict = a.accusation_correct === true ? '✓ correcte'

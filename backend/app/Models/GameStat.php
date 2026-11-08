@@ -11,6 +11,7 @@ class GameStat extends Model
         'player_pseudo',
         'character_name',
         'eliminations',
+        'best_questions',
         'rounds_survived',
         'survived_full_game',
         'score',

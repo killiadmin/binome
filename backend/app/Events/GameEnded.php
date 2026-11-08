@@ -42,6 +42,7 @@ class GameEnded implements ShouldBroadcastNow
                 'player_pseudo'      => $s->player_pseudo,
                 'character_name'     => $s->character_name,
                 'eliminations'       => $s->eliminations,
+                'best_questions'     => $s->best_questions,
                 'rounds_survived'    => $s->rounds_survived,
                 'survived_full_game' => $s->survived_full_game,
                 'score'              => $s->score,

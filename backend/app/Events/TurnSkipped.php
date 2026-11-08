@@ -15,6 +15,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  *
  * reason : 'turn'       → c'était son tour, il n'a rien joué
  *          'accusation' → il devait confirmer une accusation (tranchée par le serveur)
+ *          'draw'       → il devait tirer une carte après un « Je ne sais pas » (carte perdue)
  */
 class TurnSkipped implements ShouldBroadcastNow
 {

@@ -50,6 +50,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(30)->by('p:'.$request->input('player_id'));
         });
 
+        // Création d'emojis de réaction : même logique que les photos de profil.
+        RateLimiter::for('custom-reactions', function (Request $request) {
+            return Limit::perMinute(5)->by('p:'.$request->input('player_id'));
+        });
+
         // Photos de profil : quelques essais par minute suffisent. Le throttle
         // passe avant la liaison de modèle : {player} est encore l'id brut.
         RateLimiter::for('avatars', function (Request $request) {

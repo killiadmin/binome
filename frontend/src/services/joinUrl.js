@@ -1,8 +1,8 @@
 // Détermine, au moment du partage, l'URL que les autres joueurs du même Wi-Fi
 // doivent ouvrir.
 //
-// - Page ouverte via l'IP LAN (http://192.168.x.x:5173) : l'origine courante
-//   est déjà la bonne.
+// - Page ouverte via le réseau (http://killiadmin.local:8095/binome/) :
+//   l'adresse courante est déjà la bonne.
 // - Page ouverte en localhost (cas de l'hôte) : on relit public/lan-url.json,
 //   tenu à jour par « scripts/update-lan-ip.sh --watch » (lancé par start.sh),
 //   puis on vérifie que cette adresse répond vraiment — si l'hôte a changé de
@@ -37,11 +37,11 @@ async function isReachable(url, timeoutMs = 2000) {
 
 export async function resolveJoinUrl() {
   if (!isOnLocalhost()) {
-    return {url: window.location.origin + '/', verified: true};
+    return {url: window.location.origin + import.meta.env.BASE_URL, verified: true};
   }
   let url = null;
   try {
-    const res = await fetch('/lan-url.json?t=' + Date.now(), {cache: 'no-store'});
+    const res = await fetch(import.meta.env.BASE_URL + 'lan-url.json?t=' + Date.now(), {cache: 'no-store'});
     if (res.ok) url = (await res.json())?.url || null;
   } catch (e) {
     /* pas de fichier : pas d'adresse LAN connue */

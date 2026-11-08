@@ -76,9 +76,10 @@ export const characterService = {
     /**
      * Modifier un personnage (l'image n'est remplacée que si un nouveau fichier est fourni)
      * PUT /api/characters/{character} (envoyé en POST + _method=PUT pour supporter l'upload de fichier)
-     * body (multipart): name, universe_id?, image? (File), forbidden_words[], level_affectation
+     * body (multipart): name, universe_id?, image? (File), forbidden_words[], level_affectation, status?
+     * status : 'validated' | 'pending' | 'rejected' (force l'état de relecture)
      */
-    updateCharacter(characterId, { name, universeId = null, imageFile = null, forbiddenWords, levelAffectation }) {
+    updateCharacter(characterId, { name, universeId = null, imageFile = null, forbiddenWords, levelAffectation, status = null }) {
         const formData = new FormData()
         formData.append('_method', 'PUT')
         formData.append('name', name)
@@ -90,6 +91,9 @@ export const characterService = {
         }
         forbiddenWords.forEach(word => formData.append('forbidden_words[]', word))
         formData.append('level_affectation', levelAffectation)
+        if (status) {
+            formData.append('status', status)
+        }
 
         return api.post(`/characters/${characterId}`, formData, multipart)
     },
@@ -124,6 +128,14 @@ export const characterService = {
      */
     rejectBinome(characterIds) {
         return api.post('/characters/validation/reject', { character_ids: characterIds })
+    },
+
+    /**
+     * Repêcher un binôme refusé : il redevient une proposition à valider
+     * POST /api/characters/validation/restore
+     */
+    restoreBinome(characterIds) {
+        return api.post('/characters/validation/restore', { character_ids: characterIds })
     },
 
     /**

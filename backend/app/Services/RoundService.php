@@ -34,28 +34,36 @@ class RoundService
 
     /**
      * Passe au joueur suivant dans le round
-     * Retourne true si le round est terminé (tous ont joué)
+     * Retourne true si le round vient d'être terminé (tous ont joué)
+     *
+     * `$fromPlayerId` : le joueur dont le tour s'achève (l'auteur de l'action
+     * résolue). La mise à jour est conditionnelle : si le tour a déjà quitté
+     * ce joueur (deuxième réponse à une question doublon, requête rejouée),
+     * rien ne bouge — une action ne fait jamais avancer le tour deux fois, et
+     * un round clos n'est jamais clos (ni recréé) une seconde fois.
      */
-    public function nextTurn(Round $round): bool
+    public function nextTurn(Round $round, ?int $fromPlayerId = null): bool
     {
+        $from    = $fromPlayerId ?? $round->current_player_id;
         $game    = $round->game;
         $players = $this->getOrderedPlayers($game, $round->number);
 
         // Premier joueur actif après le joueur courant dans l'ordre par id.
         // Pas de recherche d'index : le joueur courant peut ne plus être dans
         // la liste s'il vient d'être exclu (ActionService::excludePlayer).
-        $next = $players->first(fn($p) => $p->id > $round->current_player_id);
+        $next = $players->first(fn($p) => $p->id > $from);
 
-        if (! $next) {
-            $round->update(['is_finished' => true]);
-            return true;
-        }
-
-        $round->update([
-            'current_player_id' => $next->id,
-        ]);
+        $moved = Round::whereKey($round->id)
+            ->where('is_finished', false)
+            ->where('current_player_id', $from)
+            ->update($next ? ['current_player_id' => $next->id] : ['is_finished' => true]);
 
         $round->refresh();
+
+        if ($moved === 0 || ! $next) {
+            return $moved > 0;
+        }
+
         broadcast(new RoundStarted($round->load('currentPlayer'), isNewRound: false));
 
         return false;

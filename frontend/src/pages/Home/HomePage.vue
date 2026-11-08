@@ -1,6 +1,9 @@
 <script>
 import { ref, onMounted } from "vue";
 import { api } from "../../services/api.js";
+import logo192 from "../../assets/logo/binome-logo-192.webp";
+import logo320 from "../../assets/logo/binome-logo-320.webp";
+import logo640 from "../../assets/logo/binome-logo-640.webp";
 
 export default {
   name: "HomePage",
@@ -16,7 +19,9 @@ export default {
       }
     });
 
-    return { message };
+    const logoSrcset = `${logo192} 192w, ${logo320} 320w, ${logo640} 640w`;
+
+    return { message, logo320, logoSrcset };
   }
 };
 </script>
@@ -25,7 +30,18 @@ export default {
   <div class="home arcade-bg text-center">
     <div class="home-hero">
       <span class="home-badge">🎲 Jeu de déduction en binôme</span>
-      <h1 class="arcade-title home-title">Binome</h1>
+      <h1 class="home-title">
+        <img
+          :src="logo320"
+          :srcset="logoSrcset"
+          sizes="(max-height: 500px) 160px, (min-width: 768px) 280px, 60vw"
+          alt="Binome"
+          class="home-logo"
+          width="320"
+          height="320"
+          fetchpriority="high"
+        />
+      </h1>
       <p class="arcade-subtitle home-subtitle">Devine le personnage secret… avant que ton binôme ne soit découvert !</p>
 
       <router-link to="/rooms" class="play-btn home-cta">
@@ -70,7 +86,23 @@ export default {
 }
 
 .home-title {
-  font-size: clamp(1.75rem, 9vw, 2.6rem);
+  margin: 0;
+  line-height: 0;
+}
+
+/* Mobile first : 60vw (192px sur un écran de 320px), plafonné à 280px. */
+.home-logo {
+  display: block;
+  width: min(60vw, 280px);
+  height: auto;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35));
+}
+
+/* Téléphone en paysage : la hauteur est la contrainte. */
+@media (max-height: 500px) {
+  .home-logo {
+    width: min(160px, 40vh);
+  }
 }
 
 .home-subtitle {

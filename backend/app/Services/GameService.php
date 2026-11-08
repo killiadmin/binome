@@ -7,6 +7,7 @@ use App\Enums\GameStatus;
 use App\Events\CharactersRedrawn;
 use App\Events\CharacterVoteCast;
 use App\Events\GameStarted;
+use App\Exceptions\GameRuleException;
 use App\Models\Binome;
 use App\Models\Character;
 use App\Models\Game;
@@ -31,11 +32,21 @@ class GameService
      */
     public function start(Room $room): Game
     {
-        $players = $room->players;
+        return DB::transaction(function () use ($room) {
+            // Verrou sur le salon : un double clic sur « Lancer » (ou une
+            // requête rejouée) passe après le premier lancement et voit la
+            // partie en cours, au lieu d'en créer une seconde qui bloquerait
+            // le salon pour toujours.
+            $room = Room::whereKey($room->id)->lockForUpdate()->firstOrFail();
 
-        $this->validateRoom($players);
+            if ($room->currentGame()->exists()) {
+                throw new GameRuleException('Une partie est déjà en cours dans ce salon.');
+            }
 
-        return DB::transaction(function () use ($room, $players) {
+            $players = $room->players;
+
+            $this->validateRoom($players);
+
             // 1. Créer la Game — characters_confirmed_at reste null : vote en cours
             $game = Game::create([
                 'room_id' => $room->id,
@@ -53,12 +64,15 @@ class GameService
     }
 
     /**
-     * Un joueur accepte son personnage, ou demande à en changer.
+     * Un joueur accepte son personnage, ou demande à en changer. Les deux votes
+     * sont publics (compteurs « prêts » / « demandes de changement ») et rien ne
+     * se passe tant que tous les joueurs n'ont pas voté. Ensuite :
      *
-     * - Accepté : quand tous les joueurs ont accepté, le round 1 démarre.
-     * - Refusé : un joueur qui ne connaît pas son personnage donnerait de
-     *   fausses réponses. Binomes et personnages sont retirés pour TOUT le
-     *   monde (le personnage refusé est écarté), et chacun revote.
+     * - tous ont accepté → le round 1 démarre ;
+     * - au moins une demande de changement → un joueur qui ne connaît pas son
+     *   personnage donnerait de fausses réponses : binomes et personnages sont
+     *   retirés pour TOUT le monde (les personnages refusés sont écartés), et
+     *   chacun revote.
      *
      * `$characterId` est le personnage que le joueur a sous les yeux : si un
      * retirage est passé entre-temps, son vote portait sur un personnage qui
@@ -67,8 +81,8 @@ class GameService
     public function voteCharacter(Game $game, Player $player, int $characterId, bool $accepted): void
     {
         $event = DB::transaction(function () use ($game, $player, $characterId, $accepted) {
-            // Verrou : un refus remplace tous les personnages, les votes
-            // simultanés doivent passer l'un après l'autre.
+            // Verrou : le dernier vote peut retirer tous les personnages, les
+            // votes simultanés doivent passer l'un après l'autre.
             $game = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
 
             if (! $game->isVotingCharacters()) {
@@ -90,26 +104,30 @@ class GameService
                 throw new RuntimeException('Les personnages ont été tirés à nouveau : regarde ton nouveau personnage.');
             }
 
-            if ($pivot->character_accepted) {
-                throw new RuntimeException('Tu as déjà accepté ton personnage.');
+            if ($pivot->character_vote !== null) {
+                throw new RuntimeException('Tu as déjà voté pour ce tirage.');
             }
 
-            if (! $accepted) {
-                $this->redraw($game, $characterId);
-
-                return new CharactersRedrawn($game);
-            }
-
-            $binome->players()->updateExistingPivot($player->id, ['character_accepted' => true]);
+            $binome->players()->updateExistingPivot($player->id, [
+                'character_vote' => $accepted ? 'accepted' : 'change',
+            ]);
 
             $votes = $this->characterVotes($game);
 
-            if ($votes['accepted']->count() === $votes['total']) {
-                $game->update(['characters_confirmed_at' => now()]);
-                $this->roundService->createRound($game, roundNumber: 1);
+            if ($votes['accepted']->count() + $votes['change']->count() < $votes['total']) {
+                return new CharacterVoteCast($game, $votes['accepted']->all(), $votes['change']->all());
             }
 
-            return new CharacterVoteCast($game, $votes['accepted']->all());
+            if ($votes['change']->isNotEmpty()) {
+                $this->redraw($game, $votes['change_character_ids']->all());
+
+                return new CharactersRedrawn($game, $votes['change']->count());
+            }
+
+            $game->update(['characters_confirmed_at' => now()]);
+            $this->roundService->createRound($game, roundNumber: 1);
+
+            return new CharacterVoteCast($game, $votes['accepted']->all(), []);
         });
 
         // Après le commit : les joueurs relisent leur personnage dès la
@@ -118,22 +136,25 @@ class GameService
     }
 
     /**
-     * Où en est le vote : ids des joueurs qui ont accepté, et nombre de joueurs.
+     * Où en est le vote : ids des joueurs qui ont accepté / demandé à changer,
+     * personnages dont on demande le changement, et nombre de joueurs.
      *
-     * @return array{accepted: Collection<int, int>, total: int}
+     * @return array{accepted: Collection<int, int>, change: Collection<int, int>, change_character_ids: Collection<int, int>, total: int}
      */
     public function characterVotes(Game $game): array
     {
         $rows = DB::table('binome_player')
             ->join('binomes', 'binomes.id', '=', 'binome_player.binome_id')
             ->where('binomes.game_id', $game->id)
-            ->get(['binome_player.player_id', 'binome_player.character_accepted']);
+            ->orderBy('binome_player.player_id')
+            ->get(['binome_player.player_id', 'binome_player.character_id', 'binome_player.character_vote']);
+
+        $changes = $rows->where('character_vote', 'change');
 
         return [
-            'accepted' => $rows->filter(fn ($row) => $row->character_accepted)
-                ->map(fn ($row) => (int) $row->player_id)
-                ->sort()
-                ->values(),
+            'accepted' => $rows->where('character_vote', 'accepted')->map(fn ($row) => (int) $row->player_id)->values(),
+            'change' => $changes->map(fn ($row) => (int) $row->player_id)->values(),
+            'change_character_ids' => $changes->map(fn ($row) => (int) $row->character_id)->values(),
             'total' => $rows->count(),
         ];
     }
@@ -143,14 +164,17 @@ class GameService
      * joueurs. Les spectateurs arrivés dans le salon depuis le lancement n'y
      * entrent pas : on repart des joueurs de la partie, pas de ceux du salon.
      */
-    private function redraw(Game $game, int $rejectedCharacterId): void
+    /**
+     * @param  int[]  $rejectedCharacterIds
+     */
+    private function redraw(Game $game, array $rejectedCharacterIds): void
     {
         $players = $game->binomes()->with('players')->get()
             ->flatMap(fn ($binome) => $binome->players)
             ->values();
 
         $rejected = collect($game->rejected_character_ids ?? [])
-            ->push($rejectedCharacterId)
+            ->merge($rejectedCharacterIds)
             ->unique()
             ->values()
             ->all();

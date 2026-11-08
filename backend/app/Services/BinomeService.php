@@ -4,10 +4,10 @@ namespace App\Services;
 
 use App\Events\BinomeDiscovered;
 use App\Events\PlayerEliminated;
+use App\Exceptions\GameRuleException;
 use App\Models\Binome;
 use App\Models\Game;
 use App\Models\Player;
-use Exception;
 
 class BinomeService
 {
@@ -43,8 +43,13 @@ class BinomeService
     {
         $game->load(['binomes.players']);
 
+        // Un binome vidé (joueur supprimé en cours de partie, données
+        // anciennes) compterait sinon comme une équipe intacte pour toujours :
+        // every() est vrai sur une collection vide, et la partie ne finirait plus.
+        $binomes = $game->binomes->filter(fn($binome) => $binome->players->isNotEmpty());
+
         // Joueurs encore actifs (non éliminés)
-        $activePlayers = $game->binomes
+        $activePlayers = $binomes
             ->flatMap(fn($b) => $b->players)
             ->filter(fn($p) => !$p->pivot->is_eliminated)
             ->values();
@@ -59,12 +64,12 @@ class BinomeService
         }
 
         // Équipes intactes : paire complète encore debout, ou orphelin en vie
-        $intactTeams = $game->binomes->filter(
+        $intactTeams = $binomes->filter(
             fn($binome) => $binome->players->every(fn($p) => !$p->pivot->is_eliminated)
         );
 
         // Joueurs actifs dont le binôme a été brisé par une élimination
-        $loneSurvivors = $game->binomes
+        $loneSurvivors = $binomes
             ->reject(fn($binome) => $binome->players->every(fn($p) => !$p->pivot->is_eliminated))
             ->flatMap(fn($b) => $b->players->filter(fn($p) => !$p->pivot->is_eliminated))
             ->values();
@@ -92,7 +97,7 @@ class BinomeService
             ->first();
 
         if (!$binome) {
-            throw new Exception("Aucun binome trouvé pour ce joueur dans cette partie.");
+            throw new GameRuleException("Aucun binome trouvé pour ce joueur dans cette partie.");
         }
 
         return $binome;

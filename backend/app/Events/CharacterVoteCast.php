@@ -10,8 +10,8 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Un joueur a accepté son personnage. Seul le fait d'avoir accepté est
- * diffusé, jamais le personnage.
+ * Un joueur a voté sur son personnage (accepté ou demande de changement).
+ * Seul le vote est diffusé, jamais le personnage.
  */
 class CharacterVoteCast implements ShouldBroadcastNow
 {
@@ -19,10 +19,12 @@ class CharacterVoteCast implements ShouldBroadcastNow
 
     /**
      * @param  int[]  $acceptedPlayerIds
+     * @param  int[]  $changePlayerIds
      */
     public function __construct(
         public readonly Game $game,
         public readonly array $acceptedPlayerIds,
+        public readonly array $changePlayerIds,
     ) {}
 
     public function broadcastOn(): array
@@ -43,6 +45,7 @@ class CharacterVoteCast implements ShouldBroadcastNow
             'game_id' => $this->game->id,
             'draw_number' => $this->game->draw_number,
             'accepted_player_ids' => $this->acceptedPlayerIds,
+            'change_player_ids' => $this->changePlayerIds,
         ];
     }
 }

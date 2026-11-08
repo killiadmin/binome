@@ -28,5 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->render(fn (\App\Exceptions\GameRuleException $e) => response()->json([
+            'message' => $e->getMessage(),
+        ], 409));
     })->create();

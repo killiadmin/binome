@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Public Path Prefix
+    |--------------------------------------------------------------------------
+    |
+    | The browser reaches the API through the frontend, served under /binome/
+    | (http://killiadmin.local:8095/binome/). URLs handed to the browser, such
+    | as avatar and reaction images, must carry this prefix.
+    |
+    */
+
+    'public_prefix' => env('APP_PUBLIC_PREFIX', '/binome'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

@@ -18,15 +18,83 @@ const success = ref(null)
 
 // ─── FILTRES ──────────────────────────────────────────────────────────────────
 
-const searchQuery = ref('')
-const statusFilter = reactive({ validated: true, pending: true, rejected: false })
+// Les filtres sont mémorisés dans le navigateur (simple confort : la page marche sans).
+const FILTERS_STORAGE_KEY = 'characterListFilters'
+const DEFAULT_STATUS_FILTER = { validated: true, pending: true, rejected: false }
+
+function readSavedFilters() {
+  try {
+    return JSON.parse(localStorage.getItem(FILTERS_STORAGE_KEY)) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+const savedFilters = readSavedFilters()
+
+const searchQuery = ref(savedFilters.search ?? '')
+const statusFilter = reactive({ ...DEFAULT_STATUS_FILTER, ...savedFilters.status })
+// On mémorise les cosmos DÉcochés : un cosmos créé plus tard apparaît coché par défaut.
+const excludedCosmos = ref(savedFilters.excludedCosmos ?? [])
+// Nombres de niveaux d'affectation retenus par univers ([] = pas de filtre).
+const selectedLevelCounts = ref(savedFilters.levelCounts ?? [])
+
+watch([searchQuery, statusFilter, excludedCosmos, selectedLevelCounts], () => {
+  try {
+    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({
+      search: searchQuery.value,
+      status: { ...statusFilter },
+      excludedCosmos: excludedCosmos.value,
+      levelCounts: selectedLevelCounts.value,
+    }))
+  } catch {
+    // stockage indisponible (navigation privée…) : les filtres ne sont juste pas mémorisés
+  }
+}, { deep: true })
+
+function resetFilters() {
+  searchQuery.value = ''
+  Object.assign(statusFilter, DEFAULT_STATUS_FILTER)
+  excludedCosmos.value = []
+  selectedLevelCounts.value = []
+}
+
+function toggleCosmosFilter(value) {
+  excludedCosmos.value = excludedCosmos.value.includes(value)
+    ? excludedCosmos.value.filter(v => v !== value)
+    : [...excludedCosmos.value, value]
+}
 
 // 'validated' (relu + non masqué) | 'pending' (proposé, pas encore relu) | 'rejected' (binôme refusé)
 function characterStatus(c) {
   if (c.hidden) return 'rejected'
   return c.verif_manual ? 'validated' : 'pending'
 }
-const selectedCosmosFilters = ref(null) // null tant que non initialisé (= tout coché)
+
+// Nombre de niveaux d'affectation distincts par univers (personnages refusés exclus),
+// calculé sur tous les personnages pour ne pas varier avec les autres filtres.
+const levelCountByUniverse = computed(() => {
+  const levels = new Map()
+  for (const c of characters.value) {
+    if (!levels.has(c.universe_id)) levels.set(c.universe_id, new Set())
+    if (!c.hidden) levels.get(c.universe_id).add(c.level_affectation)
+  }
+  return new Map([...levels].map(([id, set]) => [id, set.size]))
+})
+
+const levelCountOptions = computed(() =>
+  [...new Set(levelCountByUniverse.value.values())].sort((a, b) => a - b),
+)
+
+// Un nombre mémorisé qui n'existe plus dans les données est ignoré (sinon tout serait masqué).
+const activeLevelCounts = computed(() =>
+  selectedLevelCounts.value.filter(n => levelCountOptions.value.includes(n)),
+)
+
+function levelCountLabel(n) {
+  if (n === 0) return '0 niveau (tout refusé)'
+  return `${n} niveau${n > 1 ? 'x' : ''}`
+}
 
 const cosmosFilterOptions = computed(() => {
   const seen = new Map()
@@ -43,22 +111,17 @@ const cosmosFilterOptions = computed(() => {
     })
 })
 
-// Initialise le filtre cosmos (tout coché) une fois les personnages chargés.
-watch(cosmosFilterOptions, (opts) => {
-  if (selectedCosmosFilters.value === null && opts.length > 0) {
-    selectedCosmosFilters.value = opts.map(o => o.value)
-  }
-})
-
 const filteredCharacters = computed(() => {
   const search = searchQuery.value.trim().toLowerCase()
+  const levelCounts = activeLevelCounts.value
 
   return characters.value.filter((c) => {
     if (!statusFilter[characterStatus(c)]) return false
 
-    if (selectedCosmosFilters.value) {
-      const cosmosKey = c.cosmos_name || '__none__'
-      if (!selectedCosmosFilters.value.includes(cosmosKey)) return false
+    if (excludedCosmos.value.includes(c.cosmos_name || '__none__')) return false
+
+    if (levelCounts.length && !levelCounts.includes(levelCountByUniverse.value.get(c.universe_id) ?? 0)) {
+      return false
     }
 
     if (search) {
@@ -95,7 +158,11 @@ const groupedCosmos = computed(() => {
       name,
       universes: [...universeMap.values()]
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map(u => ({ ...u, levelGroups: groupByLevel(u.characters) })),
+        .map(u => ({
+          ...u,
+          levelCount: levelCountByUniverse.value.get(u.id) ?? 0,
+          levelGroups: groupByLevel(u.characters),
+        })),
     }))
 })
 
@@ -108,12 +175,31 @@ function groupByLevel(chars) {
 
   return [...byLevel.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([level, levelCharacters]) => ({
-      level,
+    .map(([level, levelCharacters]) => {
       // Un binôme refusé ne compte pas comme binôme actif.
-      isBinome: levelCharacters.filter(c => !c.hidden).length >= 2,
-      characters: [...levelCharacters].sort((a, b) => a.name.localeCompare(b.name)),
-    }))
+      const activeCount = levelCharacters.filter(c => !c.hidden).length
+      return {
+        level,
+        isBinome: activeCount >= 2,
+        // Toléré (le jeu en tire 2 au hasard) mais probablement une erreur d'affectation.
+        overfullCount: activeCount > 2 ? activeCount : 0,
+        rejectedIds: levelCharacters.filter(c => c.hidden).map(c => c.id),
+        characters: [...levelCharacters].sort((a, b) => a.name.localeCompare(b.name)),
+      }
+    })
+}
+
+async function restoreRejected(group) {
+  error.value = null
+  success.value = null
+  try {
+    await characterService.restoreBinome(group.rejectedIds)
+    success.value = 'Binôme remis en validation : corrige-le puis valide-le depuis « binômes à valider ».'
+    await loadCharacters()
+    await loadPendingBinomes()
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Erreur lors de la remise en validation.'
+  }
 }
 
 // ─── ÉDITION ──────────────────────────────────────────────────────────────────
@@ -126,6 +212,8 @@ const editOriginalCosmosId = ref(null)
 const editName = ref('')
 const editForbiddenWords = ref(['', '', ''])
 const editLevelAffectation = ref(null)
+const editStatus = ref('validated')
+const editOriginalStatus = ref('validated')
 const editImageFile = ref(null)
 const editImagePreview = ref(null)
 const editCurrentImage = ref(null)
@@ -158,6 +246,23 @@ const editSelectedUniverse = computed(
   () => universes.value.find(u => u.id === editUniverseId.value) ?? null,
 )
 
+const editStatusOptions = [
+  { value: 'validated', text: 'Validé (jouable)' },
+  { value: 'pending', text: 'À valider' },
+  { value: 'rejected', text: 'Binôme refusé' },
+]
+
+// Personnages actifs déjà au niveau visé dans l'univers visé : simple indication,
+// jamais bloquante (on doit pouvoir corriger une affectation dans n'importe quel ordre).
+const editLevelPeers = computed(() =>
+  characters.value.filter(c =>
+    c.id !== editingCharacterId.value
+    && !c.hidden
+    && c.universe_id === editUniverseId.value
+    && c.level_affectation === editLevelAffectation.value,
+  ),
+)
+
 // Quand on change l'univers du personnage dans la modale, le cosmos affiché suit
 // celui du nouvel univers (et n'est donc pas considéré comme "modifié" tant qu'on n'y touche pas).
 watch(editUniverseId, (id) => {
@@ -174,6 +279,8 @@ function openEditModal(character) {
   editName.value = character.name
   editForbiddenWords.value = [...character.forbidden_words]
   editLevelAffectation.value = character.level_affectation
+  editStatus.value = characterStatus(character)
+  editOriginalStatus.value = editStatus.value
   editImageFile.value = null
   editImagePreview.value = null
   editCurrentImage.value = character.image
@@ -222,6 +329,7 @@ const handleUpdateCharacter = async () => {
       imageFile: editImageFile.value,
       forbiddenWords: words,
       levelAffectation: editLevelAffectation.value,
+      status: editStatus.value !== editOriginalStatus.value ? editStatus.value : null,
     })
 
     // Le cosmos appartient à l'univers : on ne pousse la mise à jour que si
@@ -239,6 +347,7 @@ const handleUpdateCharacter = async () => {
 
     await loadUniverses()
     await loadCharacters()
+    await loadPendingBinomes()
   } catch (e) {
     editError.value = e.response?.data?.message || 'Erreur lors de la modification du personnage.'
   } finally {
@@ -515,7 +624,7 @@ onMounted(() => {
       </div>
 
       <div class="text-center mb-4 list-actions">
-        <router-link to="/characters" class="play-btn">
+        <router-link to="/admin/binomes/new" class="play-btn">
           <i class="fa-solid fa-plus"></i> Créer un personnage
         </router-link>
         <button
@@ -563,13 +672,33 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-if="cosmosFilterOptions.length" class="mb-1">
+        <div v-if="cosmosFilterOptions.length" class="mb-3">
           <label class="form-label">Cosmos :</label>
           <div class="filter-checks">
             <label v-for="opt in cosmosFilterOptions" :key="opt.value" class="filter-check">
-              <input type="checkbox" :value="opt.value" v-model="selectedCosmosFilters" /> {{ opt.text }}
+              <input
+                  type="checkbox"
+                  :checked="!excludedCosmos.includes(opt.value)"
+                  @change="toggleCosmosFilter(opt.value)"
+              /> {{ opt.text }}
             </label>
           </div>
+        </div>
+
+        <div v-if="levelCountOptions.length" class="mb-1">
+          <label class="form-label">Nombre de niveaux par univers :</label>
+          <div class="filter-checks">
+            <label v-for="n in levelCountOptions" :key="n" class="filter-check">
+              <input type="checkbox" :value="n" v-model="selectedLevelCounts" /> {{ levelCountLabel(n) }}
+            </label>
+          </div>
+          <small class="form-text text-muted">Aucune case cochée = tous les univers.</small>
+        </div>
+
+        <div class="text-end">
+          <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="resetFilters">
+            <i class="fa-solid fa-rotate-left"></i> Réinitialiser
+          </button>
         </div>
       </div>
 
@@ -591,7 +720,10 @@ onMounted(() => {
           </h2>
 
           <div v-for="universe in cosmos.universes" :key="universe.id" class="universe-block">
-            <h3 class="universe-block__title">{{ universe.name }}</h3>
+            <h3 class="universe-block__title">
+              {{ universe.name }}
+              <span class="word-badge word-badge--count">{{ levelCountLabel(universe.levelCount) }}</span>
+            </h3>
 
             <div
                 v-for="group in universe.levelGroups"
@@ -607,10 +739,21 @@ onMounted(() => {
                 <span v-else class="word-badge word-badge--lonely">
                   <i class="fa-solid fa-user"></i> Sans binôme
                 </span>
+                <span v-if="group.overfullCount" class="word-badge word-badge--warning" title="Le jeu en tirera 2 au hasard">
+                  <i class="fa-solid fa-triangle-exclamation"></i> {{ group.overfullCount }} persos
+                </span>
+                <button
+                    v-if="group.rejectedIds.length"
+                    type="button"
+                    class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm binome-group__restore"
+                    @click="restoreRejected(group)"
+                >
+                  <i class="fa-solid fa-rotate-left"></i> Remettre à valider
+                </button>
               </div>
 
               <div class="character-row" v-for="character in group.characters" :key="character.id">
-                <img v-if="character.image" :src="character.image" alt="" class="character-row__avatar" />
+                <img v-if="character.image" :src="character.image" alt="" loading="lazy" class="character-row__avatar" />
                 <div v-else class="character-row__avatar character-row__avatar--placeholder">
                   <i class="fa-solid fa-user-astronaut"></i>
                 </div>
@@ -668,7 +811,7 @@ onMounted(() => {
           <label class="form-label">Univers :</label>
           <BFormSelect v-model="editUniverseId" :options="editUniverseOptions" :disabled="loadingUniverses" />
           <small class="form-text text-muted">
-            Change l'univers auquel ce personnage est rattaché. Le niveau d'affectation devra rester valide dans le nouvel univers (2 personnages max par niveau).
+            Change l'univers auquel ce personnage est rattaché.
           </small>
         </div>
 
@@ -704,6 +847,21 @@ onMounted(() => {
               min="1"
               placeholder="Ex : 1"
           />
+          <small v-if="editLevelAffectation >= 1" class="form-text" :class="editLevelPeers.length >= 2 ? 'text-warning' : 'text-muted'">
+            <template v-if="editLevelPeers.length === 0">Seul à ce niveau : pas encore de binôme.</template>
+            <template v-else>
+              À ce niveau : {{ editLevelPeers.map(c => c.name).join(', ') }}<template v-if="editLevelPeers.length >= 2">
+                — il y aura plus de 2 personnages (autorisé, le jeu en tirera 2 au hasard).</template>
+            </template>
+          </small>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Statut :</label>
+          <BFormSelect v-model="editStatus" :options="editStatusOptions" />
+          <small class="form-text text-muted">
+            Un binôme refusé peut être repêché ici. « Validé » exige une image.
+          </small>
         </div>
 
         <div class="text-center">
@@ -784,7 +942,8 @@ onMounted(() => {
 
             <p class="text-center text-muted validation-hint">
               Tu peux corriger les mots interdits ici avant d'accepter. En acceptant, tu devras
-              importer une image pour chacun des 2 personnages. Un binôme refusé ne te sera plus jamais reproposé.
+              importer une image pour chacun des 2 personnages. Un binôme refusé ne te sera plus reproposé
+              (tu pourras le repêcher depuis la liste, filtre « Binômes refusés »).
             </p>
 
             <div class="text-center mt-3 btn-modal">
@@ -937,6 +1096,7 @@ onMounted(() => {
 
 .binome-group__label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   margin-bottom: 0.5rem;
@@ -945,6 +1105,23 @@ onMounted(() => {
 .word-badge--binome {
   background: var(--arcade-gold);
   color: #4a2f00;
+}
+
+.word-badge--warning {
+  background: #8a5a00;
+  color: #ffe9c7;
+}
+
+.word-badge--count {
+  background: transparent;
+  color: var(--arcade-taupe);
+  border: 1px solid var(--arcade-taupe);
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.binome-group__restore {
+  margin-left: auto;
 }
 
 .word-badge--lonely {

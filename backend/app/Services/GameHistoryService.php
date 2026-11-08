@@ -152,6 +152,7 @@ class GameHistoryService
                     'avatar_url' => $avatars[$stat->player_pseudo] ?? null,
                     'character_name' => $stat->character_name,
                     'eliminations' => $stat->eliminations,
+                    'best_questions' => (int) $stat->best_questions,
                     'rounds_survived' => $stat->rounds_survived,
                     'survived_full_game' => $stat->survived_full_game,
                     'score' => $stat->score,
@@ -306,6 +307,7 @@ class GameHistoryService
             ] : null,
             'is_valid' => (bool) $action->is_valid,
             'answer' => $action->answer,
+            'answer_corrected_from' => $action->answer_corrected_from,
             'created_at' => $action->created_at?->toIso8601String(),
         ];
 

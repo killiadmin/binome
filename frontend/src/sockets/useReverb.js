@@ -32,7 +32,9 @@ function getEcho(playerId = null) {
             forceTLS: window.location.protocol === 'https:',
             enabledTransports: ['ws', 'wss'],
             disableStats: true,
-            authEndpoint: '/broadcasting/auth',
+            // L'app vit sous /binome/ : le WebSocket part sur /binome/app/{key}.
+            wsPath: import.meta.env.BASE_URL.replace(/\/$/, ''),
+            authEndpoint: `${import.meta.env.BASE_URL}broadcasting/auth`,
             auth: {
                 headers: {
                     'X-Player-Id': String(playerId),
@@ -171,6 +173,18 @@ export function useReverb(playerId = null) {
             channel.listen('.answer.given', callbacks.onAnswerGiven)
         }
 
+        if (callbacks.onAnswerCorrected) {
+            channel.listen('.answer.corrected', callbacks.onAnswerCorrected)
+        }
+
+        if (callbacks.onCardDrawn) {
+            channel.listen('.card.drawn', callbacks.onCardDrawn)
+        }
+
+        if (callbacks.onCardDrawFinished) {
+            channel.listen('.card.draw.finished', callbacks.onCardDrawFinished)
+        }
+
         if (callbacks.onAccusationConfirmed) {
             channel.listen('.accusation.confirmed', callbacks.onAccusationConfirmed)
         }
@@ -191,6 +205,10 @@ export function useReverb(playerId = null) {
             channel.listen('.player.excluded', callbacks.onPlayerExcluded)
         }
 
+        if (callbacks.onQuestionVoted) {
+            channel.listen('.question.voted', callbacks.onQuestionVoted)
+        }
+
         if (callbacks.onPlayerAvatarUpdated) {
             channel.listen('.player.avatar.updated', callbacks.onPlayerAvatarUpdated)
         }
@@ -203,6 +221,30 @@ export function useReverb(playerId = null) {
      */
     function leaveGame(gameId) {
         echoInstance.leave(`game.${gameId}`)
+    }
+
+    /**
+     * Channel privé du joueur (player.{id}) : messages qui ne doivent pas
+     * transiter par game.{id}, où d'autres les liraient — ex. un mot interdit
+     * montré à tous sauf à son propriétaire.
+     */
+    function joinPlayerChannel(id, callbacks = {}) {
+        const channel = echoInstance.private(`player.${id}`)
+
+        channel.error?.((error) => {
+            console.error(`[Reverb] Erreur channel player.${id} :`, error)
+            callbacks.onError?.(error)
+        })
+
+        if (callbacks.onCardWordShared) {
+            channel.listen('.card.word.shared', callbacks.onCardWordShared)
+        }
+
+        return channel
+    }
+
+    function leavePlayerChannel(id) {
+        echoInstance.leave(`player.${id}`)
     }
 
     /**
@@ -226,6 +268,8 @@ export function useReverb(playerId = null) {
         leaveLobbyChat,
         joinGame,
         leaveGame,
+        joinPlayerChannel,
+        leavePlayerChannel,
         onConnectionChange,
     }
 }

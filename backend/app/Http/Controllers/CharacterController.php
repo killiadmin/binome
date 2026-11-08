@@ -23,7 +23,9 @@ class CharacterController extends Controller
     public function index(): JsonResponse
     {
         return response()->json([
-            'characters' => Character::with(['universe:id,name,cosmos_id', 'universe.cosmos:id,name'])
+            // Sans la colonne image (~11 Mo pour le catalogue) : URL en cache à la place.
+            'characters' => Character::withoutImage()
+                ->with(['universe:id,name,cosmos_id', 'universe.cosmos:id,name'])
                 ->orderBy('name')
                 ->get()
                 ->map(fn ($c) => [
@@ -33,7 +35,7 @@ class CharacterController extends Controller
                     'cosmos_id' => $c->universe->cosmos_id,
                     'cosmos_name' => $c->universe->cosmos?->name,
                     'name' => $c->name,
-                    'image' => $c->image,
+                    'image' => $c->imageUrl(),
                     'forbidden_words' => $c->forbidden_words,
                     'level_affectation' => $c->level_affectation,
                     'verif_manual' => $c->verif_manual,
@@ -50,6 +52,7 @@ class CharacterController extends Controller
     public function pending(): JsonResponse
     {
         $binomes = Character::pendingValidation()
+            ->withoutImage()
             ->with(['universe:id,name,cosmos_id', 'universe.cosmos:id,name'])
             ->orderBy('universe_id')
             ->orderBy('level_affectation')
@@ -70,7 +73,7 @@ class CharacterController extends Controller
                         'id' => $c->id,
                         'name' => $c->name,
                         'forbidden_words' => $c->forbidden_words,
-                        'image' => $c->image,
+                        'image' => $c->imageUrl(),
                     ])->values(),
                 ];
             });
@@ -135,6 +138,32 @@ class CharacterController extends Controller
     }
 
     /**
+     * POST /characters/validation/restore
+     * Repêche un binôme refusé : il redevient une proposition en attente
+     * (hidden = false, verif_manual = false) et repasse par la popup de validation.
+     */
+    public function restore(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'character_ids' => ['required', 'array', 'min:1'],
+            'character_ids.*' => ['integer'],
+        ]);
+
+        $ids = Character::where('hidden', true)->whereIn('id', $data['character_ids'])->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return response()->json(['message' => 'Aucun personnage refusé pour ces identifiants.'], 422);
+        }
+
+        Character::whereIn('id', $ids)->update(['hidden' => false, 'verif_manual' => false]);
+
+        return response()->json([
+            'message' => 'Binôme remis en validation.',
+            'restored_ids' => $ids->values(),
+        ]);
+    }
+
+    /**
      * POST /characters/{character}/image
      * Importe / remplace l'image d'un personnage (utilisé par la popup de validation).
      */
@@ -149,7 +178,7 @@ class CharacterController extends Controller
 
         return response()->json([
             'message' => 'Image importée.',
-            'character' => ['id' => $character->id, 'image' => $character->image],
+            'character' => ['id' => $character->id, 'image' => $character->imageUrl()],
         ]);
     }
 
@@ -196,7 +225,7 @@ class CharacterController extends Controller
                 'id' => $character->id,
                 'universe_id' => $character->universe_id,
                 'name' => $character->name,
-                'image' => $character->image,
+                'image' => $character->imageUrl(),
                 'forbidden_words' => $character->forbidden_words,
                 'level_affectation' => $character->level_affectation,
             ],
@@ -229,6 +258,19 @@ class CharacterController extends Controller
             $character->image = $this->encodeImage($request->file('image'));
         }
 
+        // Correction manuelle de l'état de relecture (ex. repêcher un binôme refusé).
+        // Seule règle conservée : un personnage jouable doit avoir une image.
+        if ($status = $request->validated('status')) {
+            if ($status === 'validated' && empty($character->image)) {
+                return response()->json([
+                    'message' => 'Un personnage validé doit avoir une image.',
+                ], 422);
+            }
+
+            $character->verif_manual = $status === 'validated';
+            $character->hidden = $status === 'rejected';
+        }
+
         $character->save();
 
         return response()->json([
@@ -237,9 +279,11 @@ class CharacterController extends Controller
                 'id' => $character->id,
                 'universe_id' => $character->universe_id,
                 'name' => $character->name,
-                'image' => $character->image,
+                'image' => $character->imageUrl(),
                 'forbidden_words' => $character->forbidden_words,
                 'level_affectation' => $character->level_affectation,
+                'verif_manual' => $character->verif_manual,
+                'hidden' => $character->hidden,
             ],
         ]);
     }

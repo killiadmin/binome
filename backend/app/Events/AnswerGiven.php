@@ -37,6 +37,8 @@ class AnswerGiven implements ShouldBroadcastNow
             'action_id' => $this->action->id,
             'round_id' => $this->action->round_id,
             'answer' => $this->action->answer,
+            // « Je ne sais pas » : le questionneur tire une carte (null sinon)
+            'card_draw' => $this->action->publicCardDraw(),
             'answerer' => [
                 'id' => $this->action->targetPlayer->id,
                 'pseudo' => $this->action->targetPlayer->pseudo,

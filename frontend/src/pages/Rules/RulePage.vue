@@ -32,9 +32,19 @@ export default {
           title: "🔄 Déroulement d’un tour",
           description:
               "À ton tour, tu peux faire UNE seule action :\n\n" +
-              "1. Poser une question à un joueur (réponse libre : oui/non)\n" +
+              "1. Poser une question à un joueur (il répond oui, non ou « je ne sais pas »)\n" +
               "2. Faire une accusation : deviner le personnage d’un joueur\n\n" +
               "Les joueurs jouent chacun leur tour dans le même ordre à chaque round.",
+        },
+        {
+          title: "🃏 « Je ne sais pas »",
+          description:
+              "Si le joueur interrogé répond « Je ne sais pas », celui qui a posé la question tire une carte :\n\n" +
+              "• Il choisit une carte face cachée parmi les mots interdits du joueur interrogé\n" +
+              "• Il est le seul à voir le mot, pendant 5 secondes : à lui de le retenir !\n" +
+              "• Il peut ensuite le montrer à tous les autres joueurs (5 secondes aussi)… sauf au joueur interrogé, ou le garder pour lui\n" +
+              "• Le joueur interrogé sait qu'une carte a été tirée, mais jamais laquelle ni si elle a été montrée\n\n" +
+              "⏳ 30 secondes pour tirer et décider, sinon la carte est perdue.",
         },
         {
           title: "🚫 Mots interdits",
@@ -60,6 +70,7 @@ export default {
           title: "🏆 Comment gagner",
           description:
               "• Un joueur correctement accusé est éliminé : il devient spectateur jusqu'à la fin\n" +
+              "   → Selon les options de l'hôte, il peut voir tous les personnages (vue omnisciente) et voter pour la meilleure question de chaque round\n" +
               "• La partie s'arrête dès qu'il ne reste qu'UNE SEULE équipe intacte : un binôme dont les deux membres sont encore en jeu, ou l'orphelin encore en vie → cette équipe gagne\n" +
               "• Si plus aucune équipe n'est intacte, le dernier survivant isolé gagne seul\n\n" +
               "Tu ne gagnes donc pas en devinant le plus vite : tu gagnes en restant en vie.\n" +
@@ -71,9 +82,11 @@ export default {
               "Tout le monde marque, gagnant comme éliminé :\n\n" +
               "• +1 par élimination — une accusation que la cible a confirmée\n" +
               "• +1 par round survécu — tous les rounds si tu n'es jamais éliminé, sinon jusqu'à ton round d'élimination inclus\n" +
-              "• +5 si tu gagnes AVEC ton équipe intacte : ton binôme dont le partenaire n'a jamais été éliminé, ou l'orphelin qui va au bout\n\n" +
+              "• +5 si tu gagnes AVEC ton équipe intacte : ton binôme dont le partenaire n'a jamais été éliminé, ou l'orphelin qui va au bout\n" +
+              "• +3 si tu gagnes seul, en rescapé (ton partenaire a été éliminé)\n" +
+              "• +1 par round où ta question est élue meilleure question par les éliminés (si l'hôte a activé le vote)\n\n" +
               "⚠️ Une accusation ratée ne coûte rien : 0 point, aucune pénalité — mais elle gâche ton tour\n" +
-              "⚠️ Un rescapé dont le partenaire a été éliminé gagne la partie, mais pas le bonus de +5\n" +
+              "⚠️ Un rescapé dont le partenaire a été éliminé gagne la partie, mais touche +3 au lieu de +5\n" +
               "⚠️ L'orphelin, lui, n'a jamais eu de partenaire à perdre : son bonus est acquis s'il gagne\n\n" +
               "Le classement final est trié par score : un éliminé très offensif peut finir devant un vainqueur discret.",
         },

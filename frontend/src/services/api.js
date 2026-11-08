@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 export const api = axios.create({
-    // Same-origin: the Vite dev server proxies /api to the backend container.
-    baseURL: '/api',
+    // Same-origin: the Vite dev server proxies <base>/api to the backend container.
+    baseURL: `${import.meta.env.BASE_URL}api`,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

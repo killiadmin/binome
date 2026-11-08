@@ -5,22 +5,30 @@ namespace App\Services;
 use App\Enums\ActionType;
 use App\Events\AccusationConfirmed;
 use App\Events\ActionPlayed;
+use App\Events\AnswerCorrected;
 use App\Events\AnswerGiven;
+use App\Events\CardDrawFinished;
+use App\Events\CardDrawn;
+use App\Events\CardWordShared;
 use App\Events\GameEnded;
 use App\Events\PlayerExcluded;
 use App\Events\TurnSkipped;
 use App\Enums\GameStatus;
+use App\Exceptions\GameRuleException;
+use App\Jobs\ExpireCardDraw;
 use App\Models\Action;
 use App\Models\Game;
 use App\Models\Player;
 use App\Models\Round;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Exception;
-use RuntimeException;
 
 class ActionService
 {
+    // Temps laissé au questionneur pour tirer sa carte ET décider de la montrer.
+    public const CARD_DRAW_SECONDS = 30;
+
     public function __construct(
         private readonly RoundService  $roundService,
         private readonly BinomeService $binomeService,
@@ -34,22 +42,27 @@ class ActionService
 
     public function playQuestion(Round $round, Player $player, string $question, Player $targetPlayer): Action
     {
-        $this->validateTurn($round, $player);
-        $this->validateHasNotPlayedThisRound($round, $player);
+        $action = DB::transaction(function () use ($round, $player, $question, $targetPlayer) {
+            $round = $this->lockRound($round);
 
-        // Les mots interdits ne sont volontairement PAS contrôlés ici.
-        // La règle : ce sont les mots interdits du joueur CIBLÉ qui comptent, et
-        // c'est lui seul qui juge si la question en contient un. Il répond alors
-        // ce qu'il veut (y compris un mensonge). Le questionneur ne doit jamais
-        // apprendre qu'il a fauté — d'où l'absence de tout rejet côté serveur.
-        $action = $this->storeAction(
-            round:   $round,
-            player:  $player,
-            type:    ActionType::Question,
-            content: $question,
-            isValid: true,
-            targetPlayer: $targetPlayer,
-        );
+            $this->validateTurn($round, $player);
+            $this->validateHasNotPlayedThisRound($round, $player);
+            $this->validateTarget($round->game, $player, $targetPlayer);
+
+            // Les mots interdits ne sont volontairement PAS contrôlés ici.
+            // La règle : ce sont les mots interdits du joueur CIBLÉ qui comptent, et
+            // c'est lui seul qui juge si la question en contient un. Il répond alors
+            // ce qu'il veut (y compris un mensonge). Le questionneur ne doit jamais
+            // apprendre qu'il a fauté — d'où l'absence de tout rejet côté serveur.
+            return $this->storeAction(
+                round:   $round,
+                player:  $player,
+                type:    ActionType::Question,
+                content: $question,
+                isValid: true,
+                targetPlayer: $targetPlayer,
+            );
+        });
 
         broadcast(new ActionPlayed($action));
 
@@ -66,24 +79,28 @@ class ActionService
         Player $targetPlayer,
         string $characterName,
     ): Action {
-        $game = $round->game;
+        $action = DB::transaction(function () use ($round, $player, $targetPlayer, $characterName) {
+            $round = $this->lockRound($round);
 
-        $this->validateTurn($round, $player);
-        $this->validateHasNotPlayedThisRound($round, $player);
+            $this->validateTurn($round, $player);
+            $this->validateHasNotPlayedThisRound($round, $player);
+            $this->validateTarget($round->game, $player, $targetPlayer);
 
-        // Enregistre l'accusation sans vérifier — on attend la confirmation
-        $action = $this->storeAction(
-            round:        $round,
-            player:       $player,
-            type:         ActionType::Accusation,
-            content:      $characterName,
-            isValid:      true,
-            targetPlayer: $targetPlayer,
-        );
+            // Enregistre l'accusation sans vérifier — on attend la confirmation
+            $action = $this->storeAction(
+                round:        $round,
+                player:       $player,
+                type:         ActionType::Accusation,
+                content:      $characterName,
+                isValid:      true,
+                targetPlayer: $targetPlayer,
+            );
 
-        // Stocke le nom du personnage accusé
-        $action->update(['character_name' => $characterName]);
-        $action->load(['player', 'targetPlayer', 'round']);
+            // Stocke le nom du personnage accusé
+            $action->update(['character_name' => $characterName]);
+
+            return $action->load(['player', 'targetPlayer', 'round']);
+        });
 
         broadcast(new ActionPlayed($action));
 
@@ -95,16 +112,30 @@ class ActionService
     // -------------------------------------------------------------------------
 
     /**
+     * Verrouille le round le temps de valider et d'enregistrer un coup : deux
+     * envois simultanés (double tap, requête rejouée sur un réseau lent)
+     * passent l'un après l'autre, et le second voit que le joueur a déjà joué.
+     */
+    private function lockRound(Round $round): Round
+    {
+        return Round::whereKey($round->id)->lockForUpdate()->firstOrFail();
+    }
+
+    /**
      * Vérifie que c'est bien le tour de ce joueur
      */
     private function validateTurn(Round $round, Player $player): void
     {
+        if ($round->game->status !== GameStatus::InProgress) {
+            throw new GameRuleException("La partie est terminée.");
+        }
+
         if ($round->current_player_id !== $player->id) {
-            throw new Exception("Ce n'est pas ton tour de jouer.");
+            throw new GameRuleException("Ce n'est pas ton tour de jouer.");
         }
 
         if ($round->is_finished) {
-            throw new Exception("Ce round est déjà terminé.");
+            throw new GameRuleException("Ce round est déjà terminé.");
         }
     }
 
@@ -119,7 +150,33 @@ class ActionService
             ->exists();
 
         if ($alreadyPlayed) {
-            throw new Exception("Tu as déjà joué ce round.");
+            throw new GameRuleException("Tu as déjà joué ce round.");
+        }
+    }
+
+    /**
+     * La cible doit être un autre joueur de la partie, encore en jeu. Le
+     * front ne propose déjà que ceux-là, mais un téléphone qui a raté un
+     * event (écran verrouillé) peut afficher une liste périmée : accuser un
+     * éliminé rapporterait une élimination gratuite.
+     */
+    private function validateTarget(Game $game, Player $player, Player $target): void
+    {
+        if ($target->id === $player->id) {
+            throw new GameRuleException('Tu ne peux pas te cibler toi-même.');
+        }
+
+        $binome = $game->binomes()
+            ->whereHas('players', fn ($q) => $q->where('player_id', $target->id))
+            ->with('players')
+            ->first();
+
+        if (! $binome) {
+            throw new GameRuleException("{$target->pseudo} ne joue pas dans cette partie.");
+        }
+
+        if ($binome->players->firstWhere('id', $target->id)->pivot->is_eliminated) {
+            throw new GameRuleException("{$target->pseudo} est déjà éliminé.");
         }
     }
 
@@ -174,17 +231,19 @@ class ActionService
     }
 
     /**
-     * Avance au joueur suivant ou crée un nouveau round
+     * Avance au joueur suivant ou crée un nouveau round. `$fromPlayerId` :
+     * le joueur dont le tour s'achève (voir RoundService::nextTurn).
+     * Rien ne bouge si la partie vient de se terminer : pas de round.started
+     * diffusé après game.ended.
      */
-    private function advanceRound(Round $round, Game $game): void
+    private function advanceRound(Round $round, Game $game, ?int $fromPlayerId = null): void
     {
-        $roundFinished = $this->roundService->nextTurn($round);
+        if ($game->refresh()->status !== GameStatus::InProgress) {
+            return;
+        }
 
-        if ($roundFinished) {
-            $game->refresh();
-            if ($game->status === \App\Enums\GameStatus::InProgress) {
-                $this->roundService->createRound($game, $round->number + 1);
-            }
+        if ($this->roundService->nextTurn($round, $fromPlayerId)) {
+            $this->roundService->createRound($game, $round->number + 1);
         }
     }
 
@@ -193,7 +252,11 @@ class ActionService
      */
     private function endGame(Game $game, array $winners): void
     {
-        $game->update(['status' => \App\Enums\GameStatus::Finished]);
+        $game->update(['status' => GameStatus::Finished]);
+
+        // Le round en cours s'arrête avec la partie (sinon GET /games
+        // exposerait encore un tour à jouer).
+        $game->rounds()->where('is_finished', false)->update(['is_finished' => true]);
 
         $winnerIds = collect($winners)->pluck('id')->toArray();
 
@@ -205,21 +268,183 @@ class ActionService
     public function playAnswer(Action $action, Player $player, string $answer): Action
     {
         if ($action->target_player_id !== $player->id) {
-            throw new RuntimeException("Tu n'es pas le joueur ciblé par cette question.");
+            throw new GameRuleException("Tu n'es pas le joueur ciblé par cette question.");
         }
 
-        $this->recordAnswer($action, $answer);
+        if ($action->type !== ActionType::Question) {
+            throw new GameRuleException("Cette action n'est pas une question.");
+        }
 
         $round = $action->round;
-        $this->advanceRound($round, $round->game);
+
+        // « Je ne sais pas » : le tour attend que le questionneur tire une carte
+        // parmi les mots interdits de la cible (s'il en a).
+        $cardCount = $answer === 'dont_know'
+            ? count($player->getCharacterInGame($round->game)?->forbidden_words ?? [])
+            : 0;
+
+        $this->recordAnswer($action, $answer, $cardCount > 0 ? [
+            'card_draw_status'   => 'pending',
+            'card_count'         => $cardCount,
+            'card_draw_deadline' => now()->addSeconds(self::CARD_DRAW_SECONDS),
+        ] : []);
+
+        if ($cardCount > 0) {
+            ExpireCardDraw::dispatch($action->id)->delay($action->card_draw_deadline);
+
+            return $action;
+        }
+
+        $this->advanceRound($round, $round->game, $action->player_id);
 
         return $action;
+    }
+
+    // -------------------------------------------------------------------------
+    // TIRAGE DE CARTE (après un « Je ne sais pas »)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Le questionneur retourne une carte face cachée : il découvre un mot
+     * interdit de la cible, tiré au hasard (le paquet est complet à chaque
+     * tirage, un mot peut retomber). Le mot n'est renvoyé QU'À lui, dans la
+     * réponse HTTP ; les autres apprennent seulement qu'une carte a été tirée.
+     */
+    public function drawCard(Action $action, Player $player, int $card): string
+    {
+        $this->assertCardDrawOwner($action, $player);
+
+        if ($action->card_draw_status !== 'pending') {
+            throw new GameRuleException('Tu as déjà tiré ta carte.');
+        }
+
+        if ($card < 0 || $card >= $action->card_count) {
+            throw new GameRuleException('Cette carte n\'existe pas.');
+        }
+
+        if ($action->card_draw_deadline->isPast()) {
+            $this->expireCardDraw($action->id);
+
+            throw new GameRuleException('Temps écoulé : la carte est perdue.');
+        }
+
+        $game  = $action->round->game;
+        $words = $action->targetPlayer->getCharacterInGame($game)?->forbidden_words ?? [];
+
+        if (! $words) {
+            throw new GameRuleException("{$action->targetPlayer->pseudo} n'a aucun mot interdit.");
+        }
+
+        $word = (string) Arr::random($words);
+
+        $updated = Action::whereKey($action->id)
+            ->where('card_draw_status', 'pending')
+            ->update(['card_draw_status' => 'drawn', 'drawn_word' => $word]);
+
+        if ($updated === 0) {
+            throw new GameRuleException('Tu as déjà tiré ta carte.');
+        }
+
+        $action->refresh()->load(['player', 'targetPlayer', 'round']);
+
+        broadcast(new CardDrawn($action, $card));
+
+        return $word;
+    }
+
+    /**
+     * Le questionneur montre (ou garde pour lui) le mot tiré, puis le tour
+     * avance. Montré : envoyé à tous les joueurs et spectateurs, SAUF la cible.
+     */
+    public function decideCardDraw(Action $action, Player $player, bool $share): void
+    {
+        $this->assertCardDrawOwner($action, $player);
+
+        if ($action->card_draw_status === 'pending') {
+            throw new GameRuleException("Tire d'abord une carte.");
+        }
+
+        $updated = Action::whereKey($action->id)
+            ->where('card_draw_status', 'drawn')
+            ->update(['card_draw_status' => $share ? 'shared' : 'kept']);
+
+        if ($updated === 0) {
+            throw new GameRuleException('Ce tirage est déjà terminé.');
+        }
+
+        $action->refresh()->load(['player', 'targetPlayer', 'round.game.room.players', 'round.game.binomes.players']);
+        $game = $action->round->game;
+
+        if ($share) {
+            $recipientIds = $game->binomes->flatMap(fn ($binome) => $binome->players)
+                ->merge($game->room?->players ?? [])
+                ->pluck('id')
+                ->unique()
+                ->reject(fn ($id) => in_array($id, [$action->player_id, $action->target_player_id], true))
+                ->values()
+                ->all();
+
+            if ($recipientIds) {
+                broadcast(new CardWordShared($action, $recipientIds));
+            }
+        }
+
+        $this->finishCardDraw($action);
+    }
+
+    /**
+     * Délai dépassé (ExpireCardDraw, ou l'hôte qui passe le tour d'un joueur
+     * déconnecté) : la carte est perdue, le tour avance. Sans effet si le
+     * tirage est déjà clos.
+     */
+    public function expireCardDraw(int $actionId): void
+    {
+        $updated = Action::whereKey($actionId)
+            ->whereIn('card_draw_status', ['pending', 'drawn'])
+            ->update(['card_draw_status' => 'expired']);
+
+        if ($updated === 0) {
+            return;
+        }
+
+        $this->finishCardDraw(Action::with(['player', 'targetPlayer', 'round'])->findOrFail($actionId));
+    }
+
+    private function finishCardDraw(Action $action): void
+    {
+        broadcast(new CardDrawFinished($action));
+
+        $round = $action->round;
+        $this->advanceRound($round, $round->game, $action->player_id);
+    }
+
+    private function assertCardDrawOwner(Action $action, Player $player): void
+    {
+        if ($action->player_id !== $player->id) {
+            throw new GameRuleException("Ce tirage revient à {$action->player->pseudo}.");
+        }
+
+        if (! $action->card_draw_status) {
+            throw new GameRuleException("Aucun tirage n'est prévu pour cette question.");
+        }
+
+        if (in_array($action->card_draw_status, ['shared', 'kept', 'expired'], true)) {
+            throw new GameRuleException('Ce tirage est déjà terminé.');
+        }
+
+        if ($action->round->game->status !== GameStatus::InProgress) {
+            throw new GameRuleException('La partie est terminée.');
+        }
     }
 
     public function confirmAccusation(Action $action, Player $player, bool $confirmed): Action
     {
         if ($action->target_player_id !== $player->id) {
-            throw new RuntimeException("Tu n'es pas le joueur accusé.");
+            throw new GameRuleException("Tu n'es pas le joueur accusé.");
+        }
+
+        if ($action->type !== ActionType::Accusation) {
+            throw new GameRuleException("Cette action n'est pas une accusation.");
         }
 
         $this->resolveAccusation($action, $confirmed);
@@ -236,6 +461,7 @@ class ActionService
      * ligne. Seul l'hôte peut la débloquer, et seulement si le serveur
      * confirme via Reverb que ce joueur est bien déconnecté :
      *  - son tour de jouer             → le tour passe, sans action enregistrée ;
+     *  - son tirage de carte           → la carte est perdue, le tour avance ;
      *  - sa confirmation d'accusation  → le serveur tranche en comparant le nom
      *    proposé à son vrai personnage (sinon un accusé n'aurait qu'à se
      *    déconnecter pour s'en tirer).
@@ -251,17 +477,17 @@ class ActionService
         $round = $game->currentRound()->first();
 
         if (! $round) {
-            throw new RuntimeException('Aucun tour en cours.');
+            throw new GameRuleException('Aucun tour en cours.');
         }
 
         [$blocker, $reason, $pending] = $this->findBlocker($round);
 
         if ($reason === 'answer') {
-            throw new RuntimeException("{$blocker->pseudo} doit répondre à la question : attends son retour, ou exclus-le de la partie.");
+            throw new GameRuleException("{$blocker->pseudo} doit répondre à la question : attends son retour, ou exclus-le de la partie.");
         }
 
         if ($blocker->id === $host->id) {
-            throw new RuntimeException("C'est à toi de jouer : tu ne peux pas passer ton propre tour.");
+            throw new GameRuleException("C'est à toi de jouer : tu ne peux pas passer ton propre tour.");
         }
 
         $this->assertOffline($game, $blocker);
@@ -270,11 +496,53 @@ class ActionService
 
         if ($reason === 'accusation') {
             $this->resolveAccusation($pending, $this->accusationMatches($game, $pending));
+        } elseif ($reason === 'draw') {
+            $this->expireCardDraw($pending->id);
         } else {
             $this->advanceRound($round, $game);
         }
 
         return ['reason' => $reason, 'player' => $blocker];
+    }
+
+    /**
+     * L'hôte corrige une réponse oui / non déjà donnée (le joueur s'est ravisé
+     * à voix haute). Seul le contenu de la réponse change : le tour n'est pas
+     * rejoué. « Je ne sais pas » est exclu, il a déclenché un tirage de carte.
+     */
+    public function correctAnswer(Game $game, Player $host, Action $action, string $answer): Action
+    {
+        $this->assertHostOfRunningGame($game, $host, "Seul l'hôte peut corriger une réponse.");
+
+        if ($action->round?->game_id !== $game->id) {
+            throw new GameRuleException("Cette question n'appartient pas à la partie.");
+        }
+
+        if ($action->type !== ActionType::Question || ! $action->is_valid) {
+            throw new GameRuleException("Seule une question valide peut être corrigée.");
+        }
+
+        if (! in_array($action->answer, ['yes', 'no'], true) || ! in_array($answer, ['yes', 'no'], true)) {
+            throw new GameRuleException('Seules les réponses oui / non peuvent être corrigées.');
+        }
+
+        $previous = $action->answer;
+
+        if ($previous === $answer) {
+            return $action;
+        }
+
+        // On garde la réponse d'ORIGINE du joueur, même après plusieurs
+        // corrections ; revenir à celle-ci efface la trace.
+        $original = $action->answer_corrected_from ?? $previous;
+        $action->update($original === $answer
+            ? ['answer' => $answer, 'answer_corrected_from' => null, 'answer_corrected_at' => null]
+            : ['answer' => $answer, 'answer_corrected_from' => $original, 'answer_corrected_at' => now()]);
+        $action->load(['targetPlayer', 'round']);
+
+        broadcast(new AnswerCorrected($action, $previous, $host));
+
+        return $action;
     }
 
     /**
@@ -293,18 +561,18 @@ class ActionService
         $this->assertHostOfRunningGame($game, $host);
 
         if ($target->id === $host->id) {
-            throw new RuntimeException('Tu ne peux pas t\'exclure toi-même.');
+            throw new GameRuleException('Tu ne peux pas t\'exclure toi-même.');
         }
 
         if (! $game->hasPlayer($target->id)) {
-            throw new RuntimeException("{$target->pseudo} ne joue pas dans cette partie.");
+            throw new GameRuleException("{$target->pseudo} ne joue pas dans cette partie.");
         }
 
         $binome   = $this->binomeService->getBinomeOfPlayer($game, $target);
         $excluded = $binome->players->firstWhere('id', $target->id);
 
         if ($excluded->pivot->is_eliminated) {
-            throw new RuntimeException("{$target->pseudo} est déjà éliminé.");
+            throw new GameRuleException("{$target->pseudo} est déjà éliminé.");
         }
 
         $this->assertOffline($game, $target);
@@ -361,18 +629,22 @@ class ActionService
         });
     }
 
-    private function assertHostOfRunningGame(Game $game, Player $player): void
+    private function assertHostOfRunningGame(
+        Game $game,
+        Player $player,
+        string $notHostMessage = "Seul l'hôte peut décider pour un joueur déconnecté.",
+    ): void
     {
         if ($game->status !== GameStatus::InProgress) {
-            throw new RuntimeException("La partie n'est pas en cours.");
+            throw new GameRuleException("La partie n'est pas en cours.");
         }
 
         if ($game->isVotingCharacters()) {
-            throw new RuntimeException('Les joueurs choisissent encore leurs personnages.');
+            throw new GameRuleException('Les joueurs choisissent encore leurs personnages.');
         }
 
         if ($game->room?->created_by !== $player->id) {
-            throw new RuntimeException("Seul l'hôte peut décider pour un joueur déconnecté.");
+            throw new GameRuleException($notHostMessage);
         }
     }
 
@@ -385,7 +657,7 @@ class ActionService
         $online = $this->presenceService->onlinePlayerIds("game.{$game->id}");
 
         if ($online !== null && in_array($player->id, $online, true)) {
-            throw new RuntimeException("{$player->pseudo} est de nouveau connecté : laisse-lui le temps de jouer.");
+            throw new GameRuleException("{$player->pseudo} est de nouveau connecté : laisse-lui le temps de jouer.");
         }
     }
 
@@ -399,9 +671,21 @@ class ActionService
     {
         $pending = $this->pendingActionOf($round);
 
+        // Tirage de carte en cours : c'est le questionneur qu'on attend
+        $draw = $pending ? null : $round->actions()
+            ->where('player_id', $round->current_player_id)
+            ->whereIn('card_draw_status', ['pending', 'drawn'])
+            ->with('player')
+            ->latest('id')
+            ->first();
+
+        if ($draw) {
+            return [$draw->player, 'draw', $draw];
+        }
+
         if (! $pending) {
             if ($round->actions()->where('player_id', $round->current_player_id)->exists()) {
-                throw new RuntimeException("Personne ne bloque la partie pour l'instant.");
+                throw new GameRuleException("Personne ne bloque la partie pour l'instant.");
             }
 
             return [$round->currentPlayer, 'turn', null];
@@ -455,14 +739,14 @@ class ActionService
      * cible répond au moment même où un autre joueur passe son tour, un seul
      * des deux l'emporte et le round n'avance qu'une fois.
      */
-    private function recordAnswer(Action $action, string $answer): void
+    private function recordAnswer(Action $action, string $answer, array $cardDraw = []): void
     {
         $updated = Action::whereKey($action->id)
             ->whereNull('answer')
-            ->update(['answer' => $answer]);
+            ->update(['answer' => $answer] + $cardDraw);
 
         if ($updated === 0) {
-            throw new RuntimeException('Cette question a déjà reçu une réponse.');
+            throw new GameRuleException('Cette question a déjà reçu une réponse.');
         }
 
         $action->refresh()->load(['player', 'targetPlayer', 'round']);
@@ -484,7 +768,7 @@ class ActionService
             ]);
 
         if ($updated === 0) {
-            throw new RuntimeException('Cette accusation a déjà été confirmée.');
+            throw new GameRuleException('Cette accusation a déjà été confirmée.');
         }
 
         $action->refresh()->load(['player', 'targetPlayer', 'round']);
@@ -499,6 +783,6 @@ class ActionService
         }
 
         // Dans tous les cas on avance le round après confirmation
-        $this->advanceRound($round, $game);
+        $this->advanceRound($round, $game, $action->player_id);
     }
 }

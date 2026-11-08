@@ -32,4 +32,4 @@ frontend/public/lan-url.json.tmp.*
 # PID du watcher réseau lancé par start.sh
 .lan-watch.pid
 
-CLAUDE.MD
+CLAUDE.MDbackups/

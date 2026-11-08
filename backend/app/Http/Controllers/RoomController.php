@@ -8,9 +8,11 @@ use App\Http\Requests\StoreRoomRequest;
 use App\Models\Player;
 use App\Models\PlayerAvatar;
 use App\Models\Room;
+use App\Services\PresenceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class RoomController extends Controller
@@ -19,8 +21,12 @@ class RoomController extends Controller
      * POST /rooms
      * Crée un nouveau salon
      */
-    public function store(StoreRoomRequest $request): JsonResponse
+    public function store(StoreRoomRequest $request, PresenceService $presence): JsonResponse
     {
+        if ($conflict = $this->pseudoInUse($request->validated('pseudo'), $presence)) {
+            return $conflict;
+        }
+
         $player = Player::firstOrCreate(
             ['pseudo' => $request->validated('pseudo')]
         );
@@ -28,7 +34,7 @@ class RoomController extends Controller
         $room = Room::create([
             'code' => $this->generateUniqueCode(),
             'is_private' => $request->validated('is_private', false),
-            'max_players' => $request->validated('max_players', 6),
+            'max_players' => $request->validated('max_players', 12),
             'created_by' => $player->id,
         ]);
 
@@ -56,7 +62,7 @@ class RoomController extends Controller
      * POST /rooms/join
      * Rejoindre un salon avec un code
      */
-    public function join(JoinRoomRequest $request): JsonResponse
+    public function join(JoinRoomRequest $request, PresenceService $presence): JsonResponse
     {
         $room = Room::where('code', $request->validated('code'))->firstOrFail();
 
@@ -70,6 +76,10 @@ class RoomController extends Controller
             return response()->json([
                 'message' => 'Ce salon est complet.',
             ], 409);
+        }
+
+        if ($conflict = $this->pseudoInUse($request->validated('pseudo'), $presence)) {
+            return $conflict;
         }
 
         $player = Player::firstOrCreate(
@@ -99,6 +109,8 @@ class RoomController extends Controller
                 'game_mode' => $room->game_mode,
                 'cosmos_id' => $room->cosmos_id,
                 'cosmos_name' => $room->cosmos?->name,
+                'reveal_to_eliminated' => (bool) $room->reveal_to_eliminated,
+                'best_question_vote' => (bool) $room->best_question_vote,
                 // Partie déjà lancée : le nouveau venu n'a pas de personnage,
                 // il peut la suivre en spectateur (le channel game.{id} accepte
                 // les membres du salon).
@@ -167,6 +179,8 @@ class RoomController extends Controller
             'player_id' => ['required', 'integer', 'exists:players,id'],
             'game_mode' => ['required', 'string', 'in:'.implode(',', array_column(GameMode::cases(), 'value'))],
             'cosmos_id' => ['nullable', 'required_if:game_mode,cosmos', 'integer', 'exists:cosmos,id'],
+            'reveal_to_eliminated' => ['sometimes', 'boolean'],
+            'best_question_vote' => ['sometimes', 'boolean'],
         ]);
 
         if ($room->created_by !== (int) $validated['player_id']) {
@@ -180,6 +194,8 @@ class RoomController extends Controller
             'cosmos_id' => $validated['game_mode'] === GameMode::Cosmos->value
                 ? $validated['cosmos_id']
                 : null,
+            'reveal_to_eliminated' => $validated['reveal_to_eliminated'] ?? $room->reveal_to_eliminated,
+            'best_question_vote' => $validated['best_question_vote'] ?? $room->best_question_vote,
         ]);
 
         $room->load('cosmos');
@@ -191,6 +207,8 @@ class RoomController extends Controller
             'game_mode' => $room->game_mode,
             'cosmos_id' => $room->cosmos_id,
             'cosmos_name' => $room->cosmos?->name,
+            'reveal_to_eliminated' => $room->reveal_to_eliminated,
+            'best_question_vote' => $room->best_question_vote,
         ]);
     }
 
@@ -211,11 +229,33 @@ class RoomController extends Controller
                 'game_mode' => $room->game_mode,
                 'cosmos_id' => $room->cosmos_id,
                 'cosmos_name' => $room->cosmos?->name,
+                'reveal_to_eliminated' => (bool) $room->reveal_to_eliminated,
+                'best_question_vote' => (bool) $room->best_question_vote,
                 'created_by' => $room->created_by,
                 'current_game_id' => $room->currentGame()->value('id'),
                 'players' => $room->playersPayload(),
             ],
         ]);
+    }
+
+    /**
+     * Un pseudo = un joueur (firstOrCreate) : le reprendre sur un second appareil
+     * pendant qu'il est connecté ailleurs mélangerait les deux sessions. On
+     * refuse avec le salon concerné pour que l'utilisateur comprenne pourquoi.
+     */
+    private function pseudoInUse(string $pseudo, PresenceService $presence): ?JsonResponse
+    {
+        $player = Player::where('pseudo', $pseudo)->first();
+        $room = $player ? $presence->connectedRoomFor($player) : null;
+
+        if (! $room) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => "Le pseudo « {$player->pseudo} » est déjà connecté sur un autre appareil "
+                ."(salon {$room->code}). Choisis un autre pseudo, ou quitte ce salon sur l'autre appareil.",
+        ], 409);
     }
 
     private function generateUniqueCode(): string
@@ -241,25 +281,33 @@ class RoomController extends Controller
             ], 403);
         }
 
-        $room->players()->detach($playerId);
+        // Un joueur de la partie en cours ne peut pas la quitter : il emporterait
+        // son personnage (binome vidé, vote bloqué, fin de partie faussée).
+        // S'il est parti pour de bon, l'hôte l'exclut depuis la partie.
+        if ($room->currentGame()->first()?->hasPlayer((int) $playerId)) {
+            return response()->json([
+                'message' => 'Une partie est en cours : tu ne peux pas quitter le salon avant la fin. Si tu dois partir, l\'hôte peut t\'exclure.',
+            ], 409);
+        }
 
-        Player::find($playerId)?->delete();
+        $roomDeleted = $room->players()->count() === 1;
+        $room->removePlayer((int) $playerId);
 
-        if ($room->players()->count() === 0) {
-            $room->delete();
+        // Le joueur n'est supprimé que s'il n'a jamais joué : ses parties
+        // passées (récap, journal d'actions) pointent encore sur lui. Le pseudo
+        // reste réservé à cette ligne, que firstOrCreate() réutilisera.
+        // Après removePlayer() : l'hôte a déjà été transféré (cascade created_by).
+        $hasPlayed = DB::table('binome_player')->where('player_id', $playerId)->exists()
+            || DB::table('actions')->where('player_id', $playerId)->exists();
 
+        if (! $hasPlayed) {
+            Player::find($playerId)?->delete();
+        }
+
+        if ($roomDeleted) {
             return response()->json([
                 'message' => 'Salon supprimé car vide.',
             ]);
-        }
-
-        if ($room->created_by === $playerId) {
-            $newHost = $room->players()->first();
-            $room->update(['created_by' => $newHost->id]);
-
-            broadcast(new \App\Events\PlayerLeft($room->load('players'), $newHost));
-        } else {
-            broadcast(new \App\Events\PlayerLeft($room->load('players'), null));
         }
 
         return response()->json([

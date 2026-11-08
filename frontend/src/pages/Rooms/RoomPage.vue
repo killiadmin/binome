@@ -3,6 +3,7 @@ import {ref, onMounted, onUnmounted, computed} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {roomService} from '../../services/roomService'
 import {characterService} from '../../services/characterService'
+import {gameService} from '../../services/gameService'
 import {useReverb} from '../../sockets/useReverb'
 import {BButton, BCard, BContainer, BRow, BCol, BModal, BFormInput, BAlert, BSpinner, BBadge} from 'bootstrap-vue-next'
 import {resetEcho} from "../../sockets/useReverb.js";
@@ -52,6 +53,9 @@ function setAvatar(id, url) {
 const gameMode = ref('random')          // 'random' | 'cosmos'
 const cosmosId = ref(null)
 const cosmosOptions = ref([])            // [{ id, name, playable_universe_count }]
+// Options pour les joueurs éliminés (actives par défaut côté serveur)
+const revealToEliminated = ref(true)     // vue omnisciente
+const bestQuestionVote = ref(true)       // vote « meilleure question du round »
 const savingSettings = ref(false)
 
 // Un joueur surnuméraire forme quand même une « équipe » : il consomme son
@@ -101,6 +105,8 @@ async function handleUpdateSettings() {
     await roomService.updateSettings(roomId.value, playerId.value, {
       gameMode: gameMode.value,
       cosmosId: gameMode.value === 'cosmos' ? cosmosId.value : null,
+      revealToEliminated: revealToEliminated.value,
+      bestQuestionVote: bestQuestionVote.value,
     })
   } catch (e) {
     error.value = e.response?.data?.message || 'Erreur lors de la mise à jour du mode de jeu.'
@@ -134,6 +140,15 @@ async function restoreSession() {
     const session = JSON.parse(raw)
 
     if (session.gameId) {
+      // La session n'est nettoyée que via le bouton du tableau des scores : si
+      // le joueur a quitté autrement (navbar, retour, onglet fermé), le gameId
+      // d'une partie terminée traîne encore. On vérifie avant de proposer.
+      const game = await gameService.show(session.gameId)
+      if (game.status === 'finished') {
+        clearSession()
+        return
+      }
+
       pendingGameId.value = session.gameId
       playerId.value  = session.playerId
       gameCode.value  = session.gameCode
@@ -151,6 +166,8 @@ async function restoreSession() {
     players.value  = res.data.room.players
     gameMode.value = res.data.room.game_mode ?? 'random'
     cosmosId.value = res.data.room.cosmos_id ?? null
+    revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
+    bestQuestionVote.value = res.data.room.best_question_vote ?? true
     currentGameId.value = res.data.room.current_game_id ?? null
 
     resetEcho()
@@ -252,6 +269,8 @@ function initLobby(id) {
     onRoomSettingsUpdated: (data) => {
       gameMode.value = data.game_mode ?? 'random'
       cosmosId.value = data.cosmos_id ?? null
+      revealToEliminated.value = data.reveal_to_eliminated ?? true
+      bestQuestionVote.value = data.best_question_vote ?? true
     },
     onGameStarted: (data) => {
       console.log('[GameStarted] data reçu :', data)
@@ -264,6 +283,13 @@ function initLobby(id) {
       error.value = 'Connexion WebSocket perdue. Recharge la page.'
     },
     onPlayerLeft: (data) => {
+      // Retiré par un administrateur (onglet Joueurs) : on quitte le lobby.
+      if (!data.players.some(p => p.id === playerId.value)) {
+        resetLocalRoom()
+        error.value = 'Tu as été retiré du salon par un administrateur.'
+        return
+      }
+
       players.value = data.players
 
       if (data.new_host_id) {
@@ -279,7 +305,10 @@ function initLobby(id) {
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 
 const handleCreateGame = async () => {
-  if (!playerName.value.trim()) return
+  if (!playerName.value.trim()) {
+    error.value = 'Entre un pseudo pour continuer.'
+    return
+  }
   error.value = null
 
   try {
@@ -290,6 +319,10 @@ const handleCreateGame = async () => {
     playerId.value = res.data.player.id
     hostId.value = res.data.player.id
     isHost.value = true
+    gameMode.value = 'random'
+    cosmosId.value = null
+    revealToEliminated.value = true
+    bestQuestionVote.value = true
     players.value = [{
       id: res.data.player.id,
       pseudo: res.data.player.pseudo,
@@ -308,7 +341,10 @@ const handleCreateGame = async () => {
 }
 
 const handleJoinGame = async () => {
-  if (!playerName.value.trim() || !codeToJoin.value.trim()) return
+  if (!playerName.value.trim() || !codeToJoin.value.trim()) {
+    error.value = playerName.value.trim() ? 'Entre le code du salon.' : 'Entre un pseudo pour continuer.'
+    return
+  }
   error.value = null
 
   try {
@@ -320,6 +356,8 @@ const handleJoinGame = async () => {
     players.value = res.data.room.players
     gameMode.value = res.data.room.game_mode ?? 'random'
     cosmosId.value = res.data.room.cosmos_id ?? null
+    revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
+    bestQuestionVote.value = res.data.room.best_question_vote ?? true
     currentGameId.value = res.data.room.current_game_id ?? null
     isHost.value = false
 
@@ -383,22 +421,33 @@ const handleLeaveRoom = async () => {
   try {
     await roomService.leave(roomId.value, playerId.value)
   } catch (e) {
+    // 409 : le joueur est dans la partie en cours, il reste dans le salon
+    if (e.response?.status === 409) {
+      error.value = e.response.data?.message || 'Impossible de quitter le salon pendant la partie.'
+      showLeaveModal.value = false
+      return
+    }
     console.error('Erreur leave:', e)
-  } finally {
-    const {leaveRoom} = useReverb(playerId.value)
-    leaveRoom(roomId.value)
-    resetEcho()
-    clearSession()
-    roomId.value = null
-    gameCode.value = null
-    playerId.value = null
-    currentGameId.value = null
-    showQr.value = false
-    players.value = []
-    isHost.value = false
-    hostId.value = null
-    showLeaveModal.value = false
   }
+
+  resetLocalRoom()
+}
+
+// Retour à l'écran d'accueil du hall : départ volontaire ou retrait par un admin.
+function resetLocalRoom() {
+  const {leaveRoom} = useReverb(playerId.value)
+  leaveRoom(roomId.value)
+  resetEcho()
+  clearSession()
+  roomId.value = null
+  gameCode.value = null
+  playerId.value = null
+  currentGameId.value = null
+  showQr.value = false
+  players.value = []
+  isHost.value = false
+  hostId.value = null
+  showLeaveModal.value = false
 }
 
 const isCurrentPlayerReady = computed(() => {
@@ -434,17 +483,17 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
         <p class="arcade-subtitle">Rassemble ton binôme et lance la partie !</p>
       </div>
 
-      <div v-if="error" class="arcade-alert">
+      <div v-if="error && !showCreateModal && !showJoinModal" class="arcade-alert">
         <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
       </div>
 
       <!-- Boutons principaux : masqués quand un salon est actif, pour libérer l'écran -->
       <div v-if="!gameCode" class="cabinet-buttons">
-        <button class="cabinet-btn stacked" type="button" @click="showCreateModal = true">
+        <button class="cabinet-btn stacked" type="button" @click="error = null; showCreateModal = true">
           <span class="cabinet-btn__icon"><i class="fa-solid fa-plus"></i></span>
           <span class="cabinet-btn__label">Créer une partie</span>
         </button>
-        <button class="cabinet-btn stacked" type="button" @click="showJoinModal = true">
+        <button class="cabinet-btn stacked" type="button" @click="error = null; showJoinModal = true">
           <span class="cabinet-btn__icon"><i class="fa-solid fa-right-to-bracket"></i></span>
           <span class="cabinet-btn__label">Rejoindre une partie</span>
         </button>
@@ -611,6 +660,35 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                     ? `Cosmos imposé${selectedCosmos ? ' — ' + selectedCosmos.name : ''}`
                     : 'Univers aléatoires' }}
               </p>
+
+              <!-- Joueurs éliminés : de quoi les occuper jusqu'à la fin -->
+              <h5 class="roster__title eliminated-options__title">Joueurs éliminés</h5>
+              <div v-if="isHost" class="mode-toggle eliminated-options">
+                <button
+                    type="button"
+                    class="mode-toggle__btn"
+                    :class="{ 'is-active': revealToEliminated }"
+                    :aria-pressed="revealToEliminated"
+                    @click="revealToEliminated = !revealToEliminated; handleUpdateSettings()"
+                >
+                  <i class="fa-solid fa-eye"></i> Vue omnisciente
+                </button>
+                <button
+                    type="button"
+                    class="mode-toggle__btn"
+                    :class="{ 'is-active': bestQuestionVote }"
+                    :aria-pressed="bestQuestionVote"
+                    @click="bestQuestionVote = !bestQuestionVote; handleUpdateSettings()"
+                >
+                  <i class="fa-solid fa-star"></i> Vote meilleure question
+                </button>
+              </div>
+              <p class="mode-readonly eliminated-options__hint">
+                <template v-if="revealToEliminated">👁️ Un éliminé voit tous les personnages.</template>
+                <template v-if="revealToEliminated && bestQuestionVote"><br></template>
+                <template v-if="bestQuestionVote">⭐ Les éliminés votent pour la meilleure question de chaque round : +1 point pour son auteur.</template>
+                <template v-if="!revealToEliminated && !bestQuestionVote">Les éliminés regardent la fin de la partie.</template>
+              </p>
             </div>
 
             <div class="btn-actions-row mb-3">
@@ -694,6 +772,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
       <!-- Modal créer -->
       <BModal v-model="showCreateModal" title="Créer une partie" no-footer class="arcade-modal">
+        <!-- L'alerte de la page est masquée par la modale : on la répète ici -->
+        <div v-if="error" class="arcade-alert mb-3" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+        </div>
         <div class="mb-3">
           <label class="form-label">Votre nom :</label>
           <BFormInput
@@ -710,6 +792,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
       <!-- Modal rejoindre -->
       <BModal v-model="showJoinModal" title="Rejoindre une partie" no-footer class="arcade-modal">
+        <!-- L'alerte de la page est masquée par la modale : on la répète ici -->
+        <div v-if="error" class="arcade-alert mb-3" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+        </div>
         <div class="mb-3">
           <label class="form-label">Votre nom :</label>
           <BFormInput
@@ -974,6 +1060,14 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 .mode-toggle__btn.is-active {
   background: var(--arcade-blue-grey-dark, #37474f);
   color: #fff;
+}
+
+.eliminated-options__title {
+  margin-top: 1rem;
+}
+
+.eliminated-options {
+  margin-bottom: 0.4rem;
 }
 
 .mode-cosmos__select {

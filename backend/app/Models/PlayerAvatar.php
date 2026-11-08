@@ -20,7 +20,7 @@ class PlayerAvatar extends Model
 
     public function url(): string
     {
-        return "/api/avatars/{$this->id}?v={$this->updated_at?->timestamp}";
+        return config('app.public_prefix')."/api/avatars/{$this->id}?v={$this->updated_at?->timestamp}";
     }
 
     /**

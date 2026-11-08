@@ -8,6 +8,14 @@ use Illuminate\Support\Collection;
 
 class ScoreService
 {
+    /** Bonus de victoire : équipe intacte (binome complet ou orphelin) / rescapé seul. */
+    public const WIN_BONUS_INTACT = 5;
+    public const WIN_BONUS_SURVIVOR = 3;
+
+    public function __construct(
+        private readonly QuestionVoteService $questionVoteService,
+    ) {}
+
     /**
      * Calcule et persiste les stats de fin de partie
      * Retourne la collection des GameStat créées
@@ -22,14 +30,17 @@ class ScoreService
         $totalRounds = $game->rounds->count();
         $stats       = collect();
 
+        // Rounds remportés au vote « meilleure question » des éliminés
+        $bestQuestions = $this->questionVoteService->bestQuestionCounts($game);
+
         foreach ($game->binomes as $binome) {
 
             // Une équipe est « intacte » si aucun de ses membres n'a été
             // éliminé. Un rescapé isolé (partenaire éliminé) peut gagner la
-            // partie, mais il ne touche pas les points de l'équipe gagnante :
-            // son binôme est brisé. L'orphelin, lui, est une équipe d'un seul
-            // joueur : tant qu'il est en vie son équipe est intacte, et il
-            // gagne donc le bonus complet s'il est le dernier en jeu.
+            // partie, mais son binôme est brisé : il touche un bonus réduit
+            // (sinon il pouvait finir à égalité avec des perdants). L'orphelin,
+            // lui, est une équipe d'un seul joueur : tant qu'il est en vie son
+            // équipe est intacte, et il gagne donc le bonus complet.
             $teamIntact = $binome->players
                 ->every(fn($p) => ! $p->pivot->is_eliminated);
 
@@ -56,16 +67,24 @@ class ScoreService
                     )
                     ->count();
 
+                $winBonus = $isWinner && ! $isEliminated
+                    ? ($teamIntact ? self::WIN_BONUS_INTACT : self::WIN_BONUS_SURVIVOR)
+                    : 0;
+
+                $playerBestQuestions = $bestQuestions[$player->id] ?? 0;
+
                 // Score — un joueur exclu par l'hôte (déconnecté) marque 0.
-                $score = $isExcluded ? 0 : $eliminations * 1
-                    + $roundsSurvived * 1
-                    + ($isWinner && !$isEliminated && $teamIntact ? 5 : 0);
+                $score = $isExcluded ? 0 : $eliminations
+                    + $roundsSurvived
+                    + $playerBestQuestions
+                    + $winBonus;
 
                 $stat = GameStat::create([
                     'game_id'            => $game->id,
                     'player_pseudo'      => $player->pseudo,
                     'character_name'     => $character?->name ?? '?',
                     'eliminations'       => $eliminations,
+                    'best_questions'     => $playerBestQuestions,
                     'rounds_survived'    => $roundsSurvived,
                     'survived_full_game' => $isWinner && !$isEliminated,
                     'score'              => $score,

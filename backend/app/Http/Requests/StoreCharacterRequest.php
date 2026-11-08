@@ -2,8 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Character;
-use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreCharacterRequest extends FormRequest
@@ -23,7 +21,12 @@ class StoreCharacterRequest extends FormRequest
             'image' => ['nullable', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:4096'],
             'forbidden_words' => ['required', 'array', 'size:3'],
             'forbidden_words.*' => ['required', 'string', 'min:1', 'max:50'],
+            // Aucune limite du nombre de personnages par niveau : la correction manuelle
+            // doit toujours passer (ex. échanger deux niveaux). Le jeu tire 2 personnages
+            // au hasard si un niveau en compte plus, et la liste signale l'anomalie.
             'level_affectation' => ['required', 'integer', 'min:1'],
+            // Modification seulement : force l'état de relecture (voir CharacterController::update).
+            'status' => ['nullable', 'in:validated,pending,rejected'],
         ];
     }
 
@@ -43,38 +46,7 @@ class StoreCharacterRequest extends FormRequest
             'level_affectation.required' => 'Le niveau d\'affectation est requis.',
             'level_affectation.integer' => 'Le niveau d\'affectation doit être un nombre entier.',
             'level_affectation.min' => 'Le niveau d\'affectation doit être supérieur ou égal à 1.',
+            'status.in' => 'Statut inconnu.',
         ];
-    }
-
-    /**
-     * Un niveau d'affectation ne peut relier que 2 personnages au sein d'un même univers
-     * (c'est ce qui forme le binome en jeu) : on bloque toute 3e assignation au même niveau.
-     */
-    public function withValidator(Validator $validator): void
-    {
-        $validator->after(function (Validator $validator) {
-            $universeId = $this->route('universe')?->id
-                ?? $this->input('universe_id')
-                ?? $this->route('character')?->universe_id;
-            $level = $this->input('level_affectation');
-
-            if (! $universeId || $level === null) {
-                return;
-            }
-
-            $query = Character::where('universe_id', $universeId)
-                ->where('level_affectation', $level);
-
-            if ($character = $this->route('character')) {
-                $query->where('id', '!=', $character->id);
-            }
-
-            if ($query->count() >= 2) {
-                $validator->errors()->add(
-                    'level_affectation',
-                    "Il y a déjà 2 personnages avec ce niveau d'affectation dans cet univers."
-                );
-            }
-        });
     }
 }

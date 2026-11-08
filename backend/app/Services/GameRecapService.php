@@ -6,6 +6,7 @@ use App\Enums\ActionType;
 use App\Models\Action;
 use App\Models\Character;
 use App\Models\Game;
+use App\Models\PlayerAvatar;
 use Illuminate\Support\Collection;
 
 /**
@@ -17,6 +18,10 @@ use Illuminate\Support\Collection;
  */
 class GameRecapService
 {
+    public function __construct(
+        private readonly QuestionVoteService $questionVoteService,
+    ) {}
+
     public function build(Game $game): array
     {
         $game->load([
@@ -34,7 +39,7 @@ class GameRecapService
             ->filter()
             ->unique();
 
-        $characters = Character::findMany($characterIds)->keyBy('id');
+        $characters = Character::withoutImage()->findMany($characterIds)->keyBy('id');
 
         // player_id → personnage, pour repérer les mots interdits prononcés.
         $characterByPlayer = $game->binomes
@@ -60,6 +65,9 @@ class GameRecapService
 
         $lastActivity = $actions->max('updated_at') ?? $game->updated_at;
 
+        // Pour la mise en avant du gagnant : photo de chaque joueur.
+        $avatarUrls = PlayerAvatar::urlsFor($game->binomes->flatMap(fn ($binome) => $binome->players));
+
         return [
             'game_id' => $game->id,
             'duration_seconds' => $game->created_at && $lastActivity
@@ -78,6 +86,7 @@ class GameRecapService
                     'player_pseudo' => $stat->player_pseudo,
                     'character_name' => $stat->character_name,
                     'eliminations' => $stat->eliminations,
+                    'best_questions' => (int) $stat->best_questions,
                     'rounds_survived' => $stat->rounds_survived,
                     'survived_full_game' => (bool) $stat->survived_full_game,
                     'score' => $stat->score,
@@ -93,6 +102,8 @@ class GameRecapService
                 'players' => $binome->players->map(fn ($player) => [
                     'pseudo' => $player->pseudo,
                     'character' => $characters->get($player->pivot->character_id)?->name,
+                    'character_image' => $characters->get($player->pivot->character_id)?->imageUrl(),
+                    'avatar_url' => $avatarUrls[$player->id] ?? null,
                     'is_eliminated' => (bool) $player->pivot->is_eliminated,
                 ])->values(),
             ])->values(),
@@ -109,6 +120,14 @@ class GameRecapService
                             && $p->pivot->eliminated_round !== null)?->pseudo,
                     ]))
                 ->values(),
+            // Vote des éliminés : question(s) gagnante(s) de chaque round
+            'best_questions' => collect($this->questionVoteService->winningQuestions($game))
+                ->map(fn ($win) => [
+                    'round' => $win['round'],
+                    'author' => $win['action']->player?->pseudo,
+                    'question' => $win['action']->content,
+                    'votes' => $win['votes'],
+                ])->values(),
             'eliminations' => $correct->map(fn (Action $a) => [
                 'round' => $a->round_number,
                 'by' => $a->player->pseudo,

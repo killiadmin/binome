@@ -220,7 +220,7 @@ const handleSubmit = async () => {
       </div>
 
       <div class="text-center mb-4">
-        <router-link to="/characters/list" class="cabinet-btn cabinet-btn--sm">
+        <router-link to="/admin/binomes" class="cabinet-btn cabinet-btn--sm">
           <i class="fa-solid fa-list"></i> Voir tous les personnages
         </router-link>
       </div>
@@ -355,7 +355,7 @@ const handleSubmit = async () => {
               placeholder="Ex : 1"
           />
           <small class="form-text text-muted">
-            Relie ce personnage à un autre personnage du même univers partageant le même niveau (2 max par niveau) : ensemble, ils formeront un binome en jeu.
+            Relie ce personnage à un autre personnage du même univers partageant le même niveau : ensemble, ils formeront un binome en jeu.
           </small>
         </div>
 

@@ -1,10 +1,12 @@
 <script setup>
-import {ref, watch, onMounted, onBeforeUnmount} from 'vue';
+import {ref, watch, nextTick, onMounted, onBeforeUnmount} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
 import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
 import {copyToClipboard} from '../../services/copyToClipboard';
 import {resolveJoinUrl} from '../../services/joinUrl';
+import {isImmersive} from '../../composables/useImmersiveMode';
+import logo96 from '../../assets/logo/binome-logo-96.webp';
 
 const isOpen = ref(false);
 const route = useRoute();
@@ -14,7 +16,9 @@ watch(() => route.fullPath, () => {
   isOpen.value = false;
 });
 
-// ─── Accès « gestion des personnages » ───────────────────────────────────────
+// ─── Accès à l'espace d'administration (pages/Admin/AdminLayout.vue) ─────────
+// Cadenas fermé : mot de passe puis redirection vers /admin. Cadenas ouvert :
+// lien direct vers /admin (le reverrouillage se fait depuis l'espace admin).
 const showUnlockModal = ref(false);
 const passwordInput = ref('');
 const unlockError = ref(null);
@@ -28,6 +32,7 @@ async function submitUnlock() {
     await charactersAccess.unlock(passwordInput.value);
     showUnlockModal.value = false;
     passwordInput.value = '';
+    router.push('/admin');
   } catch (e) {
     unlockError.value = e.response?.data?.message || 'Mot de passe incorrect.';
   } finally {
@@ -38,13 +43,6 @@ async function submitUnlock() {
 function onUnlockModalHidden() {
   unlockError.value = null;
   passwordInput.value = '';
-}
-
-function lockAccess() {
-  charactersAccess.lock();
-  if (route.meta.requiresCharactersAccess) {
-    router.push('/');
-  }
 }
 
 // ─── Partager l'URL de connexion (celle du réseau local que les autres joueurs utilisent) ──
@@ -71,6 +69,39 @@ onMounted(() => {
   window.addEventListener('online', refreshJoinUrl);
 });
 onBeforeUnmount(() => window.removeEventListener('online', refreshJoinUrl));
+
+// ─── Hauteur réelle de la navbar → --navbar-height ───────────────────────────
+// Elle varie : une ligne en mobile, deux à partir de 768px (liens sous le
+// logo), plus encore si les liens passent à la ligne. Le contenu (.app-main) est décalé de cette
+// valeur. En mobile, le menu burger ouvert recouvre la page au lieu de la
+// pousser : sa hauteur est donc retirée de la mesure. En mode plein écran
+// (navbar masquée par App.vue), elle vaut 0.
+const navRef = ref(null);
+let navResizeObserver = null;
+
+function syncNavbarHeight() {
+  const nav = navRef.value;
+  if (!nav) return;
+  if (isImmersive.value) {
+    document.documentElement.style.setProperty('--navbar-height', '0px');
+    return;
+  }
+  let height = nav.getBoundingClientRect().height;
+  const burger = nav.querySelector('.arcade-burger');
+  if (burger && getComputedStyle(burger).display !== 'none') {
+    const links = nav.querySelector('.arcade-nav-links');
+    height -= links.getBoundingClientRect().height + parseFloat(getComputedStyle(links).marginTop);
+  }
+  document.documentElement.style.setProperty('--navbar-height', Math.ceil(height) + 'px');
+}
+
+onMounted(() => {
+  syncNavbarHeight();
+  navResizeObserver = new ResizeObserver(syncNavbarHeight);
+  navResizeObserver.observe(navRef.value);
+});
+onBeforeUnmount(() => navResizeObserver?.disconnect());
+watch(isImmersive, () => nextTick(syncNavbarHeight));
 
 function settle(state, error = '') {
   shareState.value = state;
@@ -103,10 +134,14 @@ async function shareJoinUrl() {
 </script>
 
 <template>
-  <nav class="arcade-navbar fixed-top w-100">
+  <!-- Masquée en mode plein écran (composables/useImmersiveMode.js). Le v-show
+       est ici et non sur <Navbar> dans App.vue : le composant a deux racines
+       (nav + BModal), Vue y ignorerait la directive. -->
+  <nav v-show="!isImmersive" ref="navRef" class="arcade-navbar fixed-top w-100">
     <div class="arcade-navbar-bar">
       <router-link to="/" class="arcade-brand" @click="isOpen = false">
-        <i class="fa-solid fa-dice"></i> Binome
+        <img :src="logo96" alt="" class="arcade-brand-logo" width="36" height="36" decoding="async" />
+        Binome
       </router-link>
       <button
         type="button"
@@ -128,15 +163,6 @@ async function shareJoinUrl() {
       </BNavItem>
       <BNavItem to="/historique" class="arcade-nav-link">
         <i class="fa-solid fa-ranking-star"></i> Historique
-      </BNavItem>
-      <BNavItem v-if="isCharactersUnlocked" to="/characters/list" class="arcade-nav-link">
-        <i class="fa-solid fa-user-astronaut"></i> Personnages
-      </BNavItem>
-      <BNavItem v-if="isCharactersUnlocked" to="/characters" class="arcade-nav-link">
-        <i class="fa-solid fa-user-plus"></i> Créer
-      </BNavItem>
-      <BNavItem v-if="isCharactersUnlocked" to="/admin/games" class="arcade-nav-link">
-        <i class="fa-solid fa-gamepad"></i> Parties
       </BNavItem>
       <li class="arcade-nav-link nav-item">
         <button
@@ -181,32 +207,34 @@ async function shareJoinUrl() {
           v-if="!isCharactersUnlocked"
           type="button"
           class="nav-link arcade-lock-btn"
-          title="Accéder à la gestion des personnages"
+          title="Accéder à l'administration"
+          aria-label="Accéder à l'administration"
           @click="showUnlockModal = true"
         >
           <i class="fa-solid fa-lock"></i>
         </button>
-        <button
+        <router-link
           v-else
-          type="button"
+          to="/admin"
           class="nav-link arcade-lock-btn"
-          title="Verrouiller la gestion des personnages"
-          @click="lockAccess"
+          active-class="router-link-active"
+          title="Administration"
+          aria-label="Administration"
         >
           <i class="fa-solid fa-lock-open"></i>
-        </button>
+        </router-link>
       </li>
     </BNav>
   </nav>
 
   <BModal
     v-model="showUnlockModal"
-    title="Gestion des personnages"
+    title="Administration"
     no-footer
     class="arcade-modal"
     @hidden="onUnlockModalHidden"
   >
-    <p class="mb-2">Saisis le mot de passe pour afficher les onglets de gestion des personnages.</p>
+    <p class="mb-2">Saisis le mot de passe pour accéder à l'espace d'administration.</p>
     <form @submit.prevent="submitUnlock">
       <BFormInput
         v-model="passwordInput"
@@ -254,6 +282,15 @@ async function shareJoinUrl() {
   align-items: center;
   min-height: 44px;
   padding: 0.5rem 0.25rem;
+  gap: 0.5rem;
+}
+
+/* 36px : tient dans la cible de 44px sans grandir la barre (--navbar-height). */
+.arcade-brand-logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  margin: -0.5rem 0;
 }
 
 .arcade-burger {
@@ -285,6 +322,10 @@ async function shareJoinUrl() {
 
 .arcade-nav-links.is-open {
   max-height: 20rem;
+  /* Navbar fixe : en paysage (320px de haut), 8 liens dépassaient l'écran
+     et les derniers étaient inatteignables → le menu défile. */
+  max-height: min(20rem, calc(100dvh - 4rem));
+  overflow-y: auto;
   margin-top: 0.5rem;
 }
 
@@ -340,7 +381,18 @@ async function shareJoinUrl() {
 }
 
 /* From tablet width up: show links inline, hide the burger */
-@media (min-width: 768px) {
+/* Téléphone en paysage : chaque pixel de hauteur compte (la hauteur réelle
+   est remesurée par le ResizeObserver → --navbar-height suit). */
+@media (max-height: 500px) {
+  .arcade-navbar {
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+  }
+}
+
+/* Liens en ligne à partir d'une tablette — pas sur un téléphone en paysage,
+   où la seconde ligne de liens portait la navbar à 96px de haut. */
+@media (min-width: 768px) and (min-height: 501px) {
   .arcade-burger {
     display: none;
   }

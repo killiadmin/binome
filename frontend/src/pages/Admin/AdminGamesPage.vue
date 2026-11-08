@@ -111,7 +111,10 @@ function actionLine(a) {
   const target = a.target_player?.pseudo ?? '?'
   if (a.type === 'question') {
     if (!a.is_valid) return `${who} → ${target} : question refusée (${a.refused_reason || 'mot interdit'})`
-    const ans = a.answer ? ` — ${ANSWER_LABEL[a.answer] ?? a.answer}` : ''
+    const fixed = a.answer_corrected_from
+        ? ` (corrigé par l'hôte, était ${ANSWER_LABEL[a.answer_corrected_from] ?? a.answer_corrected_from})`
+        : ''
+    const ans = a.answer ? ` — ${ANSWER_LABEL[a.answer] ?? a.answer}${fixed}` : ''
     return `${who} → ${target} : « ${a.content} »${ans}`
   }
   const verdict = a.accusation_correct === true ? '✓ correcte' : a.accusation_correct === false ? '✗ fausse' : 'en attente'

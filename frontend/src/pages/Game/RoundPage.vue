@@ -1,5 +1,5 @@
 <script setup>
-import {ref, computed, onMounted, onUnmounted} from 'vue'
+import {ref, computed, watch, onMounted, onUnmounted} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {gameService} from '../../services/gameService'
 import {useReverb, resetEcho} from '../../sockets/useReverb.js'
@@ -7,8 +7,11 @@ import {useGameNotes} from '../../composables/useGameNotes'
 import QuickReactions from '../../components/game/QuickReactions.vue'
 import GameNotepad from '../../components/game/GameNotepad.vue'
 import GameRecap from '../../components/game/GameRecap.vue'
+import WinnerShowcase from '../../components/game/WinnerShowcase.vue'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 import RoundTransition from '../../components/game/RoundTransition.vue'
+import PixelVeil from '../../components/game/PixelVeil.vue'
+import {useDecipherText} from '../../composables/useDecipherText'
 import {
   BModal, BFormInput,
   BAlert, BSpinner
@@ -60,18 +63,44 @@ const binomeNotif = ref(null)
 
 const gameEnded = ref(false)
 const winners = ref([])
+// Payload GameEnded, repli si le récap n'a pas pu être chargé
+const gameEndPayload = ref(null)
 const gameOverTitle = ref('')
 const gameOverMsg = ref('')
 
 const isBlurred = ref(true)
+// Nom et mots interdits restent chiffrés dans le DOM tant que la carte est voilée
+const cipheredText = useDecipherText(
+    () => [myCharacter.value?.name ?? '???', ...(myCharacter.value?.forbidden_words ?? [])],
+    isBlurred,
+)
+const cipheredName = computed(() => cipheredText.value[0] ?? '')
+const cipheredWords = computed(() => cipheredText.value.slice(1))
 
 const pendingQuestion = ref(null)
 const showAnswerModal = ref(false)
+// Rappel « Qui suis-je ? » dans la modale de réponse : masqué par défaut (un
+// voisin pourrait voir l'écran), et re-masqué à chaque nouvelle question.
+const showAnswerCharacter = ref(false)
+watch(showAnswerModal, open => { if (open) showAnswerCharacter.value = false })
 const submittingAnswer = ref(false)
 
 const showRoundTransition = ref(false)
 const transitionRoundNumber = ref(1)
 let finishRoundTransition = null
+
+// Tirage de carte après un « Je ne sais pas » : le questionneur retourne une
+// carte face cachée parmi les mots interdits de la cible et voit le mot 5 s,
+// puis décide de le montrer à tous sauf à la cible.
+// phase : 'pick' (cartes face cachée) → 'reveal' (mot visible) → 'decide'
+const cardDraw = ref(null)
+const showCardDrawModal = ref(false)
+const submittingCardDraw = ref(false)
+const cardDrawError = ref(null)
+let revealTimer = null
+// Mot montré par un autre joueur : {word, asker, target, left}, visible 5 s
+const sharedWord = ref(null)
+let sharedWordTimer = null
 
 const pendingAccusation    = ref(null)
 const showAccusationConfirmModal = ref(false)
@@ -90,18 +119,30 @@ const showPlayerSheet  = ref(false)
 const hasOrphan      = ref(false)
 const orphanPseudos  = ref(new Set())
 
-// Vote des personnages avant le round 1 : chacun accepte le sien, ou demande
-// un nouveau tirage — et alors TOUS les personnages sont retirés. Un joueur qui
-// ne connaît pas son personnage donnerait de fausses réponses.
+// Vote des personnages avant le round 1 : chacun accepte le sien ou demande à
+// en changer. Une fois que tous ont voté, une seule demande suffit pour que
+// TOUS les personnages soient retirés : un joueur qui ne connaît pas son
+// personnage donnerait de fausses réponses.
 const votingCharacters  = ref(false)
 const drawNumber        = ref(1)
 const acceptedPlayerIds = ref(new Set())
+const changePlayerIds   = ref(new Set())
 const submittingVote    = ref(false)
 const confirmingReject  = ref(false)
 
 // Bloc-notes privé (localStorage uniquement, voir composables/useGameNotes.js)
 const notes = useGameNotes(gameId, myPlayerId.value)
 const showNotepad = ref(false)
+
+// Joueurs éliminés : options de l'hôte (GET /games/{game} → settings)
+const settings = ref({reveal_to_eliminated: false, best_question_vote: false})
+// Votes « meilleure question du round », publics : [{round_id, action_id, voter_id}]
+const questionVotes = ref([])
+const votingQuestionId = ref(null)
+// Vue omnisciente d'un éliminé : binômes révélés (GET /games/{game}/reveal)
+const revealedBinomes = ref(null)
+const showReveal = ref(false)
+const loadingReveal = ref(false)
 
 // Réactions rapides reçues, en cours d'animation
 const reactions = ref([])
@@ -127,6 +168,7 @@ const AFK_GRACE_SECONDS = 30
 const AFK_REASONS = {
   turn:       "C'est son tour de jouer",
   answer:     'Il doit répondre à une question',
+  draw:       'Il doit tirer une carte',
   accusation: 'Il doit confirmer une accusation',
 }
 
@@ -144,6 +186,8 @@ let noticeTimer = null
 // WebSocket coupé (écran verrouillé, Wi-Fi qui saute) : Pusher se reconnecte
 // seul, mais les events émis pendant la coupure sont perdus → resync().
 const connectionLost = ref(false)
+const refreshing = ref(false)
+const correctingActionId = ref(null)
 let stopConnectionWatch = null
 let hiddenAt = null
 let syncing = false
@@ -245,10 +289,36 @@ const blocker = computed(() => {
   if (last.type === 'question' && last.is_valid && last.answer == null) {
     return {playerId: last.target_player?.id, reason: 'answer'}
   }
+  if (last.type === 'question' && isCardDrawOpen(last)) {
+    return {playerId: cp, reason: 'draw'}
+  }
   if (last.type === 'accusation' && last.accusation_confirmed == null) {
     return {playerId: last.target_player?.id, reason: 'accusation'}
   }
   return null
+})
+
+function isCardDrawOpen(action) {
+  return ['pending', 'drawn'].includes(action?.card_draw?.status)
+}
+
+// Tirage en cours dans le round courant (état public : jamais le mot)
+const activeCardDraw = computed(() => {
+  if (!currentRound.value) return null
+  return actions.value.find(a =>
+      a.round_id === currentRound.value.id && a.type === 'question' && isCardDrawOpen(a)
+  ) ?? null
+})
+
+// Aligné sur ActionService::CARD_DRAW_SECONDS : borne l'affichage quand
+// l'horloge du téléphone retarde sur celle du serveur.
+const CARD_DRAW_SECONDS = 30
+
+const cardDrawSecondsLeft = computed(() => {
+  const deadline = activeCardDraw.value?.card_draw?.deadline
+  if (!deadline) return null
+  const left = Math.ceil((new Date(deadline).getTime() - now.value) / 1000)
+  return Math.min(CARD_DRAW_SECONDS, Math.max(0, left))
 })
 
 const isHost = computed(() => hostId.value !== null && hostId.value === myPlayerId.value)
@@ -279,12 +349,89 @@ const afkBlocker = computed(() => {
 })
 
 const amAccepted = computed(() => acceptedPlayerIds.value.has(myPlayerId.value))
+const amAskingChange = computed(() => changePlayerIds.value.has(myPlayerId.value))
 
 const amExcluded = computed(() =>
     !!players.value.find(p => p.id === myPlayerId.value)?.is_excluded
 )
 
+// Ordre de passage : joueurs en jeu triés par id (même règle que
+// RoundService), à partir du joueur courant. Ceux d'id supérieur jouent encore
+// ce round ; ensuite un nouveau round repart du premier. 3 prochains joueurs.
+const turnOrder = computed(() => {
+  if (votingCharacters.value || gameEnded.value || !currentPlayerId.value || !currentRound.value) return null
+  const active = players.value.filter(p => !p.is_eliminated).sort((a, b) => a.id - b.id)
+  const later = active.filter(p => p.id > currentPlayerId.value)
+  const items = later.map(p => ({key: `p${p.id}`, player: p}))
+  if (items.length < 3) {
+    items.push({key: 'round', newRound: currentRound.value.number + 1})
+    active.forEach(p => items.push({key: `n${p.id}`, player: p}))
+  }
+  const upcoming = []
+  for (const item of items) {
+    if (upcoming.filter(i => i.player).length === 3) break
+    upcoming.push(item)
+  }
+  return upcoming.some(i => i.player) ? upcoming : null
+})
+
+// Mon partenaire, connu seulement via la vue omnisciente (sert à masquer le
+// bouton de vote sur ses questions, que le serveur refuserait).
+const myPartnerId = computed(() => {
+  const binome = revealedBinomes.value?.find(b => b.players.some(p => p.id === myPlayerId.value))
+  return binome?.players.find(p => p.id !== myPlayerId.value)?.id ?? null
+})
+
+const canReveal = computed(() =>
+    amEliminated.value && settings.value.reveal_to_eliminated && !gameEnded.value
+)
+
+const canVoteQuestions = computed(() =>
+    amEliminated.value && !amExcluded.value && settings.value.best_question_vote && !gameEnded.value
+)
+
+// action_id → nombre de votes, et round_id → question pour laquelle j'ai voté
+const votesByAction = computed(() => {
+  const counts = {}
+  questionVotes.value.forEach(v => { counts[v.action_id] = (counts[v.action_id] ?? 0) + 1 })
+  return counts
+})
+const myVoteByRound = computed(() => Object.fromEntries(
+    questionVotes.value.filter(v => v.voter_id === myPlayerId.value).map(v => [v.round_id, v.action_id])
+))
+
+// Votable : question du round en cours ou du précédent (règle serveur),
+// ni de moi ni de mon binôme.
+function isVotable(action) {
+  if (!canVoteQuestions.value || action.type !== 'question' || !action.is_valid) return false
+  if (action.player?.id === myPlayerId.value || action.player?.id === myPartnerId.value) return false
+  return (action.round_number ?? 0) >= (currentRound.value?.number ?? 0) - 1
+}
+
 // Photo d'un joueur par id (panneau « Historique de la partie »)
+// Cartes du (des) gagnant(s) : personnage + photo, pour l'annonce de fin.
+const winnerCards = computed(() => {
+  const binomes = recap.value?.binomes ?? gameEndPayload.value?.all_binomes ?? []
+  const winnerPseudos = new Set(
+      recap.value?.winners ?? gameEndPayload.value?.winners?.map(w => w.pseudo) ?? []
+  )
+  return binomes.flatMap(b => (b.players ?? [])
+      .filter(p => winnerPseudos.has(p.pseudo))
+      .map(p => {
+        const live = players.value.find(pl => pl.pseudo === p.pseudo)
+        const isMe = live && live.id === myPlayerId.value
+        return {
+          pseudo:          p.pseudo,
+          avatar_url:      p.avatar_url ?? live?.avatar_url ?? null,
+          character:       p.character,
+          character_image: p.character_image ?? (isMe ? myCharacter.value?.image : null) ?? null,
+          universe:        b.universe,
+          score:           gameStats.value.find(s => s.player_pseudo === p.pseudo)?.score ?? null,
+          is_orphan:       !!b.is_orphan,
+        }
+      }))
+})
+
 const avatarById = computed(() =>
     Object.fromEntries(players.value.map(p => [p.id, p.avatar_url ?? null]))
 )
@@ -320,6 +467,17 @@ const threadCountByPlayer = computed(() => {
   return counts
 })
 
+// Nombre de questions déjà reçues par joueur, affiché dans la modale « Poser
+// une question » pour repérer qui a été peu interrogé.
+const questionCountByPlayer = computed(() => {
+  const counts = {}
+  actions.value.forEach(a => {
+    const id = a.target_player?.id
+    if (a.type === 'question' && id) counts[id] = (counts[id] ?? 0) + 1
+  })
+  return counts
+})
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 // État complet de la partie depuis l'API. Sert au chargement initial et à la
@@ -349,9 +507,16 @@ async function loadGameState() {
       a.round_id === currentRound.value.id && a.player?.id === myPlayerId.value
   )
 
+  settings.value = {
+    reveal_to_eliminated: !!game.settings?.reveal_to_eliminated,
+    best_question_vote: !!game.settings?.best_question_vote,
+  }
+  questionVotes.value = game.question_votes ?? []
+
   votingCharacters.value = game.characters_confirmed === false
   drawNumber.value = game.draw_number ?? 1
   acceptedPlayerIds.value = new Set(game.accepted_player_ids ?? [])
+  changePlayerIds.value = new Set(game.change_player_ids ?? [])
 
   // Un spectateur n'a pas de personnage : /me répondrait 404.
   // Pendant le vote, un retirage a pu passer pendant une coupure : on relit.
@@ -382,18 +547,44 @@ function restorePendingPrompts() {
   )
   pendingAccusation.value = accusation ?? null
   showAccusationConfirmModal.value = !!accusation
+
+  openCardDraw(actions.value.find(a =>
+      a.type === 'question' && a.player?.id === me && isCardDrawOpen(a)
+  ) ?? null)
 }
 
-async function resync() {
-  if (syncing) return
+// Au réveil d'une app installée sur l'écran d'accueil, le réseau revient
+// parfois après l'appel : on réessaie quelques fois avant d'abandonner.
+async function resync({attempts = 3} = {}) {
+  if (syncing) return false
   syncing = true
   try {
-    await loadGameState()
-  } catch {
-    /* la prochaine reconnexion ou le prochain retour sur l'onglet réessaiera */
+    for (let i = 0; i < attempts; i++) {
+      try {
+        await loadGameState()
+        return true
+      } catch {
+        if (i < attempts - 1) await new Promise(r => setTimeout(r, 1500))
+      }
+    }
+    return false
   } finally {
     syncing = false
   }
+}
+
+// Bouton « Rafraîchir » : remplace le rechargement du navigateur, absent quand
+// le jeu est lancé depuis l'écran d'accueil. Socket morte → vrai rechargement.
+async function manualRefresh() {
+  if (refreshing.value) return
+  if (connectionLost.value) {
+    window.location.reload()
+    return
+  }
+  refreshing.value = true
+  const ok = await resync({attempts: 1})
+  refreshing.value = false
+  showNotice(ok ? '🔄 Partie à jour.' : 'Impossible de joindre le serveur, réessaie.')
 }
 
 function watchConnection(onConnectionChange) {
@@ -411,6 +602,10 @@ function watchConnection(onConnectionChange) {
 
 // Téléphone verrouillé puis rallumé : la socket peut se croire encore
 // connectée alors que des events ont été perdus. On resynchronise au retour.
+function handlePageShow(e) {
+  if (e.persisted) resync()
+}
+
 function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') {
     hiddenAt = Date.now()
@@ -435,8 +630,9 @@ onMounted(async () => {
   }
 
   resetEcho()
-  const {joinGame, onConnectionChange} = useReverb(myPlayerId.value)
+  const {joinGame, joinPlayerChannel, onConnectionChange} = useReverb(myPlayerId.value)
   watchConnection(onConnectionChange)
+  joinPlayerChannel(myPlayerId.value, {onCardWordShared: handleCardWordShared})
   joinGame(gameId, {
     onHere:               handleHere,
     onJoining:            handleJoining,
@@ -446,6 +642,9 @@ onMounted(async () => {
     onRoundStarted:       handleRoundStarted,
     onActionPlayed:       handleActionPlayed,
     onAnswerGiven:        handleAnswerGiven,
+    onAnswerCorrected:    handleAnswerCorrected,
+    onCardDrawn:          handleCardDrawn,
+    onCardDrawFinished:   handleCardDrawFinished,
     onAccusationConfirmed: handleAccusationConfirmed,
     onBinomeDiscovered:   handleBinomeDiscovered,
     onGameEnded:          handleGameEnded,
@@ -453,6 +652,7 @@ onMounted(async () => {
     onReactionSent:       handleReactionSent,
     onTurnSkipped:        handleTurnSkipped,
     onPlayerExcluded:     handlePlayerExcluded,
+    onQuestionVoted:      handleQuestionVoted,
     onPlayerAvatarUpdated: (data) => {
       players.value = players.value.map(p => p.id === data.player_id ? {...p, avatar_url: data.avatar_url} : p)
     },
@@ -461,16 +661,21 @@ onMounted(async () => {
 
   clock = setInterval(() => { now.value = Date.now() }, 1000)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('pageshow', handlePageShow)
 })
 
 onUnmounted(() => {
   stopConnectionWatch?.()
   clearInterval(clock)
   clearTimeout(noticeTimer)
+  clearInterval(revealTimer)
+  clearInterval(sharedWordTimer)
   leaveTimers.forEach(timer => clearTimeout(timer))
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  const {leaveGame} = useReverb(myPlayerId.value)
+  window.removeEventListener('pageshow', handlePageShow)
+  const {leaveGame, leavePlayerChannel} = useReverb(myPlayerId.value)
   leaveGame(gameId)
+  leavePlayerChannel(myPlayerId.value)
 })
 
 
@@ -507,7 +712,14 @@ function handleLeaving(member) {
 
 function handleReactionSent(data) {
   const id = ++reactionSeq
-  reactions.value.push({id, emoji: data.emoji, pseudo: data.player?.pseudo, x: 12 + Math.random() * 76})
+  reactions.value.push({
+    id,
+    emoji: data.reaction?.emoji ?? null,
+    url: data.reaction?.url ?? null,
+    name: data.reaction?.name ?? null,
+    pseudo: data.player?.pseudo,
+    x: 12 + Math.random() * 76,
+  })
   // Plafond : une rafale ne doit pas couvrir l'écran
   if (reactions.value.length > 12) reactions.value.shift()
   setTimeout(() => {
@@ -515,11 +727,50 @@ function handleReactionSent(data) {
   }, 2700)
 }
 
-async function sendReaction(emoji) {
+// reaction : { reaction_id } (voir QuickReactions)
+async function sendReaction(reaction) {
   try {
-    await gameService.react(gameId, myPlayerId.value, emoji)
+    await gameService.react(gameId, myPlayerId.value, reaction)
   } catch (e) {
     if (e.response?.status === 429) showNotice('Doucement sur les réactions 😅')
+    else if (e.response?.status === 404) showNotice('Cet emoji n\'est plus disponible.')
+  }
+}
+
+// Tous les votes du round concerné : on remplace la liste de ce round
+function handleQuestionVoted(data) {
+  questionVotes.value = [
+    ...questionVotes.value.filter(v => v.round_id !== data.round_id),
+    ...(data.votes ?? []).map(v => ({...v, round_id: data.round_id})),
+  ]
+}
+
+async function voteForQuestion(action) {
+  const actionId = action.action_id ?? action.id
+  if (votingQuestionId.value) return
+  votingQuestionId.value = actionId
+  try {
+    await gameService.voteQuestion(gameId, myPlayerId.value, actionId)
+  } catch (e) {
+    showNotice(apiErrorMessage(e, 'Impossible d’enregistrer ton vote.'))
+  } finally {
+    votingQuestionId.value = null
+  }
+}
+
+// Les personnages ne changent plus après le vote : un seul chargement suffit,
+// l'état « éliminé » vient de la liste des joueurs, tenue à jour en direct.
+async function openReveal() {
+  showReveal.value = true
+  if (revealedBinomes.value || loadingReveal.value) return
+  loadingReveal.value = true
+  try {
+    revealedBinomes.value = await gameService.reveal(gameId, myPlayerId.value)
+  } catch (e) {
+    showReveal.value = false
+    showNotice(apiErrorMessage(e, 'Vue omnisciente indisponible.'))
+  } finally {
+    loadingReveal.value = false
   }
 }
 
@@ -530,9 +781,10 @@ function handleTurnSkipped(data) {
     pendingAccusation.value = null
   }
 
-  const outcome = data.reason === 'accusation'
-      ? "l'accusation est tranchée automatiquement"
-      : 'son tour est passé'
+  const outcome = {
+    accusation: "l'accusation est tranchée automatiquement",
+    draw:       'sa carte est perdue',
+  }[data.reason] ?? 'son tour est passé'
 
   showNotice(`⏭️ ${data.player?.pseudo} est déconnecté : ${outcome} (décision de l'hôte).`)
 }
@@ -615,14 +867,17 @@ function handleCharacterVoteCast(data) {
     return
   }
   acceptedPlayerIds.value = new Set(data.accepted_player_ids)
+  changePlayerIds.value = new Set(data.change_player_ids ?? [])
 }
 
 async function handleCharactersRedrawn(data) {
   drawNumber.value = data.draw_number
   acceptedPlayerIds.value = new Set()
+  changePlayerIds.value = new Set()
   confirmingReject.value = false
   isBlurred.value = true
-  showNotice('Un joueur ne connaissait pas son personnage : nouveau tirage pour tout le monde !')
+  const n = data.change_count ?? 1
+  showNotice(`${n} joueur${n > 1 ? 's ont' : ' a'} demandé à changer : nouveau tirage pour tout le monde !`)
 
   if (isSpectator.value) return
   try {
@@ -637,7 +892,9 @@ async function voteCharacter(accepted) {
   submittingVote.value = true
   try {
     await gameService.voteCharacter(gameId, myPlayerId.value, myCharacter.value.id, accepted)
-    if (accepted) acceptedPlayerIds.value = new Set([...acceptedPlayerIds.value, myPlayerId.value])
+    // L'event suit, mais on affiche son propre vote sans attendre
+    const mine = accepted ? acceptedPlayerIds : changePlayerIds
+    if (votingCharacters.value) mine.value = new Set([...mine.value, myPlayerId.value])
   } catch (e) {
     showNotice(apiErrorMessage(e, "Impossible d'enregistrer ton choix."))
     // 409 : retirage passé entre-temps ou vote déjà clos → on se recale
@@ -691,18 +948,185 @@ function handleActionPlayed(data) {
   }
 }
 
+// Met à jour une action du journal (réponse donnée ou corrigée). Renvoie son index.
+function applyAnswer(actionId, patch) {
+  const idx = actions.value.findIndex(a => (a.action_id ?? a.id) === actionId)
+  if (idx !== -1) actions.value[idx] = {...actions.value[idx], ...patch}
+  return idx
+}
+
 function handleAnswerGiven(data) {
-  const idx = actions.value.findIndex(
-      a => (a.action_id ?? a.id) === data.action_id
-  )
-  if (idx !== -1) {
-    actions.value[idx] = {...actions.value[idx], answer: data.answer}
-  }
+  const idx = applyAnswer(data.action_id, {answer: data.answer, card_draw: data.card_draw ?? null})
+  // Event d'une question qu'on n'a jamais reçue (event manqué) : état complet
+  if (idx === -1) resync()
   // Répondue ailleurs (autre onglet, tour passé) : la modale n'a plus lieu d'être.
   if ((pendingQuestion.value?.action_id ?? pendingQuestion.value?.id) === data.action_id) {
     showAnswerModal.value = false
     pendingQuestion.value = null
   }
+
+  if (!data.card_draw) return
+  const me = myPlayerId.value
+  if (data.asker?.id === me) {
+    openCardDraw(actions.value[idx] ?? null)
+  } else if (data.answerer?.id === me) {
+    showNotice(`🃏 ${data.asker?.pseudo} tire une carte parmi tes mots interdits…`)
+  } else {
+    showNotice(`🃏 ${data.answerer?.pseudo} ne sait pas : ${data.asker?.pseudo} tire une carte parmi ses mots interdits.`)
+  }
+}
+
+function handleAnswerCorrected(data) {
+  const patch = {answer: data.answer, answer_corrected_from: data.answer_corrected_from ?? null}
+  if (applyAnswer(data.action_id, patch) === -1) resync()
+  const who = data.answerer?.id === myPlayerId.value ? 'ta réponse' : `la réponse de ${data.answerer?.pseudo}`
+  showNotice(`✏️ L'hôte a corrigé ${who} : « ${answerLabel(data.answer)} ».`)
+}
+
+// Hôte : oui ⇄ non sur une question déjà répondue (« Je ne sais pas » a lancé
+// un tirage de carte, on n'y touche pas).
+function canCorrectAnswer(action) {
+  return isHost.value && !gameEnded.value && !votingCharacters.value &&
+      action.type === 'question' && action.is_valid && ['yes', 'no'].includes(action.answer)
+}
+
+async function correctAnswer(action) {
+  const actionId = action.action_id ?? action.id
+  if (correctingActionId.value) return
+  correctingActionId.value = actionId
+  const answer = action.answer === 'yes' ? 'no' : 'yes'
+  try {
+    const res = await gameService.correctAnswer(gameId, actionId, myPlayerId.value, answer)
+    applyAnswer(actionId, {answer, answer_corrected_from: res.answer_corrected_from ?? null})
+  } catch (e) {
+    showNotice(apiErrorMessage(e, 'Impossible de corriger cette réponse.'))
+  } finally {
+    correctingActionId.value = null
+  }
+}
+
+// ─── TIRAGE DE CARTE ──────────────────────────────────────────────────────────
+
+function updateCardDraw(actionId, status) {
+  const idx = actions.value.findIndex(a => (a.action_id ?? a.id) === actionId)
+  if (idx === -1 || !actions.value[idx].card_draw) return
+  actions.value[idx] = {
+    ...actions.value[idx],
+    card_draw: {...actions.value[idx].card_draw, status},
+  }
+}
+
+// Ouvre la modale de tirage pour MA question (ou la ferme si action = null).
+// Un tirage déjà affiché garde sa phase : une resync ne doit pas couper la
+// révélation en cours.
+function openCardDraw(action) {
+  if (!action) {
+    closeCardDraw()
+    return
+  }
+  const actionId = action.action_id ?? action.id
+  if (cardDraw.value?.actionId !== actionId) {
+    clearInterval(revealTimer)
+    cardDrawError.value = null
+    cardDraw.value = {
+      actionId,
+      roundId: action.round_id,
+      targetPseudo: action.target_player?.pseudo,
+      cardCount: action.card_draw?.card_count ?? 3,
+      // Rechargement après le tirage : le mot ne se revoit pas, reste la décision
+      phase: action.card_draw?.status === 'drawn' ? 'decide' : 'pick',
+      pickedCard: null,
+      word: null,
+      revealLeft: 0,
+    }
+  }
+  showCardDrawModal.value = true
+}
+
+function closeCardDraw() {
+  clearInterval(revealTimer)
+  cardDraw.value = null
+  showCardDrawModal.value = false
+}
+
+async function pickCard(index) {
+  const draw = cardDraw.value
+  if (submittingCardDraw.value || draw?.phase !== 'pick') return
+  submittingCardDraw.value = true
+  cardDrawError.value = null
+  draw.pickedCard = index
+  try {
+    const res = await gameService.drawCard(gameId, draw.roundId, draw.actionId, myPlayerId.value, index)
+    startReveal(res.word, res.reveal_seconds ?? 5)
+  } catch (e) {
+    draw.pickedCard = null
+    cardDrawError.value = apiErrorMessage(e, 'Impossible de tirer cette carte.')
+    if (e.response?.status === 409) resync()
+  } finally {
+    submittingCardDraw.value = false
+  }
+}
+
+// Le mot reste visible `seconds` secondes, puis la carte se retourne et le mot
+// est effacé de la mémoire de la page : à toi de le retenir.
+function startReveal(word, seconds) {
+  cardDraw.value = {...cardDraw.value, phase: 'reveal', word, revealLeft: seconds}
+  clearInterval(revealTimer)
+  revealTimer = setInterval(() => {
+    if (!cardDraw.value) {
+      clearInterval(revealTimer)
+      return
+    }
+    cardDraw.value.revealLeft -= 1
+    if (cardDraw.value.revealLeft <= 0) {
+      clearInterval(revealTimer)
+      cardDraw.value = {...cardDraw.value, phase: 'decide', word: null}
+    }
+  }, 1000)
+}
+
+async function decideCardDraw(share) {
+  const draw = cardDraw.value
+  if (submittingCardDraw.value || !draw || draw.phase === 'pick') return
+  submittingCardDraw.value = true
+  cardDrawError.value = null
+  try {
+    await gameService.decideCardDraw(gameId, draw.roundId, draw.actionId, myPlayerId.value, share)
+    if (share) showNotice(`📢 Mot montré à tous, sauf à ${draw.targetPseudo}.`)
+    closeCardDraw()
+  } catch (e) {
+    cardDrawError.value = apiErrorMessage(e, 'Impossible d’enregistrer ton choix.')
+    if (e.response?.status === 409) resync()
+  } finally {
+    submittingCardDraw.value = false
+  }
+}
+
+function handleCardDrawn(data) {
+  updateCardDraw(data.action_id, 'drawn')
+}
+
+function handleCardDrawFinished(data) {
+  updateCardDraw(data.action_id, 'done')
+  if (cardDraw.value?.actionId === data.action_id) closeCardDraw()
+}
+
+// Channel privé : un autre joueur me montre le mot tiré (jamais reçu par la cible)
+function handleCardWordShared(data) {
+  sharedWord.value = {
+    word: data.word,
+    asker: data.asker?.pseudo,
+    target: data.target?.pseudo,
+    left: data.reveal_seconds ?? 5,
+    total: data.reveal_seconds ?? 5,
+  }
+  clearInterval(sharedWordTimer)
+  sharedWordTimer = setInterval(() => {
+    if (!sharedWord.value || --sharedWord.value.left <= 0) {
+      clearInterval(sharedWordTimer)
+      sharedWord.value = null
+    }
+  }, 1000)
 }
 
 // Résolue par l'event `done` de RoundTransition (la durée vit dans le composant).
@@ -733,6 +1157,7 @@ async function submitAnswer(answer) {
         myPlayerId.value,
         answer
     )
+    applyAnswer(pendingQuestion.value.action_id, {answer})
     showAnswerModal.value = false
     pendingQuestion.value = null
   } catch (e) {
@@ -775,10 +1200,12 @@ async function handleGameEnded(data, {animate = true} = {}) {
   if (gameEnded.value) return
   gameEnded.value = true
   showAnswerModal.value = false
+  closeCardDraw()
   showAccusationConfirmModal.value = false
   showQuestionModal.value = false
   showAccusationModal.value = false
 
+  gameEndPayload.value = data
   recap.value = await fetchRecap()
   gameStats.value = recap.value?.stats ?? data?.stats ?? []
 
@@ -989,6 +1416,7 @@ function backToHome() {
       <div v-if="connectionLost" class="net-banner" role="status">
         <i class="fa-solid fa-wifi"></i>
         Connexion perdue — reconnexion en cours<span class="caret">_</span>
+        <button type="button" class="net-banner__reload" @click="manualRefresh">Recharger</button>
       </div>
 
       <!-- Message éphémère (tour passé…) -->
@@ -1006,7 +1434,13 @@ function backToHome() {
           </div>
           <div v-else class="turn-marquee__text">
             <span class="turn-marquee__main">
-              {{ isMyTurn ? 'Ton tour !' : `Tour de ${currentPlayerName}` }}
+              <template v-if="isMyTurn">Ton tour !</template>
+              <template v-else>
+                Tour de
+                <!-- Sur sa ligne, tronqué : un pseudo de 20 caractères coupé en
+                     plein mot faisait passer ce bandeau collant sur 3 lignes -->
+                <span class="turn-marquee__name" :title="currentPlayerName">{{ currentPlayerName }}</span>
+              </template>
             </span>
             <span class="turn-marquee__sub">
               {{ isMyTurn ? 'Question ou accusation' : isSpectator ? 'Tu regardes la partie' : 'À toi de deviner…' }}
@@ -1019,6 +1453,20 @@ function backToHome() {
             </span>
           </div>
         </div>
+      </div>
+
+      <!-- ── ORDRE DE PASSAGE : les 3 prochains joueurs ────────────────── -->
+      <div v-if="turnOrder" class="turn-order" aria-label="Ordre de passage">
+        <span class="turn-order__label">Ensuite</span>
+        <template v-for="item in turnOrder" :key="item.key">
+          <span v-if="item.newRound" class="turn-order__round">
+            <i class="fa-solid fa-rotate"></i> Round {{ item.newRound }}
+          </span>
+          <span v-else class="turn-order__chip" :class="{ 'is-me': item.player.id === myPlayerId }">
+            <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="item.player.pseudo" :url="item.player.avatar_url" /></span>
+            {{ item.player.id === myPlayerId ? 'Toi' : item.player.pseudo }}
+          </span>
+        </template>
       </div>
 
       <!-- ── SPECTATEUR : pas de personnage ─────────────────────────────── -->
@@ -1050,49 +1498,51 @@ function backToHome() {
 
         <h2 class="board-card__title character-board__title">Ton personnage</h2>
 
-        <div class="character-board__body" :class="{ blurred: isBlurred }">
-          <!-- Portrait -->
-          <div class="character-portrait">
-            <div class="pixel-frame character-portrait__frame">
-              <img
-                  v-if="myCharacter?.image"
-                  :src="myCharacter.image"
-                  :alt="myCharacter?.name"
-                  class="character-portrait__img"
-              />
-              <div v-else class="character-portrait__placeholder">
-                <span>?</span>
+        <PixelVeil :hidden="isBlurred">
+          <div class="character-board__body">
+            <!-- Portrait -->
+            <div class="character-portrait">
+              <div class="pixel-frame character-portrait__frame">
+                <img
+                    v-if="myCharacter?.image"
+                    :src="myCharacter.image"
+                    :alt="myCharacter?.name"
+                    class="character-portrait__img"
+                />
+                <div v-else class="character-portrait__placeholder">
+                  <span>?</span>
+                </div>
               </div>
+              <span v-if="myCharacter?.cosmos" class="portrait-badge portrait-badge--cosmos">
+                {{ myCharacter.cosmos }}
+              </span>
+              <span class="portrait-badge portrait-badge--universe">
+                {{ myCharacter?.universe ?? '…' }}
+              </span>
             </div>
-            <span v-if="myCharacter?.cosmos" class="portrait-badge portrait-badge--cosmos">
-              {{ myCharacter.cosmos }}
-            </span>
-            <span class="portrait-badge portrait-badge--universe">
-              {{ myCharacter?.universe ?? '…' }}
-            </span>
-          </div>
 
-          <!-- Infos personnage -->
-          <div class="character-info">
-            <p class="character-name">
-              {{ myCharacter?.name ?? '???' }}
-            </p>
-
-            <!-- Mots interdits -->
-            <div class="forbidden-section">
-              <p class="forbidden-title">
-                <i class="fa-solid fa-skull"></i> Mots interdits
+            <!-- Infos personnage -->
+            <div class="character-info">
+              <p class="character-name">
+                {{ cipheredName }}
               </p>
-              <div class="forbidden-words">
-                <span
-                    v-for="word in myCharacter?.forbidden_words ?? []"
-                    :key="word"
-                    class="pixel-chip pixel-chip--danger"
-                >{{ word }}</span>
+
+              <!-- Mots interdits -->
+              <div class="forbidden-section">
+                <p class="forbidden-title">
+                  <i class="fa-solid fa-skull"></i> Mots interdits
+                </p>
+                <div class="forbidden-words">
+                  <span
+                      v-for="(word, i) in cipheredWords"
+                      :key="i"
+                      class="pixel-chip pixel-chip--danger"
+                  >{{ word }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </PixelVeil>
       </section>
 
       <!-- ── VOTE : chacun accepte son personnage avant le round 1 ──────── -->
@@ -1100,28 +1550,33 @@ function backToHome() {
         <span class="info-banner__icon"><i class="fa-solid fa-dice"></i></span>
         <div class="info-banner__body">
           <p class="info-banner__title">
-            Prêts : {{ acceptedPlayerIds.size }} / {{ players.length }}
+            Prêts : <span class="vote-count">{{ acceptedPlayerIds.size }} / {{ players.length }}</span>
+          </p>
+          <p class="info-banner__title vote-counter--change">
+            Demandes à changer : <span class="vote-count">{{ changePlayerIds.size }} / {{ players.length }}</span>
           </p>
 
           <p v-if="isSpectator" class="info-banner__sub">
             Les joueurs vérifient qu'ils connaissent leur personnage. La partie démarre dès que tous ont accepté.
           </p>
 
-          <p v-else-if="amAccepted" class="info-banner__sub">
-            <i class="fa-solid fa-circle-check"></i>
-            Personnage accepté — en attente des autres joueurs<span class="caret">_</span>
+          <p v-else-if="amAccepted || amAskingChange" class="info-banner__sub">
+            <i :class="amAccepted ? 'fa-solid fa-circle-check' : 'fa-solid fa-shuffle'"></i>
+            {{ amAccepted ? 'Personnage accepté' : 'Demande de changement envoyée' }}
+            — en attente du vote des autres joueurs<span class="caret">_</span>
           </p>
 
           <template v-else-if="confirmingReject">
             <p class="info-banner__sub">
-              Tous les joueurs recevront un nouveau personnage, et chacun devra revoter.
+              Ton vote est définitif. Une fois que tous auront voté, s'il y a au moins une
+              demande de changement, tous les joueurs recevront un nouveau personnage.
             </p>
             <div class="afk-actions">
               <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
                       :disabled="submittingVote" @click="voteCharacter(false)">
                 <BSpinner v-if="submittingVote" small class="me-1"/>
                 <i v-else class="fa-solid fa-shuffle"></i>
-                Oui, nouveau tirage
+                Oui, demander à changer
               </button>
               <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--ghost"
                       :disabled="submittingVote" @click="confirmingReject = false">
@@ -1133,7 +1588,8 @@ function backToHome() {
           <template v-else>
             <p class="info-banner__sub">
               Révèle ton personnage : le connais-tu assez pour répondre aux questions ?
-              Si quelqu'un le refuse, tout le monde en reçoit un nouveau.
+              Quand tout le monde a voté, une seule demande de changement suffit
+              pour que chacun reçoive un nouveau personnage.
             </p>
             <div class="afk-actions">
               <button type="button" class="cabinet-btn cabinet-btn--sm"
@@ -1163,8 +1619,40 @@ function backToHome() {
               : 'Tu suis la fin de la partie en spectateur.' }}
             Ne souffle rien à personne 🤫
           </p>
+          <p v-if="canVoteQuestions" class="info-banner__sub">
+            ⭐ Vote pour la meilleure question de chaque round dans l'historique : +1 point pour son auteur.
+          </p>
+          <button v-if="canReveal" type="button" class="cabinet-btn cabinet-btn--sm reveal-all-btn"
+                  @click="openReveal">
+            <i class="fa-solid fa-eye"></i> Voir tous les personnages
+          </button>
         </div>
       </div>
+
+      <!-- ── MODAL : vue omnisciente (éliminé) ───────────────────────────── -->
+      <BModal v-model="showReveal" title="👁️ Vue omnisciente" no-footer class="arcade-modal" centered scrollable>
+        <div v-if="loadingReveal" class="text-center py-3"><BSpinner small/></div>
+        <template v-else-if="revealedBinomes">
+          <p class="reveal-hint">Tu vois tout : garde-le pour toi 🤫</p>
+          <div v-for="binome in revealedBinomes" :key="binome.id" class="reveal-binome">
+            <p class="reveal-binome__universe">
+              {{ binome.universe }}<template v-if="binome.cosmos"> · {{ binome.cosmos }}</template>
+              <span v-if="binome.is_orphan" class="reveal-binome__orphan">🚷 orphelin</span>
+            </p>
+            <div v-for="p in binome.players" :key="p.id" class="reveal-player"
+                 :class="{ 'is-eliminated': eliminatedPlayerIds.has(p.id) }">
+              <img v-if="p.image" :src="p.image" :alt="p.character" class="reveal-player__img" loading="lazy"/>
+              <div class="reveal-player__body">
+                <p class="reveal-player__name">
+                  {{ p.id === myPlayerId ? 'Toi' : p.pseudo }} — <strong>{{ p.character }}</strong>
+                  <span v-if="eliminatedPlayerIds.has(p.id)"> 💀</span>
+                </p>
+                <p class="reveal-player__words">🚫 {{ p.forbidden_words.join(' · ') }}</p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </BModal>
 
       <!-- ── ANNONCE : UN ORPHELIN EST EN JEU ──────────────────────────── -->
       <div v-if="hasOrphan && !gameEnded" class="orphan-banner">
@@ -1282,19 +1770,39 @@ function backToHome() {
           </button>
         </template>
 
+        <button v-else-if="activeCardDraw && activeCardDraw.player?.id === myPlayerId"
+                type="button" class="cabinet-btn action-cabinet" @click="openCardDraw(activeCardDraw)">
+          <span class="cabinet-btn__icon">🃏</span>
+          <span class="action-cabinet__label">Tirer ma carte · {{ cardDrawSecondsLeft }} s</span>
+        </button>
+
         <div v-else-if="isMyTurn && hasPlayed" class="action-waiting">
           <i class="fa-solid fa-circle-check"></i>
           Action envoyée — en attente des autres joueurs<span class="caret">_</span>
         </div>
 
-        <div v-else class="action-waiting">
-          <i class="fa-solid fa-eye"></i>
-          {{ isSpectator || amEliminated ? 'Profite du spectacle' : 'Observe et prépare ta stratégie' }}<span class="caret">_</span>
+        <!-- Tirage en cours chez un autre joueur : public, jamais le mot -->
+        <div v-if="activeCardDraw && activeCardDraw.player?.id !== myPlayerId" class="card-draw-banner" role="status">
+          <span class="card-draw-banner__icon" aria-hidden="true">🃏</span>
+          <span>
+            <strong>{{ activeCardDraw.player?.pseudo }}</strong>
+            {{ activeCardDraw.card_draw.status === 'drawn' ? 'a retourné une carte' : 'choisit une carte' }}
+            parmi
+            <template v-if="activeCardDraw.target_player?.id === myPlayerId">tes mots interdits</template>
+            <template v-else>les mots interdits de <strong>{{ activeCardDraw.target_player?.pseudo }}</strong></template>
+            · {{ cardDrawSecondsLeft }} s
+          </span>
         </div>
 
-        <button type="button" class="notepad-btn" @click="showNotepad = true">
-          <i class="fa-solid fa-note-sticky"></i> Mon bloc-notes
-        </button>
+        <div class="board-tools">
+          <button type="button" class="notepad-btn" @click="showNotepad = true">
+            <i class="fa-solid fa-note-sticky"></i> Mon bloc-notes
+          </button>
+          <button type="button" class="notepad-btn" :disabled="refreshing"
+                  aria-label="Rafraîchir la partie" @click="manualRefresh">
+            <i class="fa-solid fa-rotate" :class="{ 'fa-spin': refreshing }"></i> Rafraîchir
+          </button>
+        </div>
       </div>
 
       <!-- ── HISTORIQUE DES ACTIONS ─────────────────────────────────────────── -->
@@ -1340,15 +1848,40 @@ function backToHome() {
                   &nbsp;demande à
                   <span class="mini-avatar" aria-hidden="true"><PlayerAvatar :pseudo="action.target_player?.pseudo" :url="avatarById[action.target_player?.id]" /></span><span class="history-target">{{ action.target_player?.pseudo }}</span>
                   : <em>« {{ action.question }} »</em>
-                  <span v-if="action.answer !== null && action.answer !== undefined"
-                        :class="{
-            'answer-yes':       action.answer === 'yes',
-            'answer-no':        action.answer === 'no',
-            'answer-dont-know': action.answer === 'dont_know',
-          }">
-      → {{ answerLabel(action.answer) }}
-    </span>
+                  <template v-if="action.answer !== null && action.answer !== undefined">
+                    <span :class="{
+                            'answer-yes':       action.answer === 'yes',
+                            'answer-no':        action.answer === 'no',
+                            'answer-dont-know': action.answer === 'dont_know',
+                          }">
+                      → {{ answerLabel(action.answer) }}
+                    </span>
+                    <span v-if="action.answer_corrected_from" class="history-muted answer-corrected"
+                          :title="`Réponse d'origine : ${answerLabel(action.answer_corrected_from)}`">
+                      ✏️ corrigé par l'hôte (était {{ answerLabel(action.answer_corrected_from) }})
+                    </span>
+                    <span v-if="action.card_draw" class="history-card-draw" title="Carte tirée parmi ses mots interdits"> · 🃏</span>
+                    <!-- Hôte : le joueur s'est ravisé à voix haute → oui ⇄ non -->
+                    <button v-if="canCorrectAnswer(action)" type="button" class="answer-correct-btn"
+                            :disabled="!!correctingActionId"
+                            :title="`Corriger en « ${answerLabel(action.answer === 'yes' ? 'no' : 'yes')} »`"
+                            @click="correctAnswer(action)">
+                      <i class="fa-solid fa-pen"></i>
+                      {{ answerLabel(action.answer === 'yes' ? 'no' : 'yes') }}
+                    </button>
+                  </template>
                   <span v-else class="history-muted"> → en attente de réponse…</span>
+                  <!-- Vote des éliminés : meilleure question du round -->
+                  <span v-if="votesByAction[action.action_id ?? action.id]" class="question-votes"
+                        :title="'Votes des éliminés'">
+                    ⭐ {{ votesByAction[action.action_id ?? action.id] }}
+                  </span>
+                  <button v-if="isVotable(action)" type="button" class="question-vote-btn"
+                          :class="{ 'is-voted': myVoteByRound[action.round_id] === (action.action_id ?? action.id) }"
+                          :disabled="!!votingQuestionId"
+                          @click="voteForQuestion(action)">
+                    {{ myVoteByRound[action.round_id] === (action.action_id ?? action.id) ? '⭐ Mon vote' : '☆ Voter' }}
+                  </button>
                 </template>
 
                 <!-- Question refusée -->
@@ -1433,6 +1966,8 @@ function backToHome() {
               <template v-if="votingCharacters">
                 <span v-if="acceptedPlayerIds.has(player.id)"
                       class="player-token__badge player-token__badge--active">✓ prêt</span>
+                <span v-else-if="changePlayerIds.has(player.id)"
+                      class="player-token__badge player-token__badge--danger">🔄 changer</span>
                 <span v-else class="player-token__badge" title="N'a pas encore accepté son personnage">⏳</span>
               </template>
               <span v-if="player.id === currentPlayerId && !eliminatedPlayerIds.has(player.id)"
@@ -1537,6 +2072,9 @@ function backToHome() {
                       :class="`chat-bubble--${entry.action.answer}`"
                   >
                     <p class="chat-text">{{ answerLabel(entry.action.answer) }}</p>
+                    <p v-if="entry.action.answer_corrected_from" class="chat-corrected">
+                      ✏️ corrigé par l'hôte (était {{ answerLabel(entry.action.answer_corrected_from) }})
+                    </p>
                   </div>
                   <div v-else class="chat-bubble chat-bubble--out chat-bubble--pending">
                     <p class="chat-text">en attente de réponse…</p>
@@ -1589,6 +2127,12 @@ function backToHome() {
             >
               <span class="target-chip__avatar"><PlayerAvatar :pseudo="p.pseudo" :url="p.avatar_url" /></span>
               <span class="target-chip__name">{{ p.pseudo }}</span>
+              <span class="target-chip__count"
+                    :class="{ 'is-empty': !questionCountByPlayer[p.id] }"
+                    :title="`${questionCountByPlayer[p.id] ?? 0} question(s) déjà posée(s)`"
+                    :aria-label="`${questionCountByPlayer[p.id] ?? 0} question(s) déjà posée(s)`">
+                <i class="fa-solid fa-comment" aria-hidden="true"></i>{{ questionCountByPlayer[p.id] ?? 0 }}
+              </span>
               <span v-if="questionTarget === p.id" class="target-chip__check">
                 <i class="fa-solid fa-check"></i>
               </span>
@@ -1634,15 +2178,18 @@ function backToHome() {
               no-close-on-backdrop no-close-on-esc centered size="lg">
         <div class="text-center py-2">
 
-          <!-- Animation avant le tableau -->
-          <div v-if="!showScoreBoard" class="gameover-animation">
+          <!-- Résultat personnel (en grand tant que le tableau n'est pas là) -->
+          <div class="gameover-animation" :class="{'gameover-animation--compact': showScoreBoard}">
             <div class="gameover-title">{{ gameOverTitle }}</div>
             <p class="gameover-sub">{{ gameOverMsg }}</p>
-            <div class="loading-blocks"><span></span><span></span><span></span></div>
+            <div v-if="!gameOverTitle" class="loading-blocks"><span></span><span></span><span></span></div>
           </div>
 
+          <!-- Annonce du grand gagnant : carte du perso + photo, feu d'artifice -->
+          <WinnerShowcase v-if="gameOverTitle && winnerCards.length" :winners="winnerCards" />
+
           <!-- Tableau des scores -->
-          <div v-else class="scoreboard">
+          <div v-if="showScoreBoard" class="scoreboard">
             <h4 class="scoreboard-title">Tableau des scores</h4>
 
             <div class="scoreboard-list">
@@ -1670,6 +2217,9 @@ function backToHome() {
                 <div class="scoreboard-details">
                   <span class="stat-chip">⚔️ {{ stat.eliminations }} élim.</span>
                   <span class="stat-chip">🛡️ {{ stat.rounds_survived }} rounds</span>
+                  <span v-if="stat.best_questions" class="stat-chip stat-chip-gold">
+              ⭐ {{ stat.best_questions }} meilleure{{ stat.best_questions > 1 ? 's' : '' }} question{{ stat.best_questions > 1 ? 's' : '' }}
+            </span>
                   <span v-if="stat.survived_full_game" class="stat-chip stat-chip-gold">
               ⭐ Survie complète
             </span>
@@ -1716,6 +2266,29 @@ function backToHome() {
               te demande :
             </p>
             <p class="answer-question-text">« {{ pendingQuestion?.question }} »</p>
+          </div>
+
+          <!-- Rappel de mon personnage, masqué tant que je ne le demande pas -->
+          <div class="answer-me" :class="{ 'is-open': showAnswerCharacter }">
+            <button type="button" class="answer-me__toggle"
+                    :aria-expanded="showAnswerCharacter"
+                    aria-controls="answer-me-content"
+                    @click="showAnswerCharacter = !showAnswerCharacter">
+              <i :class="showAnswerCharacter ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'" aria-hidden="true"></i>
+              {{ showAnswerCharacter ? 'Masquer mon personnage' : 'Rappelle-moi qui je suis' }}
+            </button>
+            <div v-if="showAnswerCharacter" id="answer-me-content" class="answer-me__content">
+              <div class="answer-me__img">
+                <img v-if="myCharacter?.image" :src="myCharacter.image" :alt="myCharacter?.name"/>
+                <span v-else aria-hidden="true">?</span>
+              </div>
+              <div class="answer-me__info">
+                <p class="answer-me__name">{{ myCharacter?.name ?? '???' }}</p>
+                <p class="answer-me__universe">
+                  {{ myCharacter?.universe ?? '…' }}<template v-if="myCharacter?.cosmos"> · {{ myCharacter.cosmos }}</template>
+                </p>
+              </div>
+            </div>
           </div>
 
           <!-- Piège détecté : la question contient un de MES mots interdits -->
@@ -1772,6 +2345,92 @@ function backToHome() {
           </div>
         </div>
       </BModal>
+
+      <!-- ── MODAL : Tirage de carte (après « Je ne sais pas ») ───────────── -->
+      <BModal
+          v-model="showCardDrawModal"
+          title="🃏 Tirage de carte"
+          no-footer
+          class="arcade-modal"
+          no-close-on-backdrop
+          no-close-on-esc
+          centered
+      >
+        <div v-if="cardDraw" class="answer-modal-body">
+          <div v-if="cardDrawError" class="modal-error" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>{{ cardDrawError }}</span>
+          </div>
+
+          <p class="card-draw-intro">
+            <template v-if="cardDraw.phase === 'pick'">
+              <span class="history-actor">{{ cardDraw.targetPseudo }}</span> ne sait pas répondre :
+              retourne une carte pour découvrir un de ses mots interdits.
+            </template>
+            <template v-else-if="cardDraw.phase === 'reveal'">
+              Mémorise-le, il disparaît dans <strong>{{ cardDraw.revealLeft }} s</strong> !
+            </template>
+            <template v-else>
+              La carte est retournée. Montres-tu ce mot aux autres joueurs ?
+              <span class="history-actor">{{ cardDraw.targetPseudo }}</span> ne le saura pas.
+            </template>
+          </p>
+
+          <div class="draw-cards" role="group" aria-label="Cartes face cachée">
+            <button
+                v-for="i in cardDraw.cardCount"
+                :key="i"
+                type="button"
+                class="draw-card"
+                :class="{
+                  'is-picked': cardDraw.pickedCard === i - 1,
+                  'is-face': cardDraw.phase === 'reveal' && cardDraw.pickedCard === i - 1,
+                  'is-dimmed': cardDraw.phase !== 'pick' && cardDraw.pickedCard !== i - 1,
+                }"
+                :disabled="cardDraw.phase !== 'pick' || submittingCardDraw"
+                :aria-label="`Carte ${i}`"
+                @click="pickCard(i - 1)"
+            >
+              <span v-if="cardDraw.phase === 'reveal' && cardDraw.pickedCard === i - 1" class="draw-card__word">
+                {{ cardDraw.word }}
+              </span>
+              <BSpinner v-else-if="submittingCardDraw && cardDraw.pickedCard === i - 1" small/>
+              <span v-else class="draw-card__back" aria-hidden="true">?</span>
+            </button>
+          </div>
+
+          <div v-if="cardDraw.phase !== 'pick'" class="answer-buttons">
+            <button class="answer-btn answer-btn-yes"
+                    :disabled="submittingCardDraw"
+                    @click="decideCardDraw(true)">
+              <BSpinner v-if="submittingCardDraw" small class="me-1"/>
+              📢 Montrer aux autres
+            </button>
+            <button class="answer-btn answer-btn-dont-know"
+                    :disabled="submittingCardDraw"
+                    @click="decideCardDraw(false)">
+              🤫 Garder pour moi
+            </button>
+          </div>
+
+          <p class="card-draw-deadline">
+            <i class="fa-solid fa-hourglass-half"></i>
+            {{ cardDrawSecondsLeft ?? '…' }} s pour {{ cardDraw.phase === 'pick' ? 'tirer et ' : '' }}décider, sinon la carte est perdue.
+          </p>
+        </div>
+      </BModal>
+
+      <!-- Mot montré par un autre joueur (channel privé, jamais chez la cible) -->
+      <Transition name="card-pop">
+        <div v-if="sharedWord" class="card-share-pop" role="alert">
+          <p class="card-share-pop__title">
+            🃏 <strong>{{ sharedWord.asker }}</strong> te montre un mot interdit de
+            <strong>{{ sharedWord.target }}</strong>
+          </p>
+          <span class="card-share-pop__word">{{ sharedWord.word }}</span>
+          <span class="card-share-pop__timer" :style="{ animationDuration: `${sharedWord.total}s` }"></span>
+        </div>
+      </Transition>
 
       <BModal v-model="showAccusationModal" title="🎯 Faire une accusation" no-footer class="arcade-modal" centered>
         <div v-if="modalError" class="modal-error" role="alert">
@@ -1842,7 +2501,7 @@ function backToHome() {
           </div>
 
           <BAlert :model-value="true" variant="danger" class="small mb-0">
-            ⚠️ Si tu confirmes, ton binôme sera éliminé de la partie !
+            ⚠️ Si tu confirmes, tu seras éliminé et deviendras spectateur. Ton binôme, lui, reste en jeu et n'est pas révélé.
           </BAlert>
 
           <div class="answer-buttons">
@@ -1868,7 +2527,7 @@ function backToHome() {
           :my-player-id="myPlayerId"
       />
 
-      <QuickReactions :reactions="reactions" @send="sendReaction" />
+      <QuickReactions :reactions="reactions" :player-id="myPlayerId" @send="sendReaction" />
 
     </template>
   </div>
@@ -2002,6 +2661,13 @@ function backToHome() {
   word-break: break-word;
 }
 
+.turn-marquee__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .turn-marquee__sub {
   font-size: 0.75rem;
   font-weight: 700;
@@ -2115,6 +2781,12 @@ function backToHome() {
   background: linear-gradient(180deg, #ffd876, var(--arcade-gold));
   border-color: #a8720f;
   color: #4a2f00;
+  /* Les univers longs ("Monstres et Cie") passent à la ligne entre les mots,
+     sans jamais couper un mot : min-content l'emporte sur max-width */
+  width: max-content;
+  min-width: min-content;
+  white-space: normal;
+  text-align: center;
 }
 
 .character-info {
@@ -2150,13 +2822,6 @@ function backToHome() {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-}
-
-/* ─── FLOU ──────────────────────────────────────────────────────────────────── */
-.blurred {
-  filter: blur(8px);
-  user-select: none;
-  transition: filter 0.3s ease;
 }
 
 .character-board__head {
@@ -2324,6 +2989,59 @@ function backToHome() {
   transform: translateY(1px);
 }
 
+.notepad-btn:disabled {
+  opacity: 0.6;
+}
+
+.board-tools {
+  align-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.net-banner__reload {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.6rem;
+  font-weight: 700;
+  color: var(--arcade-gold);
+  background: #4a2f00;
+  border: 0;
+  border-radius: 6px;
+}
+
+.answer-correct-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 32px;
+  margin: 0.15rem 0 0 0.35rem;
+  padding: 0.1rem 0.65rem;
+  border: 2px dashed var(--arcade-blue-grey);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.answer-corrected {
+  margin-left: 0.35rem;
+  font-size: 0.8em;
+}
+
+.chat-corrected {
+  margin: 0.15rem 0 0;
+  font-size: 0.7rem;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.answer-correct-btn:disabled {
+  opacity: 0.5;
+}
+
 /* ─── BANNIÈRES D'ÉTAT (spectateur, éliminé, joueur déconnecté) ─────────────── */
 .info-banner {
   margin: 0.75rem 1rem 1.25rem;
@@ -2394,6 +3112,8 @@ function backToHome() {
 
 .info-banner--vote .info-banner__icon { color: #ffd876; }
 .info-banner--vote .info-banner__title { color: #ffe4a3; }
+.info-banner--vote .vote-counter--change { color: #f3c2bf; }
+.vote-count { white-space: nowrap; }
 
 .info-banner--afk .info-banner__icon { color: #ffd876; }
 .info-banner--afk .info-banner__title { color: #ffe4a3; }
@@ -2776,6 +3496,154 @@ function backToHome() {
   margin-top: 1px;
 }
 
+/* ── Ordre de passage ─────────────────────────────────────────── */
+.turn-order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 1rem;
+  background: var(--arcade-blue-grey-dark);
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+.turn-order__label {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.turn-order__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.1rem 0.5rem 0.1rem 0.15rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-order__chip.is-me {
+  background: var(--arcade-gold);
+  color: var(--arcade-blue-grey-dark);
+}
+
+.turn-order__chip .mini-avatar {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.turn-order__round {
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+/* ── Éliminés : vote et vue omnisciente ───────────────────────── */
+.question-votes {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-weight: 700;
+  color: var(--arcade-gold);
+  white-space: nowrap;
+}
+
+.question-vote-btn {
+  display: inline-flex;
+  align-items: center;
+  /* Cible tactile confortable (22px auparavant) */
+  min-height: 32px;
+  margin: 0.15rem 0 0 0.35rem;
+  padding: 0.1rem 0.65rem;
+  border: 2px solid var(--arcade-gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--arcade-gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.question-vote-btn.is-voted {
+  background: var(--arcade-gold);
+  color: var(--arcade-blue-grey-dark);
+}
+
+.question-vote-btn:disabled {
+  opacity: 0.6;
+}
+
+.reveal-all-btn {
+  margin-top: 0.5rem;
+}
+
+.reveal-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.reveal-binome {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  border: 2px solid rgba(90, 111, 125, 0.35);
+}
+
+.reveal-binome__universe {
+  margin: 0 0 0.4rem;
+  font-weight: 800;
+}
+
+.reveal-binome__orphan {
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.reveal-player {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.reveal-player + .reveal-player {
+  margin-top: 0.4rem;
+}
+
+.reveal-player.is-eliminated {
+  opacity: 0.55;
+}
+
+.reveal-player__img {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: cover;
+}
+
+.reveal-player__body {
+  min-width: 0;
+}
+
+.reveal-player__name,
+.reveal-player__words {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reveal-player__words {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
 /* Photo (ou initiales) devant un pseudo — voir PlayerAvatar */
 .mini-avatar {
   display: inline-flex;
@@ -2955,6 +3823,36 @@ function backToHome() {
   overflow: hidden;
 }
 
+.target-chip__count {
+  /* Pastille sur le coin haut-gauche (la coche occupe le haut-droit) :
+     ne prend aucune place au pseudo, même à 320px */
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 20px;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--arcade-blue-grey);
+  color: #fff;
+}
+
+.target-chip__count i {
+  font-size: 0.6rem;
+}
+
+.target-chip__count.is-empty {
+  background: #fff;
+  color: var(--arcade-blue-grey);
+  border-color: var(--arcade-blue-grey);
+}
+
 .target-chip__check {
   position: absolute;
   top: -7px;
@@ -3009,6 +3907,82 @@ function backToHome() {
   word-break: break-word; /* ← empêche le texte long de casser le layout */
   overflow-wrap: break-word;
   white-space: normal;
+}
+
+.answer-me {
+  border: 2px dashed var(--arcade-blue-grey);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.answer-me.is-open {
+  border-style: solid;
+  border-color: var(--arcade-gold);
+  background: #fff6de;
+}
+
+.answer-me__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--arcade-blue-grey-dark);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.answer-me__content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.answer-me__img {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--arcade-taupe);
+  color: #fff;
+  font-family: 'Press Start 2P', cursive;
+}
+
+.answer-me__img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.answer-me__info {
+  min-width: 0;
+}
+
+.answer-me__name {
+  margin: 0;
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  color: var(--arcade-blue-grey-dark);
+  overflow-wrap: anywhere;
+}
+
+.answer-me__universe {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--arcade-taupe);
+  overflow-wrap: anywhere;
 }
 
 .answer-forbidden {
@@ -3107,6 +4081,177 @@ function backToHome() {
   font-weight: bold;
 }
 
+.history-card-draw {
+  white-space: nowrap;
+}
+
+/* ─── TIRAGE DE CARTE ───────────────────────────────────────────────────────── */
+.card-draw-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--arcade-beige);
+  background: rgba(224, 163, 28, 0.12);
+  border: 2px dashed var(--arcade-gold);
+  border-radius: 10px;
+}
+
+.card-draw-banner__icon {
+  flex-shrink: 0;
+  font-size: 1.3rem;
+}
+
+.card-draw-intro,
+.card-draw-deadline {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--arcade-blue-grey-dark);
+}
+
+.card-draw-deadline {
+  font-size: 0.75rem;
+  color: var(--arcade-taupe);
+  text-align: center;
+}
+
+.draw-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.draw-card {
+  width: 76px;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border-radius: 10px;
+  border: 3px solid var(--arcade-blue-grey-dark);
+  background:
+      repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 6px, transparent 6px 12px),
+      var(--arcade-blue-grey);
+  color: var(--arcade-gold);
+  box-shadow: 0 5px 0 var(--arcade-blue-grey-dark);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+
+.draw-card:not(:disabled):hover {
+  transform: translateY(-4px);
+}
+
+.draw-card:disabled {
+  cursor: default;
+}
+
+.draw-card.is-picked {
+  border-color: var(--arcade-gold);
+}
+
+.draw-card.is-face {
+  background: var(--arcade-beige);
+  border-color: var(--arcade-danger);
+  box-shadow: 0 5px 0 var(--arcade-danger-dark);
+  animation: cardFlip 0.35s ease;
+}
+
+.draw-card.is-dimmed {
+  opacity: 0.35;
+}
+
+.draw-card__back {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 1.4rem;
+}
+
+.draw-card__word {
+  font-weight: 800;
+  font-size: 0.85rem;
+  line-height: 1.15;
+  color: var(--arcade-danger-dark);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+@keyframes cardFlip {
+  from { transform: rotateY(90deg); }
+  to   { transform: rotateY(0); }
+}
+
+/* Mot montré par un autre joueur : 5 s, au-dessus de tout le reste */
+.card-share-pop {
+  position: fixed;
+  top: calc(var(--navbar-height, 56px) + 0.75rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  width: min(420px, calc(100vw - 1.5rem));
+  padding: 0.8rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  text-align: center;
+  color: var(--arcade-beige);
+  background: var(--arcade-dark-2, #1c2226);
+  border: 3px solid var(--arcade-gold);
+  border-radius: 12px;
+  box-shadow: 0 6px 0 #a8720f, 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.card-share-pop__title {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.card-share-pop__word {
+  padding: 0.35rem 0.9rem;
+  font-weight: 800;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+  color: var(--arcade-danger-dark);
+  background: var(--arcade-beige);
+  border: 3px solid var(--arcade-danger);
+  border-radius: 8px;
+}
+
+/* Barre qui se vide pendant la durée d'affichage */
+.card-share-pop__timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: var(--arcade-gold);
+  transform-origin: left;
+  animation: cardTimer linear forwards;
+}
+
+@keyframes cardTimer {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+.card-pop-enter-active,
+.card-pop-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.card-pop-enter-from,
+.card-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+
 /* ─── FIN DE PARTIE ANIMATION ───────────────────────────────────────────────── */
 .gameover-animation {
   display: flex;
@@ -3114,6 +4259,16 @@ function backToHome() {
   align-items: center;
   gap: 1.25rem;
   padding: 2rem 0;
+}
+
+.gameover-animation--compact {
+  gap: 0.5rem;
+  padding: 0.5rem 0 1rem;
+}
+
+.gameover-animation--compact .gameover-title {
+  font-size: 0.9rem;
+  animation: none;
 }
 
 .gameover-title {
@@ -3243,6 +4398,44 @@ function backToHome() {
 }
 
 /* ─── PETITS ÉCRANS ─────────────────────────────────────────────────────────── */
+/* Téléphone en paysage : le bandeau collant du tour (82px) + la navbar ne
+   laissaient qu'un tiers de l'écran. Une seule ligne, sans sous-titre. */
+@media (max-height: 500px) {
+  .turn-marquee {
+    padding: 0.3rem 1rem;
+  }
+
+  .turn-marquee__main {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .turn-marquee__name {
+    display: inline;
+  }
+
+  .turn-marquee__sub,
+  .turn-marquee__round-label {
+    display: none;
+  }
+
+  .turn-marquee__icon {
+    width: 1.6rem;
+    height: 1.6rem;
+    font-size: 0.85rem;
+  }
+
+  /* L'afficheur du round (41px) imposait la hauteur du bandeau */
+  .turn-marquee__lcd {
+    padding: 0.15rem 0.45rem;
+  }
+
+  .turn-marquee__lcd .lcd-char {
+    font-size: 0.85rem;
+  }
+}
+
 @media (max-width: 380px) {
   .character-board__body {
     flex-direction: column;

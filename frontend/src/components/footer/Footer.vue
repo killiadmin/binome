@@ -1,11 +1,13 @@
-<script setup></script>
+<script setup>
+import logo96 from '../../assets/logo/binome-logo-96.webp';
+</script>
 
 <template>
   <div class="footer arcade-footer">
     <b-container fluid class="py-3">
       <b-row>
         <b-col cols="12" class="text-center align-self-center p-2">
-          <p class="mb-0"><i class="fa-solid fa-dice-d20"></i> &copy; {{ new Date().getFullYear() }} Binome. Tous droits réservés.</p>
+          <p class="mb-0 footer-line"><img :src="logo96" alt="" class="footer-logo" width="20" height="20" loading="lazy" decoding="async" /> &copy; {{ new Date().getFullYear() }} Binome. Tous droits réservés.</p>
         </b-col>
       </b-row>
     </b-container>
@@ -13,11 +15,32 @@
 </template>
 
 <style scoped>
+/* Téléphone : le footer suit le contenu (voir App.vue, --footer-height) */
 .footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
   width: 100%;
+}
+
+@media (min-width: 768px) and (min-height: 501px) {
+  .footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+  }
+}
+
+.footer-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* 20px = hauteur de ligne du texte : le footer ne grandit pas. */
+.footer-logo {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .arcade-footer {

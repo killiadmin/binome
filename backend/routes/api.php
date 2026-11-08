@@ -3,10 +3,14 @@
 use App\Http\Controllers\AccessController;
 use App\Http\Controllers\ActionController;
 use App\Http\Controllers\AdminGameController;
+use App\Http\Controllers\AdminPlayerController;
+use App\Http\Controllers\AdminReactionController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\CharacterController;
+use App\Http\Controllers\CharacterImageController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CosmosController;
+use App\Http\Controllers\CustomReactionController;
 use App\Http\Controllers\GameController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\RoomController;
@@ -38,6 +42,7 @@ Route::prefix('characters')->middleware('characters.access')->group(function () 
     Route::get('pending', [CharacterController::class, 'pending']);
     Route::post('validation/accept', [CharacterController::class, 'accept']);
     Route::post('validation/reject', [CharacterController::class, 'reject']);
+    Route::post('validation/restore', [CharacterController::class, 'restore']);
     Route::put('{character}', [CharacterController::class, 'update']);
     Route::patch('{character}/forbidden-words', [CharacterController::class, 'updateForbiddenWords']);
     Route::post('{character}/image', [CharacterController::class, 'uploadImage']);
@@ -49,6 +54,27 @@ Route::prefix('admin/games')->middleware('characters.access')->group(function ()
     Route::get('/', [AdminGameController::class, 'index']);
     Route::get('{game}', [AdminGameController::class, 'show']);
     Route::delete('{game}', [AdminGameController::class, 'destroy']);
+});
+
+Route::prefix('admin/players')->middleware('characters.access')->group(function () {
+    Route::get('/', [AdminPlayerController::class, 'index']);
+    Route::delete('{player}/room', [AdminPlayerController::class, 'removeFromRoom']);
+    Route::delete('{player}', [AdminPlayerController::class, 'destroy']);
+});
+
+Route::prefix('admin/reactions')->middleware('characters.access')->group(function () {
+    Route::get('/', [AdminReactionController::class, 'index']);
+    Route::post('/', [AdminReactionController::class, 'store']);
+    Route::patch('{reaction}', [AdminReactionController::class, 'update']);
+    Route::delete('{reaction}', [AdminReactionController::class, 'destroy']);
+});
+
+// Réactions en partie (emojis Unicode + images créées par les joueurs),
+// envoyées via POST /games/{game}/reactions { reaction_id }.
+Route::prefix('reactions')->group(function () {
+    Route::get('/', [CustomReactionController::class, 'index']);
+    Route::post('/', [CustomReactionController::class, 'store'])->middleware('throttle:custom-reactions');
+    Route::get('{reaction}/image', [CustomReactionController::class, 'image']);
 });
 
 // Historique public — aucune authentification. Seules les parties TERMINÉES
@@ -71,6 +97,10 @@ Route::prefix('chat')->group(function () {
 // Photos de profil des joueurs (remplacent le badge à initiales).
 // L'image est servie par URL versionnée, jamais incluse dans le JSON ni les events.
 Route::get('avatars/{avatar}', [AvatarController::class, 'show']);
+
+// Image d'un personnage — même principe : URL versionnée renvoyée par
+// GET /games/{game}/me, binaire mis en cache par le navigateur.
+Route::get('character-images/{character}', [CharacterImageController::class, 'show']);
 Route::prefix('players/{player}/avatar')->middleware('throttle:avatars')->group(function () {
     Route::post('/', [AvatarController::class, 'update']);
     Route::delete('/', [AvatarController::class, 'destroy']);
@@ -90,15 +120,22 @@ Route::prefix('games/{game}')->group(function () {
     Route::get('/', [GameController::class, 'show']);
     Route::get('me', [GameController::class, 'myCharacter']);
     Route::get('recap', [GameController::class, 'recap']);
+    Route::get('reveal', [GameController::class, 'reveal']);
+    Route::post('question-votes', [GameController::class, 'voteQuestion']);
     Route::post('character-vote', [GameController::class, 'voteCharacter']);
     Route::post('reactions', [GameController::class, 'react'])->middleware('throttle:reactions');
     Route::post('skip-turn', [GameController::class, 'skipTurn']);
     Route::post('players/{player}/exclude', [GameController::class, 'excludePlayer']);
+    Route::post('actions/{action}/correct-answer', [GameController::class, 'correctAnswer']);
 
-    Route::prefix('rounds/{round}')->group(function () {
+    // scopeBindings : le round doit appartenir à la partie, l'action au round
+    // (sinon 404) — un id de round d'une autre partie ne passe plus.
+    Route::prefix('rounds/{round}')->scopeBindings()->group(function () {
         Route::post('question', [ActionController::class, 'question']);
         Route::post('accusation', [ActionController::class, 'accusation']);
         Route::post('actions/{action}/answer', [ActionController::class, 'answer']);
         Route::post('actions/{action}/confirm', [ActionController::class, 'confirmAccusation']);
+        Route::post('actions/{action}/draw', [ActionController::class, 'drawCard']);
+        Route::post('actions/{action}/draw/decision', [ActionController::class, 'decideCardDraw']);
     });
 });

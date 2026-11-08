@@ -39,7 +39,8 @@ src/
 │   ├── game/
 │   │   ├── GameNotepad.vue        # Bloc-notes privé (modale) : note libre + une note par joueur
 │   │   ├── GameRecap.vue          # Récap de fin : trophées, qui a trouvé qui, binômes, partage
-│   │   └── QuickReactions.vue     # Bouton flottant d'emojis + animation des réactions reçues
+│   │   ├── QuickReactions.vue     # Bouton flottant de réactions (GET /reactions) + animation des réactions reçues
+│   │   └── ReactionEditor.vue     # Création d'un emoji : selfie / image → recadrage 128 px → nom (joueur ou admin)
 │   ├── player/
 │   │   ├── PlayerAvatar.vue       # Contenu d'un badge joueur : photo, sinon initiales
 │   │   └── AvatarEditor.vue       # Prise de vue / import → recadrage → envoi de sa photo
@@ -52,11 +53,16 @@ src/
 │       └── ImageCropperModal.vue  # recadrage carré imposé → 512×512 JPEG
 │
 ├── composables/
+│   ├── usePhotoCapture.js      # Prise de vue (caméra / webcam) ou import → recadrage (avatar, emojis)
 │   └── useEcho.js              # (non utilisé — remplacé par useReverb)
 │
 ├── pages/
-│   ├── Admin/
-│   │   └── AdminGamesPage.vue    # Vue admin : lister / consulter / supprimer les parties (accès `charactersAccess`)
+│   ├── Admin/                    # Espace /admin (cadenas de la navbar, accès `charactersAccess`)
+│   │   ├── AdminLayout.vue       # Barre de sections + bouton Verrouiller, sections en routes enfants
+│   │   ├── AdminGamesPage.vue    # Parties : lister / consulter / supprimer
+│   │   ├── AdminPromptsPage.vue  # Prompts de génération de personnages à copier
+│   │   ├── AdminPlayersPage.vue  # Joueurs inscrits : recherche, tri, stats ; retirer du salon / supprimer
+│   │   └── AdminReactionsPage.vue # Toutes les réactions : ajouter (emoji ou image), renommer, masquer, supprimer
 │   ├── Characters/
 │   │   ├── CharacterPage.vue      # Créer un personnage (univers/cosmos existant ou nouveau)
 │   │   └── CharacterListPage.vue  # Liste triée cosmos → univers → binômes, filtres, édition/suppression, validation des propositions
@@ -72,7 +78,8 @@ src/
 │       └── RulePage.vue
 │
 ├── services/
-│   ├── adminService.js         # Appels API vue admin des parties (liste / détail / suppression)
+│   ├── adminService.js         # Appels API de l'espace admin (parties, joueurs, emojis)
+│   ├── reactionService.js      # Emojis créés par les joueurs (liste / création)
 │   ├── api.js                  # Instance Axios configurée
 │   ├── charactersAccess.js     # Déverrouillage par mot de passe des pages personnages (token en session)
 │   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
@@ -106,7 +113,7 @@ VITE_REVERB_APP_KEY=reverb_key
 
 > `VITE_REVERB_APP_KEY` doit correspondre exactement à `REVERB_APP_KEY` du `.env` Laravel backend.
 
-Le navigateur ne parle qu'à l'origine qui a servi la page (`http://<IP LAN>:5173`). `vite.config.js` proxifie `/api` et `/broadcasting` vers le conteneur `backend`, et le WebSocket `/app` vers le conteneur `reverb`, par nom de service Docker. **L'IP LAN n'apparaît donc dans aucune config front** : changer de Wi-Fi ne demande aucune regénération.
+Le navigateur ne parle qu'à l'origine qui a servi la page, sous `/binome/` (`http://killiadmin.local:8095/binome/` via le portail `../portail`, ou `http://localhost:5173/binome/`). `vite.config.js` proxifie `/binome/api` et `/binome/broadcasting` vers le conteneur `backend`, et le WebSocket `/binome/app` vers le conteneur `reverb`, par nom de service Docker, en retirant le préfixe. **L'IP LAN n'apparaît donc dans aucune config front** : changer de Wi-Fi ne demande aucune regénération.
 
 Hors Docker uniquement (`npm run dev`), les noms de service ne résolvent pas — surcharger alors :
 
@@ -121,7 +128,7 @@ VITE_PROXY_REVERB=http://127.0.0.1:8080
 
 ### Avec Docker (recommandé)
 
-Voir le README à la racine du repo — `./start.sh` lance toute la stack (dont ce service) via Docker Compose et affiche l'URL de partage. Le front est servi sur `http://<IP LAN>:5173`, accessible depuis n'importe quel appareil connecté au même Wi-Fi.
+Voir le README à la racine du repo — `./start.sh` lance toute la stack (dont ce service) via Docker Compose et affiche l'URL de partage. Le front est servi sur `http://killiadmin.local:8095/binome/` (portail `../portail`, à lancer aussi), accessible depuis n'importe quel appareil connecté au même Wi-Fi.
 
 ### Sans Docker (legacy)
 
@@ -156,19 +163,33 @@ et un intercepteur de **requête** qui joint l'en-tête `X-Characters-Access`
 
 ---
 
+### `CharacterListPage.vue` — Filtres mémorisés
+
+Les filtres de `/admin/binomes` (recherche, statuts, cosmos, nombre de niveaux)
+sont sauvegardés dans `localStorage` sous la clé `characterListFilters` (bouton
+« Réinitialiser » pour revenir aux valeurs par défaut). Les cosmos sont mémorisés
+par **exclusion** : un cosmos apparu depuis reste coché. Le filtre « Nombre de
+niveaux par univers » compte les `level_affectation` distincts de chaque univers
+(personnages refusés exclus) ; aucune case cochée = pas de filtre.
+
+---
+
 ### `charactersAccess.js` — Accès cloisonné aux personnages
 
-Les pages **Liste des personnages** (`/characters/list`), **Création de
-personnages** (`/characters`) et **Parties** (`/admin/games` — vue admin :
-lister / consulter / supprimer les parties) sont masquées par défaut et
-protégées par un mot de passe (défini côté backend dans
-`CHARACTERS_ACCESS_PASSWORD`). Un seul déverrouillage donne accès aux trois.
+L'espace d'administration `/admin` (`AdminLayout.vue`) regroupe, en routes
+enfants : **Parties** (`/admin/games`), **Binômes** (`/admin/binomes` — liste des
+personnages, et `/admin/binomes/new` — création), **Prompts** (`/admin/prompts`),
+**Joueurs** (`/admin/players`) et **Emojis** (`/admin/reactions`). Il est protégé
+par un mot de passe (défini côté backend dans `CHARACTERS_ACCESS_PASSWORD`).
+Les anciennes adresses `/characters` et `/characters/list` redirigent vers
+`/admin/binomes/new` et `/admin/binomes`.
 
 - `charactersAccess.unlock(password)` → `POST /api/access/characters`, stocke le
   `token` renvoyé dans `localStorage` sous la clé `charactersAccess`.
-- `charactersAccess.isUnlocked` (computed réactif) → pilote l'affichage des deux
-  onglets dans `Navbar.vue` ; le cadenas ouvre la modale de saisie du mot de passe.
-- `charactersAccess.lock()` → oublie le token (reverrouille).
+- `isCharactersUnlocked` (computed réactif) → pilote le cadenas de `Navbar.vue` :
+  fermé, il ouvre la modale de mot de passe puis redirige vers `/admin` ; ouvert,
+  c'est un lien vers `/admin`. Aucun onglet d'administration dans la navbar.
+- `charactersAccess.lock()` → oublie le token (bouton « Verrouiller » de l'espace admin).
 - `router.js` : une garde `beforeEach` renvoie vers l'accueil toute navigation
   vers une route `meta.requiresCharactersAccess` sans token (accès direct par URL).
 - Le token étant persisté, le mot de passe n'est demandé qu'une fois par
@@ -218,6 +239,8 @@ auth: {
 | `leaveLobbyChat()` | `lobby` | Quitter le chat commun |
 | `joinGame(gameId, callbacks)` | `presence-game.{id}` | Rejoindre la partie WebSocket |
 | `leaveGame(gameId)` | `presence-game.{id}` | Quitter la partie |
+| `joinPlayerChannel(playerId, callbacks)` | `private-player.{id}` | Messages à soi seul — `onCardWordShared` (mot interdit montré par un autre joueur) |
+| `leavePlayerChannel(playerId)` | `private-player.{id}` | Quitter son channel privé |
 
 #### Callbacks disponibles pour `joinRoom`
 
@@ -253,10 +276,13 @@ joinGame(gameId, {
     onLeaving:           (member)  => {},
     onRoundStarted:      (data)    => {},
     onActionPlayed:      (data)    => {},
-    onAnswerGiven:       (data)    => {},
+    onAnswerGiven:       (data)    => {},   // data.card_draw non null → tirage de carte ouvert
+    onAnswerCorrected:   (data)    => {},   // l'hôte a corrigé une réponse oui ⇄ non
+    onCardDrawn:         (data)    => {},   // le questionneur a retourné une carte (jamais le mot)
+    onCardDrawFinished:  (data)    => {},   // tirage clos, le tour reprend
     onBinomeDiscovered:  (data)    => {},
     onGameEnded:         (data)    => {},
-    onReactionSent:      (data)    => {},   // réaction rapide (emoji)
+    onReactionSent:      (data)    => {},   // réaction rapide : data.reaction { emoji | url }
     onTurnSkipped:       (data)    => {},   // l'hôte a passé le tour d'un joueur déconnecté
     onPlayerExcluded:    (data)    => {},   // l'hôte a exclu un joueur déconnecté
     onError:             (error)   => {},
@@ -430,16 +456,22 @@ Le détail d'une partie et celui d'un joueur sont chargés à la demande puis m�
 
 Page de jeu principale. Gère :
 
-- Affichage du personnage secret assigné au joueur (avec toggle flou)
-- Vote des personnages avant le round 1 : bannière « Prêts : x / n », boutons **Je le connais** /
-  **Changer** (avec confirmation, car un refus retire les personnages de tout le monde), badge
-  `✓ prêt` / `⏳` sur chaque joueur. `characters.redrawn` → relit `/me` et refloute la carte ;
+- Affichage du personnage secret assigné au joueur, masqué par `PixelVeil` (mosaïque de pixels sur un contenu très flouté à teinte tournante) ; nom et mots interdits restent chiffrés dans le DOM via `useDecipherText`. « Révéler » lance un déchiffrage de ~1,8 s (pixels qui s'éteignent dans un ordre aléatoire + lettres résolues de gauche à droite) ; « Masquer » recouvre en 0,3 s
+- Vote des personnages avant le round 1 : bannière « Prêts : x / n » + « Demandes à changer : y / n »,
+  boutons **Je le connais** / **Changer** (avec confirmation : le vote est définitif, et une seule
+  demande suffit à retirer les personnages de tout le monde une fois que tous ont voté), badge
+  `✓ prêt` / `🔄 changer` / `⏳` sur chaque joueur. `characters.redrawn` → relit `/me` et refloute la carte ;
   `round.started` clôt le vote. Le vote envoie l'id du personnage affiché : un `409` (retirage
   passé entre-temps) déclenche `resync()`. Pendant le vote, `loadGameState()` relit toujours `/me`.
 - Mots interdits du joueur
 - Bannière de tour en cours (temps réel)
 - Actions : poser une question ou faire une accusation
 - Modale de réponse oui/non/je ne sais pas (s'ouvre automatiquement chez le joueur ciblé)
+- **Tirage de carte** après « Je ne sais pas » : modale chez le questionneur (cartes face cachée →
+  mot visible 5 s puis effacé de la page → « Montrer aux autres » / « Garder pour moi », compte à
+  rebours de 30 s). Les autres voient un bandeau « X choisit une carte… » ; ceux à qui le mot est
+  montré reçoivent une popup 5 s via `private-player.{id}`. Après un rechargement, la modale
+  rouvre en phase décision (le mot ne se revoit pas). Bouton « Tirer ma carte » si elle est fermée
 - Historique complet des actions groupées par round
 - Animation de transition entre les rounds
 - Notifications de binôme découvert
@@ -466,7 +498,10 @@ Page de jeu principale. Gère :
 - **Reconnexion** : `onConnectionChange()` (useReverb) affiche « Connexion perdue » et, au retour
   à `connected`, appelle `resync()` → `loadGameState()` (même fonction que le chargement initial :
   actions, round, `hasPlayed`, modales en attente via `restorePendingPrompts()`). Même resync au
-  retour sur l'onglet après plus de 3 s masqué (`visibilitychange`, téléphone verrouillé).
+  retour sur l'onglet après plus de 3 s masqué (`visibilitychange`, téléphone verrouillé) et sur
+  `pageshow` (bfcache). `resync()` réessaie 3 fois (réseau pas encore revenu au réveil). Bouton
+  **Rafraîchir** (à côté du bloc-notes) : `resync()` à la demande, ou vrai rechargement si la socket
+  est coupée — le jeu ajouté à l'écran d'accueil n'a pas de bouton de rechargement navigateur.
 - Les modales réponse / confirmation se referment si `answer.given` / `accusation.confirmed`
   concerne leur action (réponse donnée depuis un autre onglet, tour passé) et à la fin de partie.
 
@@ -475,13 +510,22 @@ Page de jeu principale. Gère :
 - **Bloc-notes** (`composables/useGameNotes.js`) : `localStorage` uniquement, clé
   `binome:notes:{gameId}:{playerId}`, jamais envoyé au serveur ; les notes des autres parties
   sont purgées au chargement. Éditable depuis la fiche d'un joueur ou la modale `GameNotepad`.
-- **Réactions** : `QuickReactions.vue` (liste d'emojis alignée sur `GameController::REACTIONS`),
-  1,2 s de délai local entre deux envois + throttle serveur. La couche d'animation passe
+- **Réactions** : `QuickReactions.vue` affiche les réactions actives de `GET /reactions`
+  (emojis Unicode puis images, toutes gérées dans `/admin/reactions`), rechargées à chaque
+  ouverture de la barre ; envoi par `{ reaction_id }`, 1,2 s de délai local entre deux envois
+  + throttle serveur. Le bouton « + » ouvre `ReactionEditor.vue` : selfie ou image de la
+  bibliothèque, recadrage carré 128 px, nom — l'emoji est aussitôt disponible pour tous.
+  La couche d'animation passe
   au-dessus des modales (z-index 1060) pour rester visible sur l'écran de fin.
 - **Fin de partie** : `handleGameEnded()` charge `GET /games/{game}/recap` (avec reprises : l'event
   part depuis la transaction qui clôt la partie, le récap peut répondre 409 un court instant)
   puis affiche le tableau des scores + `GameRecap`. Une partie déjà terminée au chargement
   (refresh, reconnexion tardive) affiche directement le récap.
+- **Annonce du gagnant** : `WinnerShowcase` (au-dessus du tableau des scores) met en avant le(s)
+  gagnant(s) — portrait du personnage, photo du joueur en médaillon, univers, score — sur un
+  feu d'artifice pixel-art (canvas basse résolution, `image-rendering: pixelated`, ~9 s,
+  désactivé si `prefers-reduced-motion`). Données : `recap.binomes[].players[].character_image`
+  / `avatar_url`, avec repli sur le payload `GameEnded` si le récap n'a pas pu être chargé.
 - Le récap liste aussi les exclusions (`recap.exclusions`) et le tableau des scores affiche
   « 🚪 Exclu » (score 0).
 
@@ -525,9 +569,12 @@ L'orphelin marque comme un binôme intact (bonus de +5) s'il finit dernier en je
 | `playQuestion(gameId, roundId, playerId, targetPlayerId, question)` | POST | `/games/{id}/rounds/{id}/question` | `{ player_id, target_player_id, question }` |
 | `playAccusation(gameId, roundId, playerId, targetId, characterId)` | POST | `/games/{id}/rounds/{id}/accusation` | `{ player_id, target_player_id, character_id }` |
 | `playAnswer(gameId, roundId, actionId, playerId, answer)` | POST | `/games/{id}/rounds/{id}/actions/{id}/answer` | `{ player_id, answer }` |
+| `drawCard(gameId, roundId, actionId, playerId, card)` | POST | `/games/{id}/rounds/{id}/actions/{id}/draw` | `{ player_id, card }` → `{ word, reveal_seconds }` |
+| `decideCardDraw(gameId, roundId, actionId, playerId, share)` | POST | `/games/{id}/rounds/{id}/actions/{id}/draw/decision` | `{ player_id, share }` |
 | `recap(gameId)` | GET | `/games/{id}/recap` | — |
-| `react(gameId, playerId, emoji)` | POST | `/games/{id}/reactions` | `{ player_id, emoji }` |
+| `react(gameId, playerId, reaction)` | POST | `/games/{id}/reactions` | `{ player_id, reaction_id }` |
 | `skipTurn(gameId, playerId)` | POST | `/games/{id}/skip-turn` | `{ player_id }` (hôte) |
+| `correctAnswer(gameId, actionId, playerId, answer)` | POST | `/games/{id}/actions/{action}/correct-answer` | `{ player_id, answer }` (hôte, `yes` \| `no`) |
 | `excludePlayer(gameId, targetPlayerId, playerId)` | POST | `/games/{id}/players/{target}/exclude` | `{ player_id }` (hôte) |
 
 ### `historyService.js`

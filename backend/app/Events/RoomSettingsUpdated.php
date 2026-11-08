@@ -35,6 +35,8 @@ class RoomSettingsUpdated implements ShouldBroadcastNow
             'game_mode' => $this->room->game_mode,
             'cosmos_id' => $this->room->cosmos_id,
             'cosmos_name' => $this->room->cosmos?->name,
+            'reveal_to_eliminated' => (bool) $this->room->reveal_to_eliminated,
+            'best_question_vote' => (bool) $this->room->best_question_vote,
         ];
     }
 }

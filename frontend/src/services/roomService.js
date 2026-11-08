@@ -10,7 +10,7 @@ export const roomService = {
         return api.post('/rooms', {
             pseudo,
             is_private:  options.isPrivate  ?? false,
-            max_players: options.maxPlayers  ?? 6,
+            max_players: options.maxPlayers  ?? 12,
         })
     },
 
@@ -48,13 +48,15 @@ export const roomService = {
     /**
      * Configurer le mode de jeu (hôte uniquement)
      * PATCH /api/rooms/{room}/settings
-     * body: { player_id, game_mode: 'random' | 'cosmos', cosmos_id? }
+     * body: { player_id, game_mode: 'random' | 'cosmos', cosmos_id?, reveal_to_eliminated?, best_question_vote? }
      */
-    updateSettings(roomId, playerId, { gameMode, cosmosId }) {
+    updateSettings(roomId, playerId, { gameMode, cosmosId, revealToEliminated, bestQuestionVote }) {
         return api.patch(`/rooms/${roomId}/settings`, {
             player_id: playerId,
             game_mode: gameMode,
             cosmos_id: cosmosId ?? null,
+            reveal_to_eliminated: revealToEliminated,
+            best_question_vote: bestQuestionVote,
         })
     },
 

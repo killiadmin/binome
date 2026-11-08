@@ -52,21 +52,25 @@ L'hôte choisit le mode dans le lobby (`PATCH /rooms/{room}/settings`) :
 
 Dans les deux modes : **un univers distinct par binome**, et binome = 2 persos du même univers au
 même `level_affectation`. Un univers est « jouable » s'il a ≥ 2 personnages `playable()` partageant
-un niveau. L'orphelin consomme lui aussi un univers : le mode `cosmos` exige donc
+un niveau. Le nombre de personnages par niveau n'est **pas** limité en saisie manuelle (fiche /
+édition) pour permettre toute correction d'affectation ; si un niveau en compte plus de 2, le
+tirage en prend 2 au hasard et la liste `/admin/binomes` signale l'anomalie. L'orphelin consomme lui aussi un univers : le mode `cosmos` exige donc
 **≥ ceil(nb de joueurs / 2) univers jouables** dans le cosmos, sinon le démarrage renvoie une
 erreur `422` (message nommant le cosmos et les compteurs).
 `GET /cosmos` expose `playable_universe_count` par cosmos pour l'affichage côté lobby.
 
 ### Vote des personnages
-Avant le round 1, chaque joueur **accepte son personnage** ou demande à en **changer** : un joueur
-qui ne connaît pas son personnage donnerait de fausses réponses.
+Avant le round 1, chaque joueur **accepte son personnage** ou **demande à en changer** : un joueur
+qui ne connaît pas son personnage donnerait de fausses réponses. Les deux votes sont publics
+(compteurs « Prêts : x / n » et « Demandes à changer : y / n ») et **rien ne se passe tant que
+tous n'ont pas voté** (`binome_player.character_vote` : `null` | `accepted` | `change`). Ensuite :
 
-- **Un refus suffit** : binomes, univers et personnages sont **retirés pour tout le monde**
-  (`games.draw_number` + 1), et chacun revote. Le personnage refusé est noté dans
-  `games.rejected_character_ids` et écarté des tirages suivants — sauf si le catalogue ne
-  suffit plus sans lui, auquel cas on tire sur tous les personnages.
+- **Au moins une demande de changement** → binomes, univers et personnages sont **retirés pour
+  tout le monde** (`games.draw_number` + 1) et chacun revote. Les personnages refusés sont notés
+  dans `games.rejected_character_ids` et écartés des tirages suivants — sauf si le catalogue ne
+  suffit plus sans eux, auquel cas on tire sur tous les personnages.
 - **Tous ont accepté** → `games.characters_confirmed_at` est renseigné et le round 1 est créé.
-- Le joueur qui a refusé n'est pas nommé. Un vote déjà accepté ne peut plus être changé.
+- Un vote est définitif pour le tirage en cours.
 - Tant que le vote dure, il n'existe aucun round : personne ne peut jouer, et l'hôte ne peut
   ni passer un tour ni exclure (`409`). Un joueur déconnecté bloque donc le vote jusqu'à son retour.
 
@@ -75,6 +79,16 @@ qui ne connaît pas son personnage donnerait de fausses réponses.
 - À son tour, un joueur peut effectuer **une seule action** parmi deux :
     1. **Poser une question** à n'importe quel autre joueur (réponse libre : oui/non)
     2. **Faire une accusation** : désigner un joueur et nommer précisément son personnage
+
+#### « Je ne sais pas » → tirage de carte
+- Si la cible répond **« Je ne sais pas »**, le questionneur (A) **tire une carte face cachée**
+  parmi les mots interdits de la cible (B) : un mot tiré **au hasard** (le paquet est complet à
+  chaque tirage, un mot peut retomber), que **lui seul** voit pendant **5 secondes**
+- A décide ensuite de **montrer ce mot à tous les autres joueurs, sauf B** (eux aussi le voient
+  5 s), ou de le **garder pour lui**
+- B sait qu'une carte a été tirée, mais **jamais laquelle**, ni si elle a été montrée
+- Le tour **attend** A : il a **30 s** (`ActionService::CARD_DRAW_SECONDS`) pour tirer et décider,
+  sinon la carte est perdue et le tour avance. Une cible sans mot interdit → pas de tirage
 
 ### Mots interdits
 - Chaque joueur a **ses propres mots interdits** liés à **son personnage**
@@ -91,7 +105,20 @@ qui ne connaît pas son personnage donnerait de fausses réponses.
 - La partie se termine quand il ne reste **qu'une seule équipe intacte et aucun rescapé** → cette
   équipe gagne ; **ou** plus aucune équipe intacte et **un seul rescapé** → il gagne seul
 - Bonus de score : **+5 pour une victoire avec l'équipe intacte** — donc pour un binome complet
-  ou pour l'orphelin, mais pas pour un rescapé
+  ou pour l'orphelin — et **+3 pour un rescapé** qui gagne seul (sinon il pouvait finir à égalité
+  avec des perdants). Constantes `ScoreService::WIN_BONUS_INTACT` / `WIN_BONUS_SURVIVOR`.
+
+### Joueurs éliminés (options de l'hôte, actives par défaut)
+Réglées dans le lobby (`PATCH /rooms/{room}/settings` : `reveal_to_eliminated`, `best_question_vote`) :
+- **Vue omnisciente** — `GET /games/{game}/reveal?player_id=` : un joueur **éliminé** voit tous les
+  binomes, personnages et mots interdits (`403` sinon). Seule exception à « personnages révélés
+  seulement à la fin » : l'éliminé ne joue plus.
+- **Meilleure question du round** — `POST /games/{game}/question-votes` (`player_id`, `action_id`) :
+  un éliminé vote (et peut changer d'avis) pour une question du round en cours ou du précédent,
+  ni la sienne ni celle de son binôme (sinon il voterait toujours pour son partenaire). Votes
+  publics (`question_votes` dans `GET /games/{game}`, event `QuestionVoted`). À la fin, l'auteur
+  de la question la plus votée de chaque round marque **+1** (ex æquo compris) →
+  `game_stats.best_questions`, `recap.best_questions`. Voir `QuestionVoteService`.
 
 ---
 
@@ -140,11 +167,13 @@ php artisan serve --host=0.0.0.0
 # 5. Terminal 2 — Reverb WebSocket
 php artisan reverb:start --host=0.0.0.0 --debug
 
-# 6. Terminal 3 — Queue (si ShouldBroadcast utilisé)
+# 6. Terminal 3 — Queue (expiration du tirage de carte : job ExpireCardDraw)
 php artisan queue:listen --tries=1
 ```
 
-> ⚠️ Tous les events utilisent `ShouldBroadcastNow` (pas de queue requise en dev).
+> ⚠️ Tous les events utilisent `ShouldBroadcastNow` (ils ne passent pas par la queue). La queue
+> reste **nécessaire** pour `ExpireCardDraw` : sans worker, un tirage de carte abandonné bloque
+> le tour jusqu'à ce que l'hôte le passe (joueur déconnecté) ou que le questionneur décide.
 
 ---
 
@@ -192,7 +221,8 @@ Format du fichier — un tableau d'objets :
   n'existent pas ; un univers déjà présent sans cosmos se voit rattacher celui du
   fichier.
 - La règle « 2 personnages max par niveau d'affectation dans un univers » est
-  vérifiée : une ligne en trop est signalée en erreur, les autres passent.
+  vérifiée **à l'import uniquement** : une ligne en trop est signalée en erreur,
+  les autres passent (l'édition manuelle, elle, ne bloque jamais).
 - **Images** (`app/Support/CharacterImporter.php`) — le champ `image` accepte :
   un nom de fichier présent dans `database/data/images/` (ou `--images-dir`), un
   chemin absolu, une URL `http(s)` (téléchargée à l'import), ou une data URI déjà
@@ -210,7 +240,14 @@ avant d'entrer en jeu. Le champ `hidden` sert à archiver les refus.
 |---|---|---|---|---|---|
 | Proposé | false | false | oui (badge « à valider ») | non | oui |
 | Validé | true | false | oui | oui | non |
-| Refusé | false | true | non | non | non (jamais reproposé) |
+| Refusé | false | true | oui (filtre « Binômes refusés ») | non | non (jamais reproposé automatiquement) |
+
+Un binôme refusé n'est pas perdu : dans la liste, le bouton **« Remettre à
+valider »** de son groupe (`POST /characters/validation/restore` → `hidden =
+false`, `verif_manual = false`) le renvoie dans la popup de validation, et la
+modale d'édition expose un champ **Statut** (`validated` / `pending` /
+`rejected`, envoyé en `status` sur `PUT /characters/{id}` ; `validated` exige
+une image).
 
 Front : à l'ouverture de `/characters`, si des binômes sont en attente, une popup
 les présente un par un (univers, cosmos, noms, mots interdits, niveau). Les **3
@@ -377,6 +414,13 @@ Action
   └── bool: is_valid           (false si mot interdit)
   └── bool: accusation_correct (nullable, uniquement pour les accusations)
   └── string: answer           (nullable — 'yes' | 'no' | 'dont_know')
+  └── string: answer_corrected_from (nullable — réponse d'origine du joueur si l'hôte l'a corrigée ;
+                                     remise à null si la correction revient à l'origine)
+  └── datetime: answer_corrected_at (nullable — date de la dernière correction)
+  └── string: card_draw_status (nullable — 'pending' | 'drawn' | 'shared' | 'kept' | 'expired')
+  └── int: card_count          (nullable — cartes proposées = mots interdits de la cible)
+  └── datetime: card_draw_deadline (nullable — au-delà, ExpireCardDraw clôt le tirage)
+  └── string: drawn_word       (nullable — SECRET, dans Action::$hidden)
 ```
 
 ### Tables pivots
@@ -395,7 +439,7 @@ Action
 | player_id | FK | |
 | character_id | FK | Personnage secret assigné à ce joueur |
 | score | integer | Score du joueur dans cette partie |
-| character_accepted | boolean | Le joueur a accepté son personnage (vote avant le round 1) |
+| character_vote | string nullable | Vote sur son personnage avant le round 1 : `accepted` \| `change` (`null` = pas encore voté) |
 | is_eliminated | boolean | Le joueur a été correctement accusé — il devient spectateur |
 
 ### Champs importants sur `rooms`
@@ -424,17 +468,18 @@ Point d'entrée : `start(Room $room): Game`
 > Tout est wrappé dans une `DB::transaction()`.
 
 **`voteCharacter(Game, Player, int $characterId, bool $accepted)`** — voir *Vote des personnages*
-- Verrouille la ligne `games` (`lockForUpdate`) : un refus remplace tous les personnages, les votes
-  simultanés passent l'un après l'autre.
+- Verrouille la ligne `games` (`lockForUpdate`) : le dernier vote peut remplacer tous les
+  personnages, les votes simultanés passent l'un après l'autre.
+- Tant que des joueurs n'ont pas voté → simple `CharacterVoteCast`.
 - `$characterId` = le personnage que le joueur a sous les yeux. S'il ne correspond plus (retirage
   passé entre-temps), le vote est rejeté — sinon il validerait un personnage jamais vu.
-- Refus → `redraw()` : supprime les binomes (cascade `binome_player`) et relance `assignBinomes()`
+- Tous ont voté, au moins un `change` → `redraw()` : supprime les binomes (cascade `binome_player`) et relance `assignBinomes()`
   avec **les joueurs de la partie**, pas ceux du salon (un spectateur arrivé depuis n'entre pas).
-- Dernier accepté → `characters_confirmed_at = now()` puis `RoundService::createRound(1)`.
+- Tous ont voté `accepted` → `characters_confirmed_at = now()` puis `RoundService::createRound(1)`.
 - `CharacterVoteCast` / `CharactersRedrawn` sont diffusés **après le commit** : à la réception,
   les clients relisent `/me` et doivent trouver le nouveau tirage.
 
-**`characterVotes(Game)`** → `{accepted: ids des joueurs ayant accepté, total}`.
+**`characterVotes(Game)`** → `{accepted, change` (ids des joueurs), `change_character_ids, total}`.
 
 ---
 
@@ -467,6 +512,22 @@ Point d'entrée : `start(Room $room): Game`
 3. Enregistre la réponse (`yes` | `no` | `dont_know`)
 4. Broadcast `AnswerGiven`
 5. Appelle `advanceRound()` — c'est ici que le tour avance
+   - **sauf** `dont_know` sur une cible qui a des mots interdits : ouvre un tirage de carte
+     (`card_draw_status: pending`, échéance à 30 s), dispatche `ExpireCardDraw` avec ce délai,
+     et le tour attend le questionneur
+
+**`drawCard(Action, Player, int $card): string`** — le questionneur retourne une carte : un mot
+interdit de la cible tiré au hasard (`Arr::random`, l'index de carte est cosmétique). Le mot n'est
+renvoyé **que** dans la réponse HTTP ; broadcast public `CardDrawn` (sans le mot).
+
+**`decideCardDraw(Action, Player, bool $share)`** — `shared` → `CardWordShared` sur le channel
+privé `player.{id}` de chaque joueur / spectateur **sauf la cible** (et le questionneur) ; `kept` →
+rien. Puis `CardDrawFinished` (muet sur l'issue) et `advanceRound()`.
+
+**`expireCardDraw(int $actionId)`** — délai dépassé (`ExpireCardDraw`, ou l'hôte qui passe le
+tour, `reason: draw`) : `expired`, `CardDrawFinished`, `advanceRound()`. Toutes les transitions
+sont des mises à jour conditionnelles sur `card_draw_status` : tirage, décision et expiration
+simultanés → un seul l'emporte.
 
 **`playAccusation(Round, Player, Player $target, Character $guessed): Action`**
 1. Mêmes validations que la question
@@ -510,10 +571,11 @@ Point d'entrée : `start(Room $room): Game`
 | `GET` | `/api/characters/pending` | `CharacterController@pending` | Binômes proposés en attente de validation (groupés par univers + niveau) |
 | `POST` | `/api/characters/validation/accept` | `CharacterController@accept` | Valider un binôme (`character_ids[]`) — refuse si un perso n'a pas d'image |
 | `POST` | `/api/characters/validation/reject` | `CharacterController@reject` | Refuser un binôme (`character_ids[]`) → `hidden = true` |
+| `POST` | `/api/characters/validation/restore` | `CharacterController@restore` | Repêcher un binôme refusé (`character_ids[]`) → `hidden = false`, `verif_manual = false` |
 | `PATCH` | `/api/characters/{character}/forbidden-words` | `CharacterController@updateForbiddenWords` | Modifier uniquement les 3 mots interdits (édition rapide) |
 | `POST` | `/api/characters/{character}/image` | `CharacterController@uploadImage` | Importer / remplacer l'image d'un personnage |
 | `POST` | `/api/universes/{universe}/characters` | `CharacterController@store` | Créer un personnage (`verif_manual = true`) |
-| `PUT` | `/api/characters/{character}` | `CharacterController@update` | Modifier un personnage (`universe_id` optionnel pour le réassigner à un autre univers) |
+| `PUT` | `/api/characters/{character}` | `CharacterController@update` | Modifier un personnage (`universe_id` optionnel pour le réassigner à un autre univers, `status` optionnel `validated`/`pending`/`rejected`) |
 | `DELETE` | `/api/characters/{character}` | `CharacterController@destroy` | Supprimer un personnage |
 | `GET` | `/api/chat/messages` | `ChatController@index` | 50 derniers messages du chat commun — **route ouverte** |
 | `POST` | `/api/chat/messages` | `ChatController@store` | Poster un message (`body`, `player_id` **ou** `anon_id`) → broadcast `ChatMessageSent` — `throttle:chat` |
@@ -522,10 +584,11 @@ Point d'entrée : `start(Room $room): Game`
 | `GET` | `/api/history/leaderboard` | `HistoryController@leaderboard` | Classement cumulé par pseudo — **route ouverte** |
 | `GET` | `/api/history/players?pseudo=…` | `HistoryController@player` | Totaux d'un joueur + détail partie par partie — **route ouverte** |
 | `GET` | `/api/avatars/{avatar}` | `AvatarController@show` | Image JPEG d'une photo de profil — URL versionnée (`?v=`), cache 1 an — **route ouverte** |
+| `GET` | `/api/character-images/{character}` | `CharacterImageController@show` | Image d'un personnage en binaire — URL versionnée (`?v=`) renvoyée par `GET /games/{game}/me` et par toutes les routes `/characters*` (`Character::imageUrl()`), cache 1 an — **route ouverte**. Les listes chargent les personnages via `Character::withoutImage()` (pas de data URI lue en base) |
 | `POST` | `/api/players/{player}/avatar` | `AvatarController@update` | Enregistrer sa photo (`player_id` = `{player}`, `image` = data URI JPEG carrée 64–512 px, ≤ 200 ko) → broadcast `PlayerAvatarUpdated` — `throttle:avatars` (10/min) |
 | `DELETE` | `/api/players/{player}/avatar` | `AvatarController@destroy` | Retirer sa photo (retour aux initiales) |
-| `POST` | `/api/rooms` | `RoomController@store` | Créer un salon |
-| `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères |
+| `POST` | `/api/rooms` | `RoomController@store` | Créer un salon — `409` si ce pseudo est **connecté** ailleurs (présence Reverb sur `room.{id}` / `game.{id}`, `PresenceService::connectedRoomFor`) : un pseudo = un joueur, deux appareils mélangeraient leurs sessions. Reverb muet → pas de blocage |
+| `POST` | `/api/rooms/join` | `RoomController@join` | Rejoindre avec un code à 6 caractères — même `409` pseudo déjà connecté que `store` |
 | `GET` | `/api/rooms/{room}` | `RoomController@show` | État du salon + liste joueurs + `game_mode` / `cosmos_id` |
 | `PATCH` | `/api/rooms/{room}/settings` | `RoomController@updateSettings` | Hôte : mode de jeu (`random` / `cosmos` + `cosmos_id`) → broadcast `RoomSettingsUpdated` |
 | `PATCH` | `/api/rooms/{room}/ready` | `RoomController@ready` | Toggle prêt/pas prêt |
@@ -533,22 +596,37 @@ Point d'entrée : `start(Room $room): Game`
 | `POST` | `/api/rooms/{room}/start` | `GameController@start` | Lancer la partie (créateur uniquement) |
 | `GET` | `/api/games/{game}` | `GameController@show` | État de la partie (sans personnages) |
 | `GET` | `/api/games/{game}/me` | `GameController@myCharacter` | Mon personnage secret + mots interdits |
-| `POST` | `/api/games/{game}/character-vote` | `GameController@voteCharacter` | Accepter son personnage ou demander un retirage (`player_id`, `character_id` affiché, `accepted`) — `409` si vote clos, déjà accepté ou personnage périmé |
-| `GET` | `/api/games/{game}/recap` | `GameController@recap` | Récap de fin de partie (scores, binomes révélés, qui a trouvé qui, trophées) — `409` tant que la partie n'est pas terminée |
-| `POST` | `/api/games/{game}/reactions` | `GameController@react` | Réaction rapide (`player_id`, `emoji` parmi `GameController::REACTIONS`) → broadcast `ReactionSent` — joueurs **et** spectateurs, `throttle:reactions` (30/min par joueur) |
+| `POST` | `/api/games/{game}/character-vote` | `GameController@voteCharacter` | Voter sur son personnage : accepter ou demander à changer (`player_id`, `character_id` affiché, `accepted`) — `409` si vote clos, déjà voté ou personnage périmé. `GET /games/{game}` expose `characters_confirmed`, `draw_number`, `accepted_player_ids`, `change_player_ids` |
+| `GET` | `/api/games/{game}/reveal` | `GameController@reveal` | Vue omnisciente : tous les personnages — **joueur éliminé** uniquement, si l'hôte l'a activée (`403` sinon) |
+| `POST` | `/api/games/{game}/question-votes` | `GameController@voteQuestion` | Un éliminé vote pour la meilleure question du round (`player_id`, `action_id`) — `409` si refusé |
+| `GET` | `/api/games/{game}/recap` | `GameController@recap` | Récap de fin de partie (scores, binomes révélés avec image du personnage et photo de chaque joueur, qui a trouvé qui, trophées) — `409` tant que la partie n'est pas terminée |
+| `POST` | `/api/games/{game}/reactions` | `GameController@react` | Réaction rapide (`player_id`, `reaction_id` d'une réaction **active** — `404` sinon) → broadcast `ReactionSent` — joueurs **et** spectateurs, `throttle:reactions` (30/min par joueur) |
+| `GET` | `/api/reactions` | `CustomReactionController@index` | Réactions actives, ordre de la barre : emojis Unicode puis images (`id`, `name`, `emoji` ou `url`, `created_by`) |
+| `POST` | `/api/reactions` | `CustomReactionController@store` | Un joueur crée un emoji image (`player_id`, `name` ≤ 20, `image` = data URI JPEG carrée 64–256 px, ≤ 60 ko) — actif tout de suite, 10 actifs max par pseudo, `throttle:custom-reactions` (5/min par joueur) |
+| `GET` | `/api/reactions/{reaction}/image` | `CustomReactionController@image` | Image de l'emoji (URL versionnée, cache long) — servie même masqué |
 | `POST` | `/api/games/{game}/skip-turn` | `GameController@skipTurn` | **Hôte** : passe le tour du joueur **déconnecté** qui met la partie en pause (voir *Joueur déconnecté* plus bas) — `409` si refusé |
+| `POST` | `/api/games/{game}/actions/{action}/correct-answer` | `GameController@correctAnswer` | **Hôte** : corrige une réponse oui ⇄ non déjà donnée (`{ player_id, answer }`) ; « Je ne sais pas » non corrigeable, le tour n'est pas rejoué — `409` si refusé |
 | `POST` | `/api/games/{game}/players/{player}/exclude` | `GameController@excludePlayer` | **Hôte** : exclut un joueur déconnecté — lui et son binôme sont éliminés, il marque 0 point |
 | `POST` | `/api/games/{game}/rounds/{round}/question` | `ActionController@question` | Poser une question |
 | `POST` | `/api/games/{game}/rounds/{round}/accusation` | `ActionController@accusation` | Faire une accusation |
 | `POST` | `/broadcasting/auth` | `BroadcastAuthController@authenticate` | Auth custom PresenceChannel |
 | `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/answer` | `ActionController@answer` | Répondre à une question (oui/non/je ne sais pas) |
+| `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/draw` | `ActionController@drawCard` | Questionneur : tirer une carte après « Je ne sais pas » (`card` = index) → `{ word, reveal_seconds }` |
+| `POST` | `/api/games/{game}/rounds/{round}/actions/{action}/draw/decision` | `ActionController@decideCardDraw` | Questionneur : montrer le mot à tous sauf la cible (`share: true`) ou le garder |
 | `GET` | `/api/admin/games` | `AdminGameController@index` | Liste de toutes les parties (en cours + terminées) — 🔒 `characters.access` |
 | `GET` | `/api/admin/games/{game}` | `AdminGameController@show` | Détail complet d'une partie (binomes + personnages révélés + journal des actions) — 🔒 `characters.access` |
 | `DELETE` | `/api/admin/games/{game}` | `AdminGameController@destroy` | Supprimer une partie (cascade DB : binomes, `binome_player`, rounds, actions, `game_stats`) — 🔒 `characters.access` |
+| `GET` | `/api/admin/players` | `AdminPlayerController@index` | Joueurs inscrits (lignes `players`) : pseudo, photo, parties jouées, victoires / points cumulés (`game_stats`), salon actuel, `in_game` — 🔒 `characters.access` |
+| `DELETE` | `/api/admin/players/{player}/room` | `AdminPlayerController@removeFromRoom` | Retirer le joueur de son salon (`Room::removePlayer` : hôte transféré, salon vide supprimé, broadcast `PlayerLeft`) — `409` en pleine partie — 🔒 `characters.access` |
+| `DELETE` | `/api/admin/players/{player}` | `AdminPlayerController@destroy` | Supprimer le joueur (retiré de ses salons, photo supprimée). S'il a joué : `409` + `games_count`, sauf `?with_games=1` qui supprime aussi ses parties (pour tous leurs joueurs). `409` en pleine partie — 🔒 `characters.access` |
+| `GET` | `/api/admin/reactions` | `AdminReactionController@index` | Toutes les réactions (Unicode + images), masquées comprises — 🔒 `characters.access` |
+| `POST` | `/api/admin/reactions` | `AdminReactionController@store` | Ajouter une réaction : `{ name, emoji }` (un seul emoji Unicode, unique) ou `{ name, image }` — 🔒 `characters.access` |
+| `PATCH` | `/api/admin/reactions/{reaction}` | `AdminReactionController@update` | Renommer (`name`) / masquer-réactiver (`is_enabled`) un emoji — 🔒 `characters.access` |
+| `DELETE` | `/api/admin/reactions/{reaction}` | `AdminReactionController@destroy` | Supprimer un emoji — 🔒 `characters.access` |
 
 ### Accès à la gestion des personnages
 
-Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
+Les routes `/api/universes*`, `/api/characters*`, `/api/admin/*` et
 `POST /api/cosmos` sont protégées par le middleware `characters.access`
 (`EnsureCharactersAccess`, alias déclaré dans `bootstrap/app.php`) :
 
@@ -558,12 +636,10 @@ Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
   stable (`hash_hmac`, non réversible).
 - Le client renvoie ce token dans l'en-tête `X-Characters-Access` sur chaque
   requête protégée ; le middleware le compare via `hash_equals`.
-- Côté front, le token est persisté dans `localStorage` (`charactersAccess`),
-  les onglets « Personnages » / « Créer » / « Parties » et leurs routes ne sont
-  visibles qu'une fois déverrouillé (cf. `frontend/README.md`).
-- La vue admin des parties (`/admin/games` côté front) réutilise ce même
-  déverrouillage : un seul mot de passe donne accès à la gestion des personnages
-  **et** à la consultation / suppression des parties.
+- Côté front, le token est persisté dans `localStorage` (`charactersAccess`) ;
+  le cadenas de la navbar mène à l'espace d'administration `/admin` (parties,
+  binômes, prompts, joueurs, emojis), inaccessible sans token
+  (cf. `frontend/README.md`). Un seul mot de passe pour toutes les sections.
 - `GET /api/cosmos` reste **ouvert** : le lobby en a besoin pour le mode « cosmos ».
 
 ### Sécurité des données
@@ -573,7 +649,11 @@ Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
   `has_orphan` (booléen) signale qu'un orphelin est en jeu. Renvoyer les binomes trahirait
   l'orphelin, seul groupe à ne compter qu'un joueur.
 - `GET /games/{game}/me` → retourne le personnage **uniquement au joueur concerné** (via `player_id` en query param)
+  — l'image y est une **URL** (`/api/character-images/{id}?v=…`), pas la data URI : `/me` est relu à chaque retirage. La route d'image est ouverte, mais l'id seul ne dit pas qui joue ce personnage.
 - Les personnages ne sont révélés publiquement que dans les events `BinomeDiscovered` et `GameEnded`
+- Le mot tiré (`actions.drawn_word`) n'est jamais sérialisé (`Action::$hidden`) : `GET /games`
+  n'expose que `card_draw: { status: pending | drawn | done, card_count, deadline }` — `shared`,
+  `kept` et `expired` se confondent en `done` pour que la cible ignore si son mot a circulé
 
 ---
 
@@ -586,6 +666,7 @@ Les routes `/api/universes*`, `/api/characters*`, `/api/admin/games*` et
 | `room.{roomId}` | PresenceChannel | Lobby — joueurs qui rejoignent/quittent/sont prêts |
 | `game.{gameId}` | PresenceChannel | Partie en cours — actions, rounds, fin de partie |
 | `lobby` | Channel **public** | Chat commun du hall — aucune auth, ouvert aux visiteurs sans salon |
+| `player.{playerId}` | PrivateChannel | Messages à un seul joueur (mot interdit montré) — seul `X-Player-Id == playerId` s'y abonne. Nécessaire car `game.{id}` atteint aussi la cible |
 | `AnswerGiven` | `game.{id}` | `answer.given` | Le joueur ciblé répond à une question |
 
 ### Auth PresenceChannel
@@ -614,13 +695,19 @@ La route par défaut de Laravel Broadcasting est désactivée — seule la route
 | `ActionPlayed` | `game.{id}` | `action.played` | Un joueur joue son tour |
 | `BinomeDiscovered` | `game.{id}` | `binome.discovered` | Accusation correcte |
 | `GameEnded` | `game.{id}` | `game.ended` | Dernier binome découvert |
-| `ReactionSent` | `game.{id}` | `reaction.sent` | Réaction rapide (emoji) — rien n'est stocké |
-| `CharacterVoteCast` | `game.{id}` | `character.vote.cast` | Un joueur a accepté son personnage (`draw_number`, `accepted_player_ids`) |
-| `CharactersRedrawn` | `game.{id}` | `characters.redrawn` | Un joueur a refusé : nouveau tirage pour tous (`draw_number`) — chacun relit `/me` |
-| `TurnSkipped` | `game.{id}` | `turn.skipped` | L'hôte a passé le tour d'un joueur déconnecté (`reason` : `turn` \| `accusation`) |
+| `ReactionSent` | `game.{id}` | `reaction.sent` | Réaction rapide — `reaction` : `{ id, name, emoji, url, created_by }` (`emoji` Unicode **ou** `url` d'image) ; rien n'est stocké |
+| `CharacterVoteCast` | `game.{id}` | `character.vote.cast` | Un joueur a voté (`draw_number`, `accepted_player_ids`, `change_player_ids`) |
+| `CharactersRedrawn` | `game.{id}` | `characters.redrawn` | Tous ont voté, au moins une demande de changement : nouveau tirage pour tous (`draw_number`, `change_count`) — chacun relit `/me` |
+| `TurnSkipped` | `game.{id}` | `turn.skipped` | L'hôte a passé le tour d'un joueur déconnecté (`reason` : `turn` \| `accusation` \| `draw`) |
+| `AnswerGiven` | `game.{id}` | `answer.given` | Réponse donnée — `card_draw` non null si un tirage s'ouvre (« Je ne sais pas ») |
+| `AnswerCorrected` | `game.{id}` | `answer.corrected` | L'hôte a corrigé une réponse oui / non (`answer`, `previous_answer`, `answerer`, `host`) |
+| `CardDrawn` | `game.{id}` | `card.drawn` | Le questionneur a retourné une carte (`card` = index, **jamais le mot**) |
+| `CardDrawFinished` | `game.{id}` | `card.draw.finished` | Tirage clos (montré, gardé ou expiré — l'issue n'est pas dite), le tour reprend |
+| `CardWordShared` | `player.{id}` (un par destinataire) | `card.word.shared` | Mot montré : `word`, `reveal_seconds`, `asker`, `target` — tous sauf la cible |
 | `PlayerAvatarUpdated` | `room.{id}` + `game.{id}` en cours | `player.avatar.updated` | Un joueur change / retire sa photo (`player_id`, `avatar_url`) |
 | `PlayerExcluded` | `game.{id}` | `player.excluded` | L'hôte a exclu un joueur déconnecté (+ `partner` éliminé, `cancelled_action_id`) |
 | `ChatMessageSent` | `lobby` | `chat.message` | Un message est posté dans le chat commun |
+| `QuestionVoted` | `game.{id}` | `question.voted` | Un éliminé vote pour la meilleure question (`round_id`, tous les `votes` du round) |
 
 ### `ActionPlayed` — logique de masquage
 
@@ -661,10 +748,10 @@ type = accusation
 2 bis. VOTE DES PERSONNAGES
    POST /api/games/{game}/character-vote
    body: { player_id, character_id, accepted }
-     ├── refus    → nouveau tirage pour tous → broadcast: CharactersRedrawn
-     └── accepté  → broadcast: CharacterVoteCast
-                    └── tous ont accepté ? → Création du Round n°1
-                                            → broadcast: RoundStarted
+     ├── des joueurs n'ont pas voté → broadcast: CharacterVoteCast (compteurs)
+     └── tous ont voté
+          ├── ≥ 1 demande de changement → nouveau tirage pour tous → broadcast: CharactersRedrawn
+          └── tous acceptés → Création du Round n°1 → broadcast: CharacterVoteCast + RoundStarted
 
 3. TOUR D'UN JOUEUR
    GET /api/games/{game}/me             → récupère son personnage + mots interdits
@@ -677,6 +764,11 @@ type = accusation
                      → joueur ciblé répond via POST .../actions/{action}/answer
                      → broadcast AnswerGiven
                      → advanceRound() déclenché après la réponse
+                     └── « Je ne sais pas » → tirage de carte par le questionneur
+                         POST .../actions/{action}/draw            → mot (à lui seul), CardDrawn
+                         POST .../actions/{action}/draw/decision   → CardWordShared (sauf cible),
+                                                                     CardDrawFinished, advanceRound()
+                         (ou 30 s écoulées → ExpireCardDraw → CardDrawFinished, advanceRound())
 
    [Option B] Accusation
    POST .../rounds/{round}/accusation
@@ -737,7 +829,16 @@ $middleware->validateCsrfTokens(except: ['broadcasting/auth']);
 `PATCH /rooms/{room}/ready` **inverse** le statut actuel du joueur (pas un simple `true`).
 
 ### Leave room
-`DELETE /rooms/{room}/leave` supprime le joueur en base + détache le pivot. Si la room est vide → supprime la room. Si l'hôte part → transfère `created_by` au prochain joueur.
+`DELETE /rooms/{room}/leave` détache le pivot. **`409` si le joueur est dans la partie en cours** : il emporterait son personnage (binome vidé, vote bloqué, fin faussée) — s'il est parti pour de bon, l'hôte l'exclut. Le joueur n'est supprimé en base que s'il n'a jamais joué (ses parties passées pointent encore sur lui). Si la room est vide → supprime la room. Si l'hôte part → transfère `created_by` au prochain joueur.
+
+### Coups concurrents et erreurs de règle
+- Question / accusation : le round est verrouillé (`lockForUpdate`) le temps de valider et d'enregistrer — un double envoi ne crée qu'une action. La cible doit être un autre joueur de la partie, non éliminé.
+- `RoundService::nextTurn($round, $fromPlayerId)` n'avance que si le tour est encore à `$fromPlayerId` (mise à jour conditionnelle) : une action ne fait jamais avancer le tour deux fois ni recréer un round. `/answer` n'accepte qu'une question, `/confirm` qu'une accusation.
+- Fin de partie : `endGame()` clôt le round en cours ; rien n'est diffusé après `GameEnded`.
+- Le lancement verrouille le salon : un double clic sur « Lancer » ne crée qu'une partie.
+- Les refus de règle lèvent `App\Exceptions\GameRuleException`, rendue en **`409`** avec son message (`bootstrap/app.php`), jamais en 500.
+- Les routes `rounds/{round}/…` utilisent `scopeBindings()` : round d'une autre partie → `404`.
+- `checkGameOver()` ignore un binome sans joueur (sinon il compterait comme équipe intacte pour toujours).
 
 ### Joueur déconnecté : pause, l'hôte décide
 
@@ -753,6 +854,7 @@ qui est déconnecté, la partie attend son retour.
 | Le joueur dont c'est le tour n'a rien joué | `turn` | Le tour passe, **aucune action** enregistrée |
 | La cible d'une accusation n'a pas confirmé | `accusation` | Le **serveur tranche** : nom proposé == vrai personnage (insensible casse / accents / espaces) — sinon un accusé n'aurait qu'à se déconnecter pour s'en tirer |
 | La cible d'une question n'a pas répondu | — | **Refusé (`409`)** : une question attend toujours sa réponse. Attendre le retour du joueur, ou l'exclure |
+| Le questionneur doit tirer sa carte (« Je ne sais pas ») | `draw` | La carte est **perdue**, le tour avance (de toute façon automatique au bout de 30 s via `ExpireCardDraw`) |
 
 **Exclure** — `POST /games/{game}/players/{player}/exclude` (`excludePlayer()`) :
 
@@ -801,6 +903,8 @@ Un joueur qui rejoint un salon dont la partie est déjà lancée n'a pas de pers
 `GET /rooms/{room}` et `POST /rooms/join` renvoient `current_game_id` : le front lui propose de
 suivre la partie. Le PresenceChannel `game.{id}` accepte déjà les membres du salon
 (`routes/channels.php`), et `Game::canBeWatchedBy()` applique la même règle aux réactions.
+
+Les réactions sont toutes en base (`custom_reactions`) : les 8 emojis Unicode d'origine y ont été repris, l'admin peut en ajouter ou en supprimer. La colonne `emoji` est en collation `utf8mb4_bin` : en `utf8mb4_0900_ai_ci`, tous les emojis sont égaux entre eux.
 
 ### Chat commun du hall (`lobby`)
 Le chat de la page `/rooms` diffuse sur un **channel public** `lobby`, pas sur une `PresenceChannel` : il doit rester lisible par un visiteur qui n'a ni créé ni rejoint de salon, donc sans `Player` à présenter à `BroadcastAuthController`.

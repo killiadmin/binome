@@ -35,6 +35,9 @@ const shareText = computed(() => {
   if (r.awards.length) {
     lines.push('', ...r.awards.map(a => `${a.emoji} ${a.title} : ${a.pseudos.join(', ')} (${a.detail})`))
   }
+  if (r.best_questions?.length) {
+    lines.push('', ...r.best_questions.map(q => `⭐ R${q.round} ${q.author} : « ${q.question} »`))
+  }
   return lines.join('\n')
 })
 
@@ -78,6 +81,18 @@ async function share() {
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- Vote des éliminés : meilleure question de chaque round (+1 point) -->
+    <section v-if="recap.best_questions?.length" class="recap-section">
+      <h5 class="recap-title">Meilleures questions</h5>
+      <ol class="recap-timeline">
+        <li v-for="(q, i) in recap.best_questions" :key="`q${i}`">
+          <span class="recap-round">R{{ q.round }}</span>
+          ⭐ <strong>{{ q.author }}</strong> <em>« {{ q.question }} »</em>
+          <span class="recap-votes">{{ plural(q.votes, 'vote') }} · +1 pt</span>
+        </li>
+      </ol>
     </section>
 
     <!-- Qui a trouvé qui (+ exclusions par l'hôte) -->
@@ -149,6 +164,12 @@ async function share() {
 
 .recap-section {
   margin-top: 1.25rem;
+}
+
+.recap-votes {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 .recap-title {
