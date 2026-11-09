@@ -20,7 +20,6 @@ export const gameService = {
      */
     async show(gameId) {
         const res = await api.get(`/games/${gameId}`)
-        console.log('[GameService] show', res.data)
         return res.data
     },
 
@@ -32,7 +31,6 @@ export const gameService = {
         const res = await api.get(`/games/${gameId}/me`, {
             params: { player_id: playerId },
         })
-        console.log('[GameService] myCharacter', res.data)
         return res.data.character
     },
 

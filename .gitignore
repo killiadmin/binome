@@ -9,7 +9,6 @@ lerna-debug.log*
 
 node_modules
 dist
-database
 dist-ssr
 *.local
 
@@ -32,4 +31,13 @@ frontend/public/lan-url.json.tmp.*
 # PID du watcher réseau lancé par start.sh
 .lan-watch.pid
 
-CLAUDE.MDbackups/
+
+# Dumps SQL locaux (données réelles des joueurs) — ne jamais versionner
+backups/
+*.sql
+
+# Données MySQL (volume Docker) et base sqlite locale
+backend/database/binome/
+backend/database/*.sqlite
+# Données de personnages (catalogue, images, propositions) — gardées hors du repo
+backend/database/data/

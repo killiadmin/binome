@@ -15,12 +15,6 @@ const resetListeners = new Set()
 // host's LAN IP, so switching networks needs no config change.
 const wsPort = Number(window.location.port) || (window.location.protocol === 'https:' ? 443 : 80)
 
-console.log('[ENV]', {
-    key:  import.meta.env.VITE_REVERB_APP_KEY,
-    host: window.location.hostname,
-    port: wsPort,
-})
-
 function getEcho(playerId = null) {
     if (!echo) {
         echo = new Echo({
@@ -54,15 +48,12 @@ export function useReverb(playerId = null) {
 
         channel
             .here((members) => {
-                console.log('[Reverb] HERE members:', members)
                 callbacks.onHere?.(members)
             })
             .joining((member) => {
-                console.log('[Reverb] JOINING:', member)
                 callbacks.onJoining?.(member)
             })
             .leaving((member) => {
-                console.log('[Reverb] LEAVING:', member)
                 callbacks.onLeaving?.(member)
             })
             .error((error) => {
@@ -140,7 +131,6 @@ export function useReverb(playerId = null) {
 
         if (callbacks.onGameStarted) {
             channel.listen('.game.started', (data) => {
-                console.log('[WS] game.started reçu', data)
                 callbacks.onGameStarted(data)
             })
         }

@@ -273,7 +273,6 @@ function initLobby(id) {
       bestQuestionVote.value = data.best_question_vote ?? true
     },
     onGameStarted: (data) => {
-      console.log('[GameStarted] data reçu :', data)
       gameStatus.value = 'in_progress'
       gameId.value = data.game_id
       saveSession()
