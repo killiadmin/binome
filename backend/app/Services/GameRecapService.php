@@ -7,6 +7,7 @@ use App\Models\Action;
 use App\Models\Character;
 use App\Models\Game;
 use App\Models\PlayerAvatar;
+use App\Support\ForbiddenWordMatcher;
 use Illuminate\Support\Collection;
 
 /**
@@ -53,9 +54,9 @@ class GameRecapService
         $questions = $actions->filter(fn (Action $a) => $a->type === ActionType::Question && $a->is_valid);
         $accusations = $actions->filter(fn (Action $a) => $a->type === ActionType::Accusation);
 
-        // Question « piégée » : elle contient un mot interdit de la cible, qui
-        // avait donc le droit de mentir.
-        $trapped = $questions->filter(fn (Action $a) => $this->containsForbiddenWord(
+        // Question « piégée » : elle contient un mot interdit de la cible (exact
+        // → mensonge obligatoire, proche → mensonge légal).
+        $trapped = $questions->filter(fn (Action $a) => ForbiddenWordMatcher::matchesAny(
             $a->content,
             $characterByPlayer->get($a->target_player_id)?->forbidden_words ?? [],
         ));
@@ -191,24 +192,5 @@ class GameRecapService
             'pseudos' => $pseudos,
             'detail' => $detail($best),
         ];
-    }
-
-    /**
-     * Même sémantique que la détection côté front (RoundPage) : sous-chaîne,
-     * insensible à la casse.
-     */
-    private function containsForbiddenWord(?string $text, array $words): bool
-    {
-        if (! $text) {
-            return false;
-        }
-
-        foreach ($words as $word) {
-            if ($word !== '' && mb_stripos($text, (string) $word) !== false) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

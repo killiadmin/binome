@@ -91,12 +91,21 @@ tous n'ont pas voté** (`binome_player.character_vote` : `null` | `accepted` | `
   sinon la carte est perdue et le tour avance. Une cible sans mot interdit → pas de tirage
 
 ### Mots interdits
-- Chaque joueur a **ses propres mots interdits** liés à **son personnage**
-- Si un joueur pose une question contenant l'un de ses mots interdits, **la question est refusée**
-- Le joueur **perd son tour** (l'action est enregistrée comme invalide)
-- Exemple : personnage = Tarzan, mot interdit = "jungle" → la question "Vit-il dans la jungle ?" est refusée
-
-> ⚠️ Ce sont les mots interdits du **joueur qui pose la question** (liés à son propre personnage) qui filtrent, pas ceux du joueur interrogé. La vérification est uniquement côté backend — le joueur interrogé répond librement sans contrainte backend.
+- Chaque joueur a **ses propres mots interdits** liés à **son personnage**, connus de lui seul
+- Ce sont les mots interdits de la **cible** d'une question qui comptent ; le questionneur ne les connaît pas
+- La question n'est **jamais refusée** côté serveur (`ActionService::playQuestion`) : le questionneur
+  ne doit pas apprendre qu'il a fauté. La détection est faite **côté front, chez la cible uniquement**
+  (`frontend/src/services/forbiddenWords.js`), dans la modale de réponse :
+  - **exact (100 %)** — un mot de la question est le mot interdit, à la casse, aux accents et au
+    pluriel (s/x) près → la cible **doit mentir** (répondre l'inverse de la vérité)
+  - **proche (≥ 80 %)** — faute de frappe, conjugaison, dérivé (Levenshtein + racinisation légère)
+    → le mensonge est **légal**, la cible juge
+  - Exemple : Peter Pan (`costume`, `poudre`, `voler`) — « Peut-il voler ? » → exact ;
+    « Est-ce que ton personnage vol ? » → proche
+- Purement indicatif : aucun bouton n'est désactivé. La cible reste libre de répondre honnêtement
+  pour une faute de frappe évidente du questionneur ou un cas exceptionnel.
+- `App\Support\ForbiddenWordMatcher` est le port PHP du même algorithme (récap de fin de partie,
+  trophée « Permis de mentir » : exact + proche) — garder les deux synchronisés.
 
 ### Victoire
 - Quand une accusation est correcte, le **joueur ciblé est éliminé** (son binome n'est pas révélé)

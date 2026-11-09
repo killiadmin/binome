@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ForbiddenWordMatcher;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -68,12 +69,6 @@ class Character extends Model
 
     public function checkForbiddenWords(string $question): bool
     {
-        foreach ($this->forbidden_words as $word) {
-            if (stripos($question, $word) !== false) {
-                return true;
-            }
-        }
-
-        return false;
+        return ForbiddenWordMatcher::matchesAny($question, $this->forbidden_words ?? []);
     }
 }

@@ -51,11 +51,14 @@ export default {
           description:
               "• Chaque joueur a 3 mots interdits liés à son personnage, connus de lui seul\n" +
               "• Quand tu poses une question, ce sont les mots interdits de TA CIBLE qui comptent\n" +
-              "• Si ta question en contient un :\n" +
-              "  → La cible est libre de te mentir, et tu n'en sauras jamais rien\n" +
-              "  → Ton tour est gâché sans que tu le saches\n\n" +
+              "• Si ta question contient un de ses mots TEL QUEL (accents, majuscules et pluriel ignorés) :\n" +
+              "  → La cible DOIT te mentir, et tu n'en sauras jamais rien\n" +
+              "  → Ton tour est gâché sans que tu le saches\n" +
+              "• Si ta question contient un mot TRÈS PROCHE (faute de frappe, conjugaison : « vol » pour « voler ») :\n" +
+              "  → La cible PEUT te mentir : le mensonge est légal, à elle de juger\n\n" +
               "⚠️ Tu ignores les mots interdits des autres : c'est le risque à chaque question.\n" +
-              "Seule la cible voit qu'un de ses mots a été prononcé — à elle de juger et de répondre.",
+              "Seule la cible voit qu'un de ses mots a été prononcé. Mentir un coup sur deux selon ce qui l'arrange\n" +
+              "est interdit : seule une faute de frappe évidente ou un cas exceptionnel l'autorise à répondre librement.",
         },
         {
           title: "🎯 Accusation",

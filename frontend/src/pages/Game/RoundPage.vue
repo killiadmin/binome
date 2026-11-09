@@ -12,6 +12,7 @@ import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 import RoundTransition from '../../components/game/RoundTransition.vue'
 import PixelVeil from '../../components/game/PixelVeil.vue'
 import {useDecipherText} from '../../composables/useDecipherText'
+import {matchForbiddenWords} from '../../services/forbiddenWords'
 import {
   BModal, BFormInput,
   BAlert, BSpinner
@@ -186,6 +187,12 @@ let noticeTimer = null
 // WebSocket coupé (écran verrouillé, Wi-Fi qui saute) : Pusher se reconnecte
 // seul, mais les events émis pendant la coupure sont perdus → resync().
 const connectionLost = ref(false)
+// Abonnement à game.{id} refusé (auth échouée pendant une reconnexion) : la
+// socket est connectée mais on ne reçoit plus rien. Pusher se réabonne à la
+// prochaine reconnexion ; le `here` qui suit l'abonnement réussi le remet à false.
+const subscriptionFailed = ref(false)
+// Échec du chargement de l'état : effacé par le prochain resync() réussi.
+const LOAD_ERROR = 'Impossible de charger la partie.'
 const refreshing = ref(false)
 const correctingActionId = ref(null)
 let stopConnectionWatch = null
@@ -207,14 +214,12 @@ const currentPlayerName = computed(() => {
 // Mots interdits de MON personnage présents dans la question qu'on me pose.
 // Détection purement locale : le serveur ne renvoie mes mots interdits qu'à moi
 // (GET /games/{game}/me), donc cette info ne fuite jamais vers le questionneur.
-// Même sémantique que l'ancien contrôle serveur : sous-chaîne, insensible à la casse.
-const forbiddenWordsInQuestion = computed(() => {
-  const text = pendingQuestion.value?.question ?? ''
-  if (!text) return []
-  const haystack = text.toLowerCase()
-  return (myCharacter.value?.forbidden_words ?? [])
-      .filter(word => haystack.includes(String(word).toLowerCase()))
-})
+// exact (100 %) → mensonge obligatoire ; proche (≥ 80 %) → mensonge légal.
+// Indicatif seulement : les boutons restent tous actifs, la cible garde le
+// dernier mot (faute de frappe du questionneur, cas exceptionnel).
+const forbiddenWordsInQuestion = computed(() =>
+    matchForbiddenWords(pendingQuestion.value?.question ?? '', myCharacter.value?.forbidden_words ?? [])
+)
 
 const otherPlayers = computed(() =>
     players.value.filter(p =>
@@ -562,6 +567,9 @@ async function resync({attempts = 3} = {}) {
     for (let i = 0; i < attempts; i++) {
       try {
         await loadGameState()
+        // L'état est de nouveau à jour : l'échec du chargement initial ne
+        // concerne plus personne (les erreurs d'action restent affichées).
+        if (error.value === LOAD_ERROR) error.value = null
         return true
       } catch {
         if (i < attempts - 1) await new Promise(r => setTimeout(r, 1500))
@@ -577,7 +585,7 @@ async function resync({attempts = 3} = {}) {
 // le jeu est lancé depuis l'écran d'accueil. Socket morte → vrai rechargement.
 async function manualRefresh() {
   if (refreshing.value) return
-  if (connectionLost.value) {
+  if (connectionLost.value || subscriptionFailed.value) {
     window.location.reload()
     return
   }
@@ -591,7 +599,8 @@ function watchConnection(onConnectionChange) {
   let connectedOnce = false
   stopConnectionWatch = onConnectionChange(({current}) => {
     if (current === 'connected') {
-      if (connectedOnce) resync()
+      // Chargement initial raté : la première connexion vaut aussi une relance.
+      if (connectedOnce || error.value === LOAD_ERROR) resync()
       connectedOnce = true
       connectionLost.value = false
     } else if (connectedOnce) {
@@ -624,7 +633,7 @@ onMounted(async () => {
   try {
     await loadGameState()
   } catch (e) {
-    error.value = 'Impossible de charger la partie.'
+    error.value = LOAD_ERROR
   } finally {
     loading.value = false
   }
@@ -656,7 +665,7 @@ onMounted(async () => {
     onPlayerAvatarUpdated: (data) => {
       players.value = players.value.map(p => p.id === data.player_id ? {...p, avatar_url: data.avatar_url} : p)
     },
-    onError: () => { error.value = 'Connexion WebSocket perdue.' },
+    onError: () => { subscriptionFailed.value = true },
   })
 
   clock = setInterval(() => { now.value = Date.now() }, 1000)
@@ -682,6 +691,8 @@ onUnmounted(() => {
 // ─── WEBSOCKET HANDLERS ───────────────────────────────────────────────────────
 
 function handleHere(list) {
+  // `here` = abonnement à game.{id} réussi (initial ou après réabonnement).
+  subscriptionFailed.value = false
   members.value = new Map(list.map(m => [m.id, m.pseudo]))
   const stamp = Date.now()
   const offline = {}
@@ -1413,9 +1424,10 @@ function backToHome() {
       </div>
 
       <!-- Connexion WebSocket coupée : Pusher se reconnecte seul, puis resync() -->
-      <div v-if="connectionLost" class="net-banner" role="status">
+      <div v-if="connectionLost || subscriptionFailed" class="net-banner" role="status">
         <i class="fa-solid fa-wifi"></i>
-        Connexion perdue — reconnexion en cours<span class="caret">_</span>
+        <template v-if="connectionLost">Connexion perdue — reconnexion en cours<span class="caret">_</span></template>
+        <template v-else>Partie plus synchronisée en direct</template>
         <button type="button" class="net-banner__reload" @click="manualRefresh">Recharger</button>
       </div>
 
@@ -2160,7 +2172,7 @@ function backToHome() {
             <span v-else></span>
             <span class="input-hint__count">{{ trimmedQuestion.length }}/{{ QUESTION_MAX }}</span>
           </div>
-          <small class="text-muted">Tu ignores les mots interdits de ta cible : si tu en prononces un, elle aura le droit de te mentir.</small>
+          <small class="text-muted">Tu ignores les mots interdits de ta cible : si tu en prononces un, elle devra te mentir.</small>
         </div>
         <div class="text-center">
           <button type="button" class="cabinet-btn cabinet-btn--sm"
@@ -2291,25 +2303,48 @@ function backToHome() {
             </div>
           </div>
 
-          <!-- Piège détecté : la question contient un de MES mots interdits -->
-          <div v-if="forbiddenWordsInQuestion.length" class="answer-trap">
+          <!-- Mot interdit prononcé tel quel (100 %) : mensonge OBLIGATOIRE -->
+          <div v-if="forbiddenWordsInQuestion.exact.length" class="answer-trap">
             <p class="answer-trap-title">
-              <i class="fa-solid fa-skull"></i> Mot interdit prononcé !
+              <i class="fa-solid fa-skull"></i> Mot interdit prononcé : tu dois mentir !
             </p>
             <div class="forbidden-words">
               <span
-                  v-for="word in forbiddenWordsInQuestion"
-                  :key="word"
+                  v-for="m in forbiddenWordsInQuestion.exact"
+                  :key="m.word"
                   class="pixel-chip pixel-chip--danger"
-              >{{ word }}</span>
+              >{{ m.word }}</span>
             </div>
             <p class="answer-trap-hint">
-              Tu as le droit de mentir : réponds ce que tu veux, il n'en saura rien.
+              La règle impose de répondre <strong>l'inverse de la vérité</strong>, sans exception
+              « quand ça t'arrange » : c'est ce qui rend l'enquête jouable pour les autres.
+            </p>
+            <p class="answer-trap-hint answer-trap-hint--muted">
+              Seule exception : une faute de frappe évidente ou un cas vraiment exceptionnel.
+              Tu restes alors libre de ta réponse.
+            </p>
+          </div>
+
+          <!-- Mot proche d'un mot interdit (≥ 80 %) : mensonge LÉGAL -->
+          <div v-if="forbiddenWordsInQuestion.near.length" class="answer-trap answer-trap--near">
+            <p class="answer-trap-title">
+              <i class="fa-solid fa-triangle-exclamation"></i> Mot proche d'un mot interdit
+            </p>
+            <div class="forbidden-words">
+              <span
+                  v-for="m in forbiddenWordsInQuestion.near"
+                  :key="m.word"
+                  class="pixel-chip pixel-chip--danger"
+              >« {{ m.excerpt }} » ≈ {{ m.word }}</span>
+            </div>
+            <p class="answer-trap-hint">
+              Mentir est <strong>légal</strong> ici : à toi de juger si c'est bien ton mot interdit.
             </p>
           </div>
 
           <!-- Rappel mots interdits -->
-          <div v-else class="answer-forbidden">
+          <div v-if="!forbiddenWordsInQuestion.exact.length && !forbiddenWordsInQuestion.near.length"
+               class="answer-forbidden">
             <p class="forbidden-title">
               <i class="fa-solid fa-skull"></i> Tes mots interdits
             </p>
@@ -4013,6 +4048,25 @@ function backToHome() {
   color: var(--arcade-blue-grey-dark);
   margin: 0.5rem 0 0;
   line-height: 1.4;
+}
+
+.answer-trap-hint--muted {
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.answer-trap--near {
+  background: rgba(224, 163, 28, 0.18);
+  border-color: var(--arcade-gold);
+}
+
+.answer-trap--near .answer-trap-title {
+  color: #8a6210;
+}
+
+.answer-trap + .answer-trap {
+  margin-top: 0.5rem;
 }
 
 .answer-buttons {
