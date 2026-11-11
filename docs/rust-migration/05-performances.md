@@ -1,60 +1,84 @@
 # Migration Rust — 05. Performances avant / après
 
-> Seules des **mesures** figurent ici, prises avec le même outil, sur la même machine et
-> avec les mêmes paramètres.
+> Seules des **mesures** figurent ici : même machine, même moment, même outil, mêmes
+> paramètres, chaque pile seule (l'autre arrêtée), machine maintenue éveillée (`caffeinate`).
+> Mesures finales du 2026-11-11 (17 h 24 – 17 h 33 UTC), sur l'**image de production** Rust.
 
 ## Protocole
 
-- **Machine** : Apple M1 Max (10 cœurs, 64 Go) ; VM Docker Desktop : 10 CPU, 31 Gio.
-- **Pile mesurée** : pile de référence jetable (`tests/e2e/ref-stack.sh up`), restaurée du
-  dump du 2026-11-11 : mêmes images et mêmes données que la pile en service.
-- **Outil** : `node tests/e2e/load.mjs --target <cible> --games 6 --duration 60 --ws 1000 --idle 20`
+- **Machine** : Apple M1 Max (10 cœurs, 64 Go) ; VM Docker Desktop : 10 CPU, 31 Gio. La pile
+  Laravel en service tournait en arrière-plan pendant les deux mesures (conditions identiques).
+- **Laravel** : pile de référence (`tests/e2e/ref-stack.sh up`), mêmes images et mêmes données
+  que la pile en service (dump du 2026-11-11) : conteneurs MySQL, backend, Reverb, queue.
+- **Rust** : image de production `binome:latest` (`docker compose`), sur une copie SQLite des
+  mêmes données.
+- **Outil** : `tests/e2e/load.mjs`. Chaque « partie » est jouée de bout en bout par 8 joueurs
+  simulés (HTTP + WebSocket, chacun attend les events qu'il doit recevoir) : création du salon,
+  arrivées, prêts, lancement, vote, accusations jusqu'à la fin, récap, départs.
   - *repos* : 20 s sans trafic ;
-  - *WebSockets* : 1 000 connexions abonnées au canal public `lobby`, maintenues 15 s ;
-  - *charge* : 6 tables de 8 joueurs qui enchaînent des parties complètes pendant 60 s
-    (création du salon, arrivées, prêts, lancement, vote des personnages, accusations
-    jusqu'à la fin, récap, départs), avec tous les events WebSocket attendus par chaque joueur.
-- **Mesures** : `docker stats` en continu (~1 échantillon/s/conteneur) ; latences HTTP côté client.
-- Rapport brut : `tests/e2e/results/load-<cible>-<date>.json`.
+  - *WebSockets* : N connexions abonnées au canal public `lobby`, maintenues 15 s ;
+  - *charge maximale* : 6 tables enchaînent les parties sans pause pendant 60 s ; chaque
+    serveur est poussé à saturation, le nombre de parties jouées dépend de lui ;
+  - *charge égale* (`--rate 120`) : exactement 120 parties par minute pour les deux serveurs.
+- **Mesures** : `docker stats` en continu (~1 échantillon/s/conteneur) ; latences côté client.
 
 ## Résultats
 
-| Indicateur | Laravel (référence, 2026-11-11) | Rust — **provisoire** (phase 2) |
-|---|---|---|
-| RAM au repos | **932 MiB** (MySQL 739, backend 86, queue 62, Reverb 45) | **2,3 MiB** (moy.), 3,3 max |
-| RAM au repos, pile en service complète (+ Vite) | **1 022 MiB** (audit §3 ; Vite 222 MiB) | — (pas de Vite en production) |
-| CPU au repos | **6,4 %** moyen, pics 17,7 % | **0 %** moyen, pics 0,05 % |
-| Processus | 55 PIDs, 4 conteneurs (+ 34 PIDs pour Vite) | 1 processus, 4 threads |
-| Charge : parties jouées en 60 s | **150** | **1 220** |
-| Charge : débit | **212 req/s** | **1 755 req/s** |
-| Charge : latence API | p50 **22,2 ms**, p95 **37,3 ms**, p99 49,2 ms | p50 **2,7 ms**, p95 **7,9 ms**, p99 11 ms |
-| Charge : CPU | **332 %** moyen (backend PHP 242 %, MySQL 76 %) | **97 %** moyen (≈ 1 cœur) |
-| Charge : RAM | **961 MiB** moyen, 977 max | **31,5 MiB** moyen, 33,5 max |
-| WebSockets : 1 000 connexions tenues | oui ; Reverb +11 MiB | oui ; +13 MiB (après réduction des tampons, voir ci-dessous) |
-| Taille des images Docker | 932 MB (×3) + 264 MB + 793 MB | **9,3 MB** (une image `scratch` : binaire 6,6 MB + front) |
-| Conteneurs / processus en production | 5 conteneurs, 86 PIDs | **1 conteneur** (2 avec HTTPS : + Caddy) |
+| Indicateur | Laravel | Rust | Rapport |
+|---|---|---|---|
+| **RAM au repos** | 857 MiB (MySQL 696, queue 63, backend 66, Reverb 33) | **3,0 MiB** | ÷ 285 |
+| RAM au repos, pile complète en service (+ serveur Vite) | 1 022 MiB (audit, §3 du doc 01) | — (pas de Node en production) | |
+| **CPU au repos** | 5,8 % moyen, pics 17 % (queue 3,5 %, MySQL 2,2 %) | **0 %** | |
+| **Charge égale** (120 parties/min) : CPU | 262 % (backend 188 %, MySQL 62 %) | **14,5 %** | ÷ 18 |
+| Charge égale : RAM | 944 MiB | **9,5 MiB** | ÷ 99 |
+| Charge égale : latence API p50 / p95 | 20,3 / 35,6 ms | **1,9 / 5,9 ms** | ÷ 10 |
+| **Charge maximale** : parties jouées en 60 s | 162 | **1 800** | × 11 |
+| Charge maximale : débit | 231 req/s | **2 592 req/s** | × 11 |
+| Charge maximale : latence p50 / p95 / p99 | 20,3 / 35,3 / 46,3 ms | **1,7 / 4,5 / 8,1 ms** | |
+| Charge maximale : CPU / RAM | 349 % / 947 MiB | 193 % / **10,4 MiB** | |
+| Charge maximale : CPU par partie jouée | 1,31 CPU·s | **0,065 CPU·s** | ÷ 20 |
+| **WebSockets** : 1 000 connexions | toutes tenues ; Reverb +23 MiB | toutes tenues ; **+12 MiB** | |
+| WebSockets : 5 000 connexions | 151 refusées, **800 encore ouvertes** après 15 s (voir plus bas) | **5 000 tenues** ; +52 MiB | |
+| Échecs (parties, vérifications) | 0 | 0 | |
+| **Taille des images** | 932 Mo × 3 (backend, Reverb, queue) + 264 Mo (Vite) + 793 Mo (MySQL) | **9,3 Mo** (une image `scratch`) | |
+| **Conteneurs / processus au repos** | 4 conteneurs, 51 PIDs (+ Vite : 1 conteneur, 34 PIDs) | **1 conteneur**, 3 PIDs | |
+| Démarrage (jusqu'à la première réponse) | 0,4 s (backend seul, MySQL déjà démarré) | **0,13 s** (tout compris) | |
+| Dépendances d'exécution | PHP 8.2 + 5 extensions, 90 paquets Composer, MySQL 8, Node 20 | **aucune** (binaire statique) | |
+| Front : paquets npm (lockfile, au build seulement) | 240 | **141** | |
+| Front : JavaScript principal (gzip) | 244 Ko | **159 Ko** | − 35 % |
 
-> **Provisoire** : serveur Rust compilé en `release` mais lancé dans une image de
-> compilation (pas l'image finale), sur une copie de la base. Ces mesures seront
-> refaites en phase 6, machine maintenue éveillée (`caffeinate`) : une partie des
-> exécutions de l'après-midi du 2026-11-11 a été faussée par la mise en veille du Mac
-> (capot fermé) et a été écartée. Seule la mesure de 15 h 16 – 15 h 18 (heure locale,
-> machine éveillée) est retenue pour la charge ; les valeurs de RAM (au repos, avec
-> 1 000 WebSockets) ne dépendent pas du temps écoulé.
-> Le rapport brut de cette mesure n'a pas été conservé (supprimé par erreur lors d'un
-> nettoyage) : les chiffres ci-dessus viennent de la sortie de l'outil, et seront
-> remplacés par une mesure complète et archivée en phase 6.
+Rapports bruts (`tests/e2e/results/`) : Laravel `load-laravel-ref-2026-11-11T172411.json`
+(charge maximale), `…T173027.json` (charge égale), `…T173242.json` (5 000 WebSockets) ; Rust
+`load-rust-2026-11-11T172626.json`, `…T172820.json`, `…T173117.json`. La mesure Laravel du
+matin (`…T102700.json` : 150 parties, 932 MiB au repos) est cohérente avec celle-ci.
 
-### Lecture
+## Lecture et limites
 
-- Le débit est limité par le backend PHP (`artisan serve`, 4 workers), saturé à ~2,4 cœurs :
-  à 6 tables, chaque requête attend son tour. La latence elle-même (≈ 22 ms) est surtout
-  le coût d'amorçage de Laravel à chaque requête.
-- Au repos, `queue:listen` (3,6 %) et MySQL (2,7 %) consomment du CPU sans aucun trafic.
-- Reverb est déjà léger (11 MiB pour 1 000 connexions) : le gain WebSocket attendu porte sur
-  la suppression d'un processus et des appels HTTP backend → Reverb, pas sur la RAM par connexion.
-- Première mesure Rust : 1 000 connexions coûtaient 112 MiB (tampons de 128 Kio par connexion
-  par défaut). Réduits à 4 Kio (les messages de Binome font quelques Ko) : 13 MiB.
-- En charge, Rust joue 8 fois plus de parties avec 3,4 fois moins de CPU : la latence ne
-  porte plus le démarrage du framework à chaque requête, et SQLite évite un aller-retour
-  réseau vers MySQL.
+- **RAM** : l'essentiel du gain vient de la disparition de MySQL (696 MiB à lui seul) et des
+  processus PHP. SQLite vit dans le processus Rust ; la base (14 Mo) n'est pas chargée entière
+  en mémoire, seules les pages lues le sont.
+- **CPU à charge égale** : chaque requête Laravel redémarre le framework et fait des
+  allers-retours réseau vers MySQL (≈ 20 ms par requête) ; Rust répond en ~2 ms. À l'échelle de
+  Binome (quelques parties simultanées), les deux suffisent largement : le gain se traduit
+  surtout par un serveur plus petit et moins cher, et des réponses plus vives sur téléphone.
+- **WebSockets à 5 000** : Reverb utilise la boucle `stream_select` de ReactPHP, limitée par
+  construction à 1 024 descripteurs, faute d'extension PHP `ev` / `event` / `uv` dans l'image
+  actuelle (vérifié ; `ulimit -n` vaut 1 048 576 et n'est pas en cause). C'est **la
+  configuration actuelle** qui plafonne vers 1 000 connexions ; installer `ext-event` relèverait
+  ce plafond. Rust n'a pas cette limite.
+- **Charge maximale** : la boucle de test est fermée (chaque joueur attend la réponse pour
+  continuer) ; le débit mesuré est la capacité du serveur sur cette machine, pas une prévision
+  de trafic. Rust y plafonne à ~2 cœurs (2 threads réseau configurés, plus les écritures
+  SQLite sérialisées).
+- Les écarts de quelques % entre deux exécutions relèvent du bruit (Laravel : 150 parties le
+  matin, 162 l'après-midi).
+
+## Validation fonctionnelle (image de production)
+
+| Contrôle | Résultat |
+|---|---|
+| Banc API + WebSocket (`run.mjs` : lobby, catalogue, partie à 8 avec spectateur et déconnexions, partie à 7 avec orphelin) | 361 / 361 |
+| Contrat JSON comparé à Laravel (`compare.mjs`, réponses et events cumulés sur plusieurs exécutions) | identique |
+| Navigateur réel (`browser.mjs` : 4 joueurs dans Chromium, redémarrage du serveur en pleine partie) | 11 / 11 |
+| Tests unitaires Rust (règles, parité du détecteur de mots interdits sur 416 cas du JS) | 10 / 10 |
+| Migration des données (sur copie) : comptes par table, octets d'images, intégrité | identiques, `ok` |

@@ -1,0 +1,152 @@
+{
+  "target": "rust",
+  "date": "2026-11-11T17:28:20.334Z",
+  "machine": "darwin arm64",
+  "params": {
+    "parallel_games": 6,
+    "duration_s": 60,
+    "rate_per_min": 120,
+    "games_played": 120,
+    "players_per_game": 8,
+    "ws": 1000,
+    "idle_seconds": 5
+  },
+  "idle": {
+    "binome": {
+      "cpu_avg": 0,
+      "cpu_max": 0,
+      "mem_avg_mib": 8.2,
+      "mem_max_mib": 8.2,
+      "pids_max": 3,
+      "n": 10
+    },
+    "TOTAL": {
+      "cpu_avg": 0,
+      "cpu_max": 0,
+      "mem_avg_mib": 8.2,
+      "mem_max_mib": 8.2,
+      "pids_max": 3
+    }
+  },
+  "websockets": {
+    "requested": 1000,
+    "opened": 1000,
+    "failed": 0,
+    "still_open_after_15s": 1000,
+    "open_seconds": 0.3,
+    "resources": {
+      "binome": {
+        "cpu_avg": 2.5,
+        "cpu_max": 31.45,
+        "mem_avg_mib": 19.5,
+        "mem_max_mib": 22,
+        "pids_max": 3,
+        "n": 37
+      },
+      "TOTAL": {
+        "cpu_avg": 2.5,
+        "cpu_max": 31.45,
+        "mem_avg_mib": 19.5,
+        "mem_max_mib": 22,
+        "pids_max": 3
+      }
+    }
+  },
+  "load": {
+    "seconds": 60,
+    "games_played": 120,
+    "failures": [],
+    "failed_checks": [],
+    "latency": {
+      "requests": 10395,
+      "p50_ms": 1.9,
+      "p95_ms": 5.9,
+      "p99_ms": 9.1,
+      "max_ms": 17.6,
+      "req_per_s": 173.2,
+      "slowest_request": {
+        "route": "POST /api/access/characters",
+        "ms": 18
+      }
+    },
+    "resources": {
+      "binome": {
+        "cpu_avg": 14.54,
+        "cpu_max": 46.32,
+        "mem_avg_mib": 9.5,
+        "mem_max_mib": 11.2,
+        "pids_max": 9,
+        "n": 120
+      },
+      "TOTAL": {
+        "cpu_avg": 14.54,
+        "cpu_max": 46.32,
+        "mem_avg_mib": 9.5,
+        "mem_max_mib": 11.2,
+        "pids_max": 9
+      }
+    },
+    "slowest_routes": [
+      {
+        "route": "POST /api/access/characters",
+        "n": 120,
+        "p50": 5.3,
+        "p95": 15.4
+      },
+      {
+        "route": "POST /api/rooms",
+        "n": 120,
+        "p50": 3.2,
+        "p95": 10
+      },
+      {
+        "route": "GET /api/history/games/:game",
+        "n": 120,
+        "p50": 6.1,
+        "p95": 9.7
+      },
+      {
+        "route": "GET /api/admin/games/:game",
+        "n": 120,
+        "p50": 4.4,
+        "p95": 8.7
+      },
+      {
+        "route": "POST /api/games/:game/rounds/:round/actions/:action/confirm",
+        "n": 825,
+        "p50": 2.4,
+        "p95": 8.4
+      },
+      {
+        "route": "GET /api/games/:game/recap",
+        "n": 120,
+        "p50": 5.3,
+        "p95": 8.3
+      },
+      {
+        "route": "POST /api/games/:game/rounds/:round/question",
+        "n": 240,
+        "p50": 1,
+        "p95": 7.9
+      },
+      {
+        "route": "GET /api/history/games",
+        "n": 120,
+        "p50": 3.6,
+        "p95": 6.4
+      },
+      {
+        "route": "POST /api/games/:game/rounds/:round/accusation",
+        "n": 825,
+        "p50": 2.2,
+        "p95": 6.3
+      },
+      {
+        "route": "GET /api/history/leaderboard",
+        "n": 120,
+        "p50": 2.9,
+        "p95": 6.2
+      }
+    ]
+  }
+}

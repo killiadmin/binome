@@ -1,4 +1,8 @@
 {
+  "DELETE /api/admin/games/:game 200": {
+    "$": "object",
+    "$.message": "string"
+  },
   "DELETE /api/admin/games/:game 404": {
     "$": "object",
     "$.message": "string"
@@ -263,6 +267,10 @@
     "$.settings.best_question_vote": "bool",
     "$.settings.reveal_to_eliminated": "bool",
     "$.status": "string"
+  },
+  "GET /api/games/:game 404": {
+    "$": "object",
+    "$.message": "string"
   },
   "GET /api/games/:game/me 200": {
     "$": "object",

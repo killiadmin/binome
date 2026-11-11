@@ -23,6 +23,10 @@ const games = Number(opt('games', 6))
 const wsCount = Number(opt('ws', 500))
 const idleSeconds = Number(opt('idle', 20))
 const duration = Number(opt('duration', 60))
+// --rate N : charge FIXE de N parties par minute (toutes tables confondues), pour
+// comparer deux serveurs à charge égale. Sans --rate : chaque table enchaîne au plus
+// vite (charge maximale, le débit dépend du serveur).
+const rate = opt('rate', null) === null ? null : Number(opt('rate'))
 
 const CONTAINERS = {
     'laravel-ref': ['binome_ref-database-1', 'binome_ref-backend-1', 'binome_ref-reverb-1', 'binome_ref-queue-1'],
@@ -134,11 +138,17 @@ const contexts = []
 const tLoad = Date.now()
 const results = await Promise.allSettled(Array.from({ length: games }, async () => {
     // Chaque « table » enchaîne les parties jusqu'à la fin de la fenêtre
+    const slot = rate ? (games * 60_000) / rate : 0 // ms entre deux débuts de partie d'une table
+    let next = Date.now()
     while (Date.now() - tLoad < duration * 1000) {
         const ctx = new Context(target, { quiet: true })
         contexts.push(ctx)
         await ctx.loginAdmin()
         await fullGame(ctx, { size: 8, rich: false, redraw: false })
+        if (rate) {
+            next += slot
+            await sleep(Math.max(0, next - Date.now()))
+        }
     }
 }))
 const loadSeconds = (Date.now() - tLoad) / 1000
@@ -181,7 +191,7 @@ const report = {
     target: targetName,
     date: new Date().toISOString(),
     machine: `${process.platform} ${process.arch}`,
-    params: { parallel_games: games, duration_s: duration, games_played: contexts.length, players_per_game: 8, ws: wsCount, idle_seconds: idleSeconds },
+    params: { parallel_games: games, duration_s: duration, rate_per_min: rate, games_played: contexts.length, players_per_game: 8, ws: wsCount, idle_seconds: idleSeconds },
     idle: sampler.summary('idle'),
     websockets: { requested: wsCount, opened: sockets.length, failed: wsFailed, still_open_after_15s: wsAlive, open_seconds: +wsOpenSeconds.toFixed(1), resources: sampler.summary('ws') },
     load: { seconds: +loadSeconds.toFixed(1), games_played: contexts.length, failures, failed_checks: failedChecks, latency, resources: sampler.summary('load'), slowest_routes: perRoute.slice(0, 10) },
@@ -189,7 +199,7 @@ const report = {
 
 printPhase('REPOS', report.idle)
 printPhase(`WEBSOCKETS : ${sockets.length} connexions inactives`, report.websockets.resources)
-printPhase(`CHARGE : ${games} tables × 8 joueurs en continu, ${contexts.length} parties en ${loadSeconds.toFixed(1)} s`, report.load.resources)
+printPhase(`CHARGE : ${games} tables × 8 joueurs${rate ? `, ${rate} parties/min imposées` : ' en continu'}, ${contexts.length} parties en ${loadSeconds.toFixed(1)} s`, report.load.resources)
 console.log('Latence HTTP globale :', latency)
 console.log('Routes les plus lentes (p95) :')
 console.table(perRoute.slice(0, 8))

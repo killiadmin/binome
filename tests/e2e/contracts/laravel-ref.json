@@ -268,6 +268,10 @@
     "$.settings.reveal_to_eliminated": "bool",
     "$.status": "string"
   },
+  "GET /api/games/:game 404": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/games/:game/me 200": {
     "$": "object",
     "$.character": "object",

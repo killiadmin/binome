@@ -26,8 +26,14 @@ node tests/e2e/run.mjs --target laravel-ref                 # tout (≈ 40 s)
 node tests/e2e/run.mjs --target laravel-ref --only game8 --verbose
 node tests/e2e/run.mjs --target laravel-ref --save          # + contrat et latences
 node tests/e2e/render-contract.mjs                          # régénère docs/rust-migration/02 et 03
-node tests/e2e/load.mjs --target laravel-ref --games 6 --duration 60 --ws 1000
+node tests/e2e/load.mjs --target laravel-ref --games 6 --duration 60 --ws 1000             # charge maximale
+node tests/e2e/load.mjs --target rust --containers binome --games 6 --rate 120 --ws 1000   # charge égale
+STATIC_DIR=…/dist tests/e2e/rust-stack.sh up && node tests/e2e/browser.mjs                # vrai front, Chromium
 ```
+
+Mesures : toujours sous `caffeinate -dims` (un Mac capot fermé se met en veille et fausse les
+temps), chaque pile seule. Cibles : `laravel-ref` (`ref-stack.sh`), `rust` (port 18101 :
+`rust-stack.sh` ou l'image de production avec `BINOME_PORT=18101`).
 
 | Scénario | Contenu |
 |---|---|
