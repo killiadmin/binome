@@ -1,6 +1,9 @@
 # Migration Rust — 01. Audit, architecture cible et plan
 
-> Statut : **proposition, en attente de validation**. Aucun code n'a été modifié.
+> Statut : décisions validées le 2026-11-11 (§10). **Phase 2 terminée** (serveur Rust :
+> `server/`, 361 vérifications E2E). **Phase 1 terminée** : contrat API
+> (`02-contrat-api.md`), events (`03-events.md`), banc E2E (`tests/e2e/`), mesures de
+> référence (`05-performances.md`).
 > Audit réalisé le 2026-11-11 sur `main` @ `08b7c8c`, stack Docker en fonctionnement.
 
 ---
@@ -97,6 +100,28 @@ Ces points sont à corriger dans la doc ; le comportement **réel** est celui qu
 8. La table `failed_jobs` contient 31 échecs, tous du 2026-07-14 entre 21:20:30 et 21:20:34
    (des events sérialisés dont le modèle avait été supprimé). Ce sont des vestiges, pas un
    bug actuel.
+9. **Découvert par le banc E2E (phase 1)** :
+   - `POST /admin/reactions` accepte « 🦩🦩 » malgré le contrôle « un seul emoji » (`^\X$`) :
+     bug existant. Rust appliquera la règle documentée (un seul graphème) ; **c'est un
+     changement de comportement, à confirmer**.
+   - `APP_DEBUG=true` dans `backend/.env` : les erreurs `404` / `429` renvoient la pile
+     d'appels PHP complète (fichiers, lignes, classes) à n'importe quel client. Rust ne
+     renverra que `{ message }`.
+   - Le front modifie un personnage par `POST /characters/{id}` + `_method=PUT` (method
+     spoofing Laravel) : Rust doit accepter cette forme.
+   - `players[].is_ready` sort en `0` / `1`, pas en booléen (pivot non casté).
+10. **Découvert en phase 2 — perte de l'historique** : `games.room_id` est en `ON DELETE
+    CASCADE`. Quand le dernier joueur quitte un salon, le salon est supprimé **et ses parties
+    avec lui** (binômes, actions, `game_stats`) : la partie disparaît de l'historique et du
+    classement. Vérifié par le banc sur les deux backends ; la base réelle ne contient plus
+    que 4 parties pour des ids allant jusqu'à 113. Rust reproduit ce comportement **en
+    attendant une décision**.
+11. **Écarts assumés en phase 2** (sans effet sur le front) :
+    - la réponse de `/confirm` ne contient plus le graphe accidentel de la partie (binômes,
+      rounds) que Laravel y joignait via ses relations chargées ;
+    - `import-characters` ne télécharge plus d'images par URL (jamais utilisé : aucun fichier
+      d'import n'en contient) ; image locale, data URI ou convention `<slug>.png` ;
+    - un emoji admin doit être exactement un graphème (correction validée).
 
 ### 2.3 Particularités à reproduire fidèlement
 
@@ -409,7 +434,17 @@ côté, sur une **copie** de la base, jamais sur la base réelle avant la bascul
 
 ---
 
-## 10. Décisions à valider avant de coder
+## 10. Décisions validées (2026-11-11)
+
+1. **SQLite.** Sauvegarde avant migration : `~/Meszappli/backups/binome/2026-11-11/binome.sql`.
+   Restauration testée dans un conteneur jetable : comptes de lignes et taille totale des
+   images identiques à la base réelle.
+2. **Protocole WebSocket natif**, à condition que le jeu reste fluide et en temps réel (push
+   instantané inchangé, voir §7.2).
+3. **Events publiés après le commit.**
+4. **Pas de code mort porté.**
+
+## 10 bis. Questions d'origine
 
 1. **Base de données** : SQLite (recommandé) ou MySQL conservé (ou les deux en séquence).
 2. **WebSocket** : protocole natif + `useReverb.js` réécrit (recommandé), ou compatibilité Pusher sans toucher au front.

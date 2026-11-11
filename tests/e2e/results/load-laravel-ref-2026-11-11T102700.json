@@ -1,0 +1,219 @@
+{
+  "target": "laravel-ref",
+  "date": "2026-11-11T10:27:00.468Z",
+  "machine": "darwin arm64",
+  "params": {
+    "parallel_games": 6,
+    "duration_s": 60,
+    "games_played": 150,
+    "players_per_game": 8,
+    "ws": 1000,
+    "idle_seconds": 20
+  },
+  "idle": {
+    "binome_ref-database-1": {
+      "cpu_avg": 2.68,
+      "cpu_max": 5.77,
+      "mem_avg_mib": 738.9,
+      "mem_max_mib": 739.4,
+      "pids_max": 43,
+      "n": 40
+    },
+    "binome_ref-backend-1": {
+      "cpu_avg": 0.11,
+      "cpu_max": 0.36,
+      "mem_avg_mib": 85.8,
+      "mem_max_mib": 85.8,
+      "pids_max": 7,
+      "n": 40
+    },
+    "binome_ref-reverb-1": {
+      "cpu_avg": 0.03,
+      "cpu_max": 0.25,
+      "mem_avg_mib": 45.1,
+      "mem_max_mib": 45.3,
+      "pids_max": 2,
+      "n": 40
+    },
+    "binome_ref-queue-1": {
+      "cpu_avg": 3.56,
+      "cpu_max": 11.32,
+      "mem_avg_mib": 62,
+      "mem_max_mib": 63.6,
+      "pids_max": 3,
+      "n": 40
+    },
+    "TOTAL": {
+      "cpu_avg": 6.38,
+      "cpu_max": 17.7,
+      "mem_avg_mib": 931.8,
+      "mem_max_mib": 934.1,
+      "pids_max": 55
+    }
+  },
+  "websockets": {
+    "requested": 1000,
+    "opened": 1000,
+    "failed": 0,
+    "still_open_after_15s": 1000,
+    "open_seconds": 0.5,
+    "resources": {
+      "binome_ref-database-1": {
+        "cpu_avg": 2.72,
+        "cpu_max": 6.47,
+        "mem_avg_mib": 738.7,
+        "mem_max_mib": 739.1,
+        "pids_max": 43,
+        "n": 37
+      },
+      "binome_ref-backend-1": {
+        "cpu_avg": 0.1,
+        "cpu_max": 0.22,
+        "mem_avg_mib": 85.8,
+        "mem_max_mib": 85.8,
+        "pids_max": 7,
+        "n": 37
+      },
+      "binome_ref-reverb-1": {
+        "cpu_avg": 2.23,
+        "cpu_max": 28.94,
+        "mem_avg_mib": 56.3,
+        "mem_max_mib": 57.1,
+        "pids_max": 2,
+        "n": 37
+      },
+      "binome_ref-queue-1": {
+        "cpu_avg": 3.46,
+        "cpu_max": 11.16,
+        "mem_avg_mib": 63.1,
+        "mem_max_mib": 63.6,
+        "pids_max": 3,
+        "n": 37
+      },
+      "TOTAL": {
+        "cpu_avg": 8.51,
+        "cpu_max": 46.79,
+        "mem_avg_mib": 943.9,
+        "mem_max_mib": 945.6,
+        "pids_max": 55
+      }
+    }
+  },
+  "load": {
+    "seconds": 61.2,
+    "games_played": 150,
+    "failures": [],
+    "failed_checks": [],
+    "latency": {
+      "requests": 12966,
+      "p50_ms": 22.2,
+      "p95_ms": 37.3,
+      "p99_ms": 49.2,
+      "max_ms": 81.5,
+      "req_per_s": 212
+    },
+    "resources": {
+      "binome_ref-database-1": {
+        "cpu_avg": 76.36,
+        "cpu_max": 95.37,
+        "mem_avg_mib": 752.7,
+        "mem_max_mib": 761.5,
+        "pids_max": 45,
+        "n": 123
+      },
+      "binome_ref-backend-1": {
+        "cpu_avg": 242.11,
+        "cpu_max": 270.97,
+        "mem_avg_mib": 90.4,
+        "mem_max_mib": 94.7,
+        "pids_max": 8,
+        "n": 123
+      },
+      "binome_ref-reverb-1": {
+        "cpu_avg": 10.15,
+        "cpu_max": 11.69,
+        "mem_avg_mib": 55.5,
+        "mem_max_mib": 56.8,
+        "pids_max": 2,
+        "n": 123
+      },
+      "binome_ref-queue-1": {
+        "cpu_avg": 3.5,
+        "cpu_max": 12.37,
+        "mem_avg_mib": 62.3,
+        "mem_max_mib": 63.6,
+        "pids_max": 3,
+        "n": 123
+      },
+      "TOTAL": {
+        "cpu_avg": 332.12,
+        "cpu_max": 390.4,
+        "mem_avg_mib": 960.9,
+        "mem_max_mib": 976.6,
+        "pids_max": 58
+      }
+    },
+    "slowest_routes": [
+      {
+        "route": "POST /api/games/:game/rounds/:round/actions/:action/confirm",
+        "n": 1022,
+        "p50": 33.3,
+        "p95": 51.3
+      },
+      {
+        "route": "POST /api/games/:game/rounds/:round/accusation",
+        "n": 1022,
+        "p50": 30.9,
+        "p95": 41.6
+      },
+      {
+        "route": "POST /api/rooms/:room/start",
+        "n": 150,
+        "p50": 31,
+        "p95": 39.1
+      },
+      {
+        "route": "POST /api/rooms/join",
+        "n": 1050,
+        "p50": 24.3,
+        "p95": 34.9
+      },
+      {
+        "route": "GET /api/games/:game",
+        "n": 1472,
+        "p50": 21.8,
+        "p95": 33.1
+      },
+      {
+        "route": "DELETE /api/rooms/:room/leave",
+        "n": 1200,
+        "p50": 23.1,
+        "p95": 32.9
+      },
+      {
+        "route": "GET /api/games/:game/recap",
+        "n": 150,
+        "p50": 23.4,
+        "p95": 32.7
+      },
+      {
+        "route": "POST /api/games/:game/character-vote",
+        "n": 1200,
+        "p50": 21.4,
+        "p95": 32.2
+      },
+      {
+        "route": "GET /api/admin/games/:game",
+        "n": 150,
+        "p50": 22.5,
+        "p95": 32
+      },
+      {
+        "route": "GET /api/history/games/:game",
+        "n": 150,
+        "p50": 23.7,
+        "p95": 31.8
+      }
+    ]
+  }
+}

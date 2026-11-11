@@ -1,0 +1,76 @@
+# Pile Laravel de RÉFÉRENCE, jetable, pour le banc E2E de la migration Rust.
+#
+# - Base MySQL restaurée depuis un dump (REF_DUMP) dans un tmpfs : rien n'est
+#   écrit sur disque, tout disparaît au `down`. La base réelle n'est jamais touchée.
+# - Réseau propre (pas de `meszappli`) : les noms de service `database` / `reverb`
+#   du backend/.env résolvent vers CETTE pile, pas vers la pile en service.
+# - Code Laravel monté en lecture seule, vendor = le volume de la pile en service
+#   (lecture seule) ; storage/ en tmpfs pour ne pas écrire dans le repo.
+#
+# Lancement : tests/e2e/ref-stack.sh up | down  (voir tests/e2e/README.md)
+
+name: binome_ref
+
+x-laravel: &laravel
+  image: binome-backend:latest
+  # Même politique que la pile en service : `queue:listen` s'arrête si un job
+  # dépasse 60 s (observé après une mise en veille de la machine hôte).
+  restart: unless-stopped
+  env_file:
+    - ../../backend/.env
+  environment:
+    APP_ENV: testing
+    LOG_CHANNEL: stderr
+  volumes:
+    - ../../backend:/var/www/html:ro
+    - binome_backend_vendor:/var/www/html/vendor:ro
+  tmpfs:
+    - /var/www/html/storage
+  depends_on:
+    database:
+      condition: service_healthy
+
+services:
+  database:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: binome
+    volumes:
+      - ${REF_DUMP:?REF_DUMP doit pointer vers un dump SQL}:/docker-entrypoint-initdb.d/binome.sql:ro
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      # Le serveur temporaire de l'entrypoint répond aussi au ping pendant
+      # l'import : on attend que la dernière table du dump soit présente.
+      test: ["CMD-SHELL", "mysql -uroot -proot -N binome -e 'SELECT 1 FROM universes LIMIT 1' && mysqladmin ping -uroot -proot -h 127.0.0.1"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  backend:
+    <<: *laravel
+    ports:
+      - "18001:8000"
+    command: >
+      sh -c "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs
+      && php artisan serve --host=0.0.0.0 --port=8000"
+
+  reverb:
+    <<: *laravel
+    ports:
+      - "18080:8080"
+    command: >
+      sh -c "mkdir -p storage/framework/cache/data storage/logs
+      && php artisan reverb:start --host=0.0.0.0 --port=8080"
+
+  queue:
+    <<: *laravel
+    command: >
+      sh -c "mkdir -p storage/framework/cache/data storage/logs
+      && php artisan queue:listen --tries=1"
+
+volumes:
+  binome_backend_vendor:
+    external: true

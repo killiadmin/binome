@@ -1,0 +1,4246 @@
+[
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "voler"
+  ],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": [
+   "voler"
+  ]
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "costume"
+  ],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "poudre"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": [
+   "voler"
+  ]
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": [
+   "costume"
+  ]
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": [
+   "voler"
+  ]
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": [
+   "voler"
+  ]
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "poudre"
+  ],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "poudre"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [
+   "costume"
+  ],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "costume",
+   "poudre",
+   "voler"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [
+   "Spider-Man"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [
+   "toile"
+  ],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [
+   "Spider-Man"
+  ],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [
+   "araignée"
+  ],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [
+   "toile"
+  ],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "Spider-Man",
+   "toile",
+   "araignée"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [
+   "Pays imaginaire"
+  ],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [
+   "fée"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [
+   "crochet"
+  ],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [
+   "crochet"
+  ],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": [
+   "crochet"
+  ]
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "Pays imaginaire",
+   "fée",
+   "crochet"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [
+   "épée"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [
+   "château"
+  ],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [
+   "chevalier"
+  ],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [
+   "chevalier"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [
+   "château"
+  ],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "épée",
+   "château",
+   "chevalier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [
+   "œil"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [
+   "bœuf"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [
+   "Straße"
+  ],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [
+   "œil"
+  ],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "œil",
+   "bœuf",
+   "Straße"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [
+   "magie"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [
+   "baguette"
+  ],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [
+   "sorcier"
+  ],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": [
+   "sorcier"
+  ]
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "magie",
+   "baguette",
+   "sorcier"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [
+   "eau"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [
+   "île"
+  ],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [
+   "roi"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [
+   "roi"
+  ],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "eau",
+   "île",
+   "roi"
+  ],
+  "exact": [
+   "île"
+  ],
+  "near": []
+ },
+ {
+  "question": "Peut-il voler ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce que ton personnage vol ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Porte-t-il des COSTUMES ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il grand ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Utilise-t-il de la poudre magique ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il volait souvent ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Ses costums sont rouges ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "C'est spiderman ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il tisse une toile ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Spider Man est-il ton ami ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les araignees le piquent ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Vit-il au pays imaginaire ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Une fee le suit ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un crochet ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Le capitaine Crochet ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "A-t-il une épée ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit dans un chateau ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-ce un chevalier ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les chevaliers le servent ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a un œil de verre ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il mange du boeuf ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il habite dans une strasse ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "oeil",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Fait-il de la magie ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il a une baguette ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les sorciers le craignent ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "magicien ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il boit de l'eau ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il vit sur une ile ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est royal ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il court vite ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il aime la vitesse ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [
+   "vitesse"
+  ],
+  "near": []
+ },
+ {
+  "question": "Il est rapide comme l'éclair ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [
+   "éclair"
+  ],
+  "near": []
+ },
+ {
+  "question": "courrir",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": [
+   "courir"
+  ]
+ },
+ {
+  "question": "",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "???",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "a b c",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Volera-t-il demain ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Les voleurs ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "poudres",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "POUDRE !",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il est costumé ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Costumier ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il crochète ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Elle est féerique ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Tisser des toiles ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Sorcière ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Il chevauche ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "chateaux forts",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Est-il roi ou reine ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ },
+ {
+  "question": "Iles lointaines ?",
+  "words": [
+   "courir",
+   "vitesse",
+   "éclair"
+  ],
+  "exact": [],
+  "near": []
+ }
+]
