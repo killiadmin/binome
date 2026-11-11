@@ -77,6 +77,7 @@ Supprimer une partie depuis l'administration exige un mot de passe dédié, dont
 l'empreinte est stockée. Pour le définir (ou le changer), image construite :
 
 ```bash
+# Linux / VPS (bash) — sur macOS (zsh), la 1re ligne s'écrit : read -rs "P?Mot de passe de suppression : "; echo
 read -rs -p "Mot de passe de suppression : " P; echo
 printf '%s\n' "$P" | docker run --rm -i binome:latest hash-password; unset P
 # → copier la ligne BINOME_DELETE_PASSWORD_HASH=… dans .env, puis :
