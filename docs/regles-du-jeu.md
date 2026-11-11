@@ -193,6 +193,15 @@ accents (« Killian », « killian » et « Killián » sont un seul joueur, à 
 classement). L'agrégation porte sur `game_stats.player_pseudo`, dénormalisé, qui survit à la
 suppression du joueur. Les ex æquo partagent leur rang (1, 2, 2, 4).
 
-**Attention** : supprimer un salon supprime ses parties (cascade). Quand le dernier joueur quitte
-un salon, la partie disparaît de l'historique et du classement (comportement repris tel quel de
-l'ancien backend).
+**Les parties survivent à leur salon** : quand le dernier joueur quitte un salon, le salon est
+supprimé mais ses parties restent dans l'historique et le classement (le code du salon y
+apparaît vide). Seul un administrateur peut supprimer une partie, avec un mot de passe dédié
+(voir ci-dessous).
+
+### Suppression de parties (administration)
+
+Supprimer une partie (ou un joueur **avec** ses parties) exige, en plus de l'accès admin, un
+**mot de passe de suppression** distinct, dont le serveur ne connaît que l'empreinte
+(`BINOME_DELETE_PASSWORD_HASH`, PBKDF2-SHA256). Sans empreinte configurée, la suppression de
+parties est désactivée. Après 5 mots de passe faux en une minute, les essais sont refusés
+(`429`) jusqu'à la fin de la minute.

@@ -21,11 +21,12 @@ export const adminService = {
     },
 
     /**
-     * Supprime une partie (cascade DB : binomes, rounds, actions, stats)
+     * Supprime une partie (binomes, rounds, actions, stats). Exige le mot de
+     * passe de suppression, distinct de l'accès admin (en-tête X-Delete-Password).
      * DELETE /api/admin/games/{id}
      */
-    deleteGame(id) {
-        return api.delete(`/admin/games/${id}`)
+    deleteGame(id, deletePassword) {
+        return api.delete(`/admin/games/${id}`, { headers: { 'X-Delete-Password': deletePassword } })
     },
 
     /**
@@ -77,10 +78,13 @@ export const adminService = {
 
     /**
      * Supprime un joueur ; withGames supprime aussi les parties qu'il a jouées
-     * (sinon 409 + games_count s'il en a)
+     * (sinon 409 + games_count s'il en a) et exige alors le mot de passe de suppression.
      * DELETE /api/admin/players/{id}
      */
-    deletePlayer(id, withGames = false) {
-        return api.delete(`/admin/players/${id}`, { params: withGames ? { with_games: 1 } : {} })
+    deletePlayer(id, withGames = false, deletePassword = '') {
+        return api.delete(`/admin/players/${id}`, {
+            params: withGames ? { with_games: 1 } : {},
+            headers: withGames ? { 'X-Delete-Password': deletePassword } : {},
+        })
     },
 }

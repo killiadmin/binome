@@ -37,6 +37,10 @@ case "${1:-}" in
     "$root/server/cargo.sh" build $flag -q
     [[ -f "$data/base.sqlite" ]] || { echo "Base absente : lance d'abord « $0 prepare »" >&2; exit 1; }
     env_file
+    # Mot de passe de suppression du serveur de TEST (jetable, coût réduit) ;
+    # le banc l'envoie pour les suppressions de parties
+    printf '%s\n' "${E2E_DELETE_PASSWORD:-e2e-suppression-test}" | docker run --rm -i -v binome_cargo_target:/target:ro \
+      rust:1-bookworm "/target/$profile/binome" hash-password --iterations 1000 >> "$data/rust.env"
     docker rm -f binome_rust_test >/dev/null 2>&1 || true
     rm -f "$data/run.sqlite"*
     cp "$data/base.sqlite" "$data/run.sqlite"

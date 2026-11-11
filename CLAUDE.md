@@ -77,5 +77,11 @@ remains. Details in `docs/regles-du-jeu.md`.
   returns a character only to the requesting player; characters otherwise only in `game.ended`,
   to eliminated players via `GET /games/{game}/reveal` (host option), and in finished-game history.
 - Identity is an unsigned `player_id` (inherited trust model, unchanged).
+- Deleting games (`DELETE /admin/games/{id}`, or a player `?with_games=1`) also requires the
+  `X-Delete-Password` header, checked against `BINOME_DELETE_PASSWORD_HASH` (PBKDF2; unset =
+  disabled). Only the owner knows that password — never generate or store it yourself.
+- Schema changes = new numbered file in `server/migrations/` registered in `MIGRATIONS`
+  (`server/src/db.rs`), applied once at startup (`PRAGMA user_version`). Games survive their room
+  (`games.room_id` ON DELETE SET NULL since migration 2). Back up before deploying a migration.
 - JSON shapes are a contract (`tests/e2e/contracts/`): e.g. `players[].is_ready` is 0/1, two date
   formats coexist. Run `compare.mjs` after touching a response or an event.

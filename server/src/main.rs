@@ -6,6 +6,7 @@
 //!   binome import-characters <fichier.json> [--images-dir D] [--skip-existing]
 //!   binome list-characters                catalogue complet (refusés compris)
 //!   binome count-pending                  binômes en attente de validation
+//!   binome hash-password [--iterations N] empreinte du mot de passe de suppression (lu sur stdin)
 //!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
 //!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
 
@@ -51,6 +52,7 @@ fn main() {
             None => fail("usage : binome import-characters <fichier.json> [--images-dir D] [--skip-existing]"),
         },
         Some("check") => run_tool(&cfg, |db| db.check()),
+        Some("hash-password") => hash_password(&args),
         Some("list-characters") => run_tool(&cfg, tools::list_characters),
         Some("count-pending") => run_tool(&cfg, tools::count_pending),
         Some("backup") => match args.get(1) {
@@ -63,6 +65,25 @@ fn main() {
         Some(other) => fail(&format!("commande inconnue : {other}")),
     };
     std::process::exit(code);
+}
+
+/// Lit le mot de passe sur l'entrée standard (jamais en argument : il finirait
+/// dans l'historique du shell) et affiche la ligne à mettre dans le .env.
+fn hash_password(args: &[String]) -> i32 {
+    let iterations = match args.iter().position(|a| a == "--iterations").and_then(|i| args.get(i + 1)) {
+        Some(n) => n.parse().unwrap_or_else(|_| fail("--iterations : entier attendu")),
+        None => support::password::DEFAULT_ITERATIONS,
+    };
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_err() {
+        fail("lecture du mot de passe impossible");
+    }
+    let password = line.trim_end_matches(['\n', '\r']);
+    if password.chars().count() < 8 {
+        fail("mot de passe trop court (8 caractères minimum)");
+    }
+    println!("BINOME_DELETE_PASSWORD_HASH={}", support::password::hash(password, iterations));
+    0
 }
 
 fn fail(msg: &str) -> ! {
@@ -101,6 +122,11 @@ fn serve(cfg: Config) -> i32 {
             Ok(db) => db,
             Err(e) => fail(&format!("base {} : {e:?}", cfg.database.display())),
         };
+        match cfg.delete_password_hash.as_deref() {
+            None => tracing::info!("aucun mot de passe de suppression : la suppression de parties est désactivée"),
+            Some(h) if !support::password::is_well_formed(h) => fail("BINOME_DELETE_PASSWORD_HASH mal formée : régénère-la avec `binome hash-password`"),
+            Some(_) => {}
+        }
         if cfg.admin_password.is_none() {
             tracing::warn!("aucun mot de passe d'administration : la gestion des personnages est fermée (403)");
         }

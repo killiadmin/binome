@@ -174,7 +174,7 @@ pub fn vote_question(tx: &Transaction, game_id: i64, input: &Input) -> AppResult
     v.finish()?;
     let (voter, a) = (pid.expect("validé"), action(tx, aid.expect("validé"))?.expect("action"));
 
-    if !room(tx, g.room_id)?.is_some_and(|r| r.best_question_vote) {
+    if !game_room(tx, &g)?.is_some_and(|r| r.best_question_vote) {
         return Err(AppError::rule("Le vote des éliminés est désactivé pour cette partie."));
     }
     if !g.in_progress() || g.voting() {

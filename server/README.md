@@ -29,7 +29,8 @@ binome import-characters <f.json> [--images-dir D] [--skip-existing]
 binome list-characters                         # catalogue complet, refusés compris
 binome count-pending                           # binômes en attente de validation
 binome backup <fichier.sqlite>                 # copie cohérente, serveur en marche
-binome check                                   # intégrité + volumes (BINOME_DATABASE)
+binome check                                   # intégrité, version du schéma, volumes (BINOME_DATABASE)
+binome hash-password [--iterations N]          # empreinte du mot de passe de suppression (lu sur stdin)
 ```
 
 La collation `BINOME_CI` (pseudos insensibles à la casse et aux accents) n'existe que dans le
@@ -48,6 +49,7 @@ Flux de création de personnages : `docs/generation-personnages.md` (page admin 
 | `BINOME_STATIC_DIR` | — | Dossier du front compilé ; absent : API seule (dev avec Vite) |
 | `BINOME_PUBLIC_PREFIX` | `/binome` | Préfixe de toutes les routes et des URLs d'images |
 | `BINOME_ADMIN_PASSWORD` (ou `CHARACTERS_ACCESS_PASSWORD`) | — | Mot de passe d'administration ; vide = admin fermée |
+| `BINOME_DELETE_PASSWORD_HASH` | — | Empreinte du mot de passe exigé pour supprimer des parties ; absente = suppression désactivée |
 | `BINOME_LAN_URL_FILE` | — | `lan-url.json` du bouton « Partager le lien » (réseau local) |
 | `RUST_LOG` | `binome=info` | Journaux |
 
@@ -69,6 +71,10 @@ src/
 ├── services/       logique métier : rooms, game, play, score, history, catalog, social, admin
 └── support/        texte (collation, slugs), images, détecteur de mots interdits
 ```
+
+Schéma : `migrations/0001_schema.sql` puis migrations numérotées (`0002_…`), appliquées une
+fois au démarrage (`PRAGMA user_version`), chacune dans une transaction avec contrôle des clés
+étrangères. Ajouter un fichier `000N_*.sql` et l'inscrire dans `MIGRATIONS` (`src/db.rs`).
 
 Chaque opération métier s'exécute dans **une** transaction et renvoie la réponse HTTP + les
 events, publiés **après** le commit.

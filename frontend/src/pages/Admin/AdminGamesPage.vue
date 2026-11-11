@@ -26,6 +26,8 @@ const expanded = ref(null)
 // Suppression
 const showConfirm = ref(false)
 const confirmTarget = ref(null)
+// Mot de passe de suppression (distinct de l'accès admin), jamais conservé
+const deletePassword = ref('')
 const deleting = ref(false)
 
 const filteredGames = computed(() =>
@@ -71,6 +73,7 @@ async function toggleDetail(game) {
 
 function askDelete(game) {
   confirmTarget.value = game
+  deletePassword.value = ''
   showConfirm.value = true
 }
 
@@ -80,7 +83,8 @@ async function confirmDelete() {
   error.value = null
   const id = confirmTarget.value.id
   try {
-    await adminService.deleteGame(id)
+    await adminService.deleteGame(id, deletePassword.value)
+    deletePassword.value = ''
     games.value = games.value.filter((g) => g.id !== id)
     delete details[id]
     if (expanded.value === id) expanded.value = null
@@ -244,8 +248,14 @@ onMounted(loadGames)
         {{ confirmTarget.room_code || '—' }}) ? Les binomes, rounds, actions et
         statistiques associés seront supprimés. Cette action est irréversible.
       </p>
+      <label class="delete-password">
+        Mot de passe de suppression
+        <input v-model="deletePassword" type="password" class="form-control" autocomplete="off"
+               :disabled="deleting" @keyup.enter="deletePassword && confirmDelete()" />
+      </label>
+      <p v-if="error && showConfirm" class="text-center text-danger small mb-0">{{ error }}</p>
       <div class="text-center mt-3 btn-modal">
-        <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" :disabled="deleting" @click="confirmDelete">
+        <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" :disabled="deleting || !deletePassword" @click="confirmDelete">
           <i class="fa-solid fa-trash"></i> {{ deleting ? 'Suppression…' : 'Supprimer' }}
         </button>
         <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" :disabled="deleting" @click="showConfirm = false">
@@ -257,6 +267,18 @@ onMounted(loadGames)
 </template>
 
 <style scoped>
+/* Mot de passe de suppression : seconde clé, distincte de l'accès admin */
+.delete-password {
+  display: block;
+  max-width: 280px;
+  margin: 0.75rem auto 0;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.delete-password .form-control {
+  margin-top: 0.25rem;
+}
+
 .admin-games {
   max-width: 900px;
   color: var(--arcade-beige);

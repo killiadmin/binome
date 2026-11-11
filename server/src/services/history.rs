@@ -35,7 +35,8 @@ pub fn list_games(c: &impl Q, finished_only: bool) -> AppResult<Out> {
         |r| {
             Ok((
                 r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
+                // Salon supprimé depuis : la partie reste, sans salon
+                r.get::<_, Option<i64>>(1)?,
                 r.get::<_, Option<String>>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, Option<String>>(4)?,

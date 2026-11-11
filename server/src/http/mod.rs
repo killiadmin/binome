@@ -328,13 +328,43 @@ async fn characters_image(State(st): State<AppState>, Path(p): Params, mp: Multi
     }
 }
 
+/// Suppression de parties : mot de passe dédié (en-tête `X-Delete-Password`),
+/// en plus de l'accès admin. Vérification coûteuse (PBKDF2) hors des threads
+/// réseau ; après 5 échecs en une minute, plus aucun essai n'est accepté (429)
+/// jusqu'à la fin de la minute. Les suppressions réussies ne comptent pas.
+async fn require_delete_password(st: &AppState, headers: &axum::http::HeaderMap) -> Result<(), Response> {
+    let Some(stored) = st.cfg.delete_password_hash.clone() else {
+        return Err(AppError::forbidden(
+            "La suppression de parties est désactivée : aucun mot de passe de suppression n'est configuré sur le serveur.",
+        )
+        .into_response());
+    };
+    if st.limiter.is_limited("delete-password", "échecs", 5) {
+        return Err(AppError::TooManyRequests.into_response());
+    }
+    let given = headers.get("x-delete-password").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let ok = tokio::task::spawn_blocking(move || !given.is_empty() && crate::support::password::verify(&given, &stored))
+        .await
+        .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        st.limiter.record("delete-password", "échecs");
+        tracing::warn!("suppression refusée : mot de passe de suppression incorrect");
+        Err(AppError::forbidden("Mot de passe de suppression incorrect.").into_response())
+    }
+}
+
 async fn admin_games(State(st): State<AppState>) -> Response {
     st.read(|c, _| history::list_games(c, false)).await
 }
 async fn admin_game(State(st): State<AppState>, Path(p): Params) -> Response {
     st.read(move |c, env| history::detail(c, env, id(&p, "game")?, false)).await
 }
-async fn admin_game_destroy(State(st): State<AppState>, Path(p): Params) -> Response {
+async fn admin_game_destroy(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap) -> Response {
+    if let Err(r) = require_delete_password(&st, &headers).await {
+        return r;
+    }
     st.write(move |tx, _| admin::destroy_game(tx, id(&p, "game")?)).await
 }
 async fn admin_players(State(st): State<AppState>) -> Response {
@@ -343,7 +373,13 @@ async fn admin_players(State(st): State<AppState>) -> Response {
 async fn admin_player_room(State(st): State<AppState>, Path(p): Params) -> Response {
     st.write(move |tx, env| admin::remove_from_room(tx, env, id(&p, "player")?)).await
 }
-async fn admin_player_destroy(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+async fn admin_player_destroy(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
+    // Supprimer un joueur « avec ses parties » supprime des parties : même protection
+    if admin::with_games(&input) {
+        if let Err(r) = require_delete_password(&st, &headers).await {
+            return r;
+        }
+    }
     st.write(move |tx, env| admin::destroy_player(tx, env, id(&p, "player")?, &input)).await
 }
 async fn admin_reactions(State(st): State<AppState>) -> Response {

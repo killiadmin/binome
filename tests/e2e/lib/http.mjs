@@ -14,7 +14,7 @@ export class Api {
         this.adminToken = null
     }
 
-    async call(method, template, { params = {}, query = null, body = null, form = null, headers = {}, expect = null, admin = false, raw = false } = {}) {
+    async call(method, template, { params = {}, query = null, body = null, form = null, headers = {}, expect = null, admin = false, deletion = false, raw = false } = {}) {
         const path = template.replace(/:(\w+)/g, (_, name) => {
             if (params[name] === undefined) throw new Error(`Paramètre « ${name} » manquant pour ${template}`)
             return encodeURIComponent(params[name])
@@ -25,6 +25,8 @@ export class Api {
         // Une requête bloquée doit échouer en nommant sa route, pas geler le banc
         const init = { method, headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(30_000) }
         if (admin && this.adminToken) init.headers['X-Characters-Access'] = this.adminToken
+        // Suppression de parties : mot de passe dédié, en plus de l'accès admin
+        if (deletion && this.deletePassword) init.headers['X-Delete-Password'] = this.deletePassword
         if (form) {
             init.body = form // FormData : fetch pose le boundary multipart
         } else if (body !== null) {

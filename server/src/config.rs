@@ -15,6 +15,9 @@ pub struct Config {
     pub public_prefix: String,
     /// Mot de passe d'administration ; vide → administration fermée (403), comme Laravel.
     pub admin_password: Option<String>,
+    /// Empreinte du mot de passe exigé pour supprimer des parties (`binome
+    /// hash-password`) ; absente → suppression de parties désactivée.
+    pub delete_password_hash: Option<String>,
     /// `lan-url.json` (lien de partage sur le réseau local, écrit par
     /// scripts/update-lan-ip.sh) relu à chaque requête ; absent hors LAN.
     pub lan_url_file: Option<PathBuf>,
@@ -40,6 +43,7 @@ impl Config {
             // Même variable que l'ancien backend, pour réutiliser le .env existant.
             admin_password: var("BINOME_ADMIN_PASSWORD").or_else(|| var("CHARACTERS_ACCESS_PASSWORD")),
             lan_url_file: var("BINOME_LAN_URL_FILE").map(PathBuf::from),
+            delete_password_hash: var("BINOME_DELETE_PASSWORD_HASH"),
         })
     }
 }

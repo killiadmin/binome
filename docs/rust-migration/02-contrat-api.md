@@ -361,8 +361,8 @@ $.games[].binomes_discovered_count               int
 $.games[].created_at                             date:iso8601
 $.games[].id                                     int
 $.games[].players_count                          int
-$.games[].room_code                              string
-$.games[].room_id                                int
+$.games[].room_code                              null | string
+$.games[].room_id                                int | null
 $.games[].rounds_count                           int
 $.games[].status                                 string
 $.games[].updated_at                             date:iso8601
@@ -421,7 +421,7 @@ $.updated_at                                     date:iso8601
 
 Supprimer une partie (cascade) — accès : admin
 
-Statuts observés : `200`, `404`
+Statuts observés : `200`, `403`, `404`
 
 Réponse `200` :
 
@@ -471,7 +471,7 @@ $.message                                        string
 
 Supprimer (`?with_games=1` pour ses parties) — accès : admin
 
-Statuts observés : `200`, `404`
+Statuts observés : `200`, `403`, `404`
 
 Réponse `200` :
 
@@ -625,8 +625,8 @@ $.games[].binomes_discovered_count               int
 $.games[].created_at                             date:iso8601
 $.games[].id                                     int
 $.games[].players_count                          int
-$.games[].room_code                              string
-$.games[].room_id                                int
+$.games[].room_code                              null | string
+$.games[].room_id                                int | null
 $.games[].rounds_count                           int
 $.games[].status                                 string
 $.games[].updated_at                             date:iso8601
@@ -679,8 +679,8 @@ $.game_stats[].rounds_survived                   int
 $.game_stats[].score                             int
 $.game_stats[].survived_full_game                bool
 $.id                                             int
-$.room_code                                      string
-$.room_id                                        int
+$.room_code                                      null | string
+$.room_id                                        int | null
 $.rounds                                         array
 $.rounds[]                                       object
 $.rounds[].actions                               array
@@ -754,12 +754,12 @@ $.games[].game_id                                int
 $.games[].is_eliminated                          bool
 $.games[].is_winner                              bool
 $.games[].played_at                              date:iso8601
-$.games[].room_code                              string
+$.games[].room_code                              null | string
 $.games[].rounds_survived                        int
 $.games[].score                                  int
 $.pseudo                                         string
 $.totals                                         object
-$.totals.average_score                           int
+$.totals.average_score                           float | int
 $.totals.eliminations                            int
 $.totals.games_played                            int
 $.totals.rounds_survived                         int

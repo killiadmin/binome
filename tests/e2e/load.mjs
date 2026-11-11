@@ -156,8 +156,8 @@ sampler.stop()
 
 // Nettoyage par ids exacts
 for (const ctx of contexts) {
-    for (const id of ctx.created.games) await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true })
-    for (const id of ctx.created.players) await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true })
+    for (const id of ctx.created.games) await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true, deletion: true })
+    for (const id of ctx.created.players) await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true, deletion: true })
 }
 
 // Latences agrégées

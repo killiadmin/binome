@@ -128,6 +128,7 @@ export async function catalog(ctx) {
     ctx.check(players.some((p) => p.id === room.player.id && p.room_code === room.room.code && p.in_game === false), 'admin : joueur listé avec son salon')
     await api.delete('/admin/players/:player/room', { params: { player: room.player.id }, admin: true, expect: 200 })
     await ctx.refused(409, 'DELETE', '/admin/players/:player/room', { params: { player: room.player.id }, admin: true }, 'retirer d\'un salon un joueur qui n\'en a pas')
+    await ctx.refused(403, 'DELETE', '/admin/players/:player', { params: { player: room.player.id }, query: { with_games: 1 }, admin: true }, 'supprimer un joueur avec ses parties sans le mot de passe de suppression')
     await api.delete('/admin/players/:player', { params: { player: room.player.id }, admin: true, expect: 200 })
     await ctx.refused(404, 'DELETE', '/admin/players/:player', { params: { player: room.player.id }, admin: true }, 'joueur déjà supprimé')
 }

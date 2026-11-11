@@ -119,8 +119,8 @@ try {
 } finally {
     ok(problems.length === 0, `aucune erreur JavaScript dans les pages${problems.length ? ` : ${problems.slice(0, 5).join(' | ')}` : ''}`)
     await browser.close()
-    for (const id of ctx.created.games) await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true }).catch(() => {})
-    for (const id of ctx.created.players) await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true }).catch(() => {})
+    for (const id of ctx.created.games) await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true, deletion: true }).catch(() => {})
+    for (const id of ctx.created.players) await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true, deletion: true }).catch(() => {})
 }
 
 const failed = results.filter((r) => !r.ok)

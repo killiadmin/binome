@@ -94,13 +94,16 @@ pub fn remove_from_room(tx: &Transaction, env: &Env, player_id: i64) -> AppResul
     Ok(Out::message(&format!("{} a été retiré du salon.", p.pseudo)).with(events))
 }
 
+/// `?with_games=1` (ou true / on / yes) : supprimer aussi les parties du joueur.
+pub fn with_games(input: &Input) -> bool {
+    input.get("with_games").is_some_and(|v| matches!(v.as_str().unwrap_or(&v.to_string()), "1" | "true" | "on" | "yes"))
+}
+
 /// DELETE /admin/players/{player}[?with_games=1]
 pub fn destroy_player(tx: &Transaction, env: &Env, player_id: i64, input: &Input) -> AppResult<Out> {
     let p = player_or_404(tx, player_id)?;
     blocked_by_game(tx, &p)?;
-    let with_games = input
-        .get("with_games")
-        .is_some_and(|v| matches!(v.as_str().unwrap_or(&v.to_string()), "1" | "true" | "on" | "yes"));
+    let with_games = with_games(input);
     let game_ids: Vec<i64> = tx.all(
         "SELECT b.game_id FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id WHERE bp.player_id = ?1
          UNION SELECT r.game_id FROM actions a JOIN rounds r ON r.id = a.round_id WHERE a.player_id = ?1 OR a.target_player_id = ?1

@@ -161,7 +161,8 @@ pub fn reaction_url(env: &Env, id: i64, is_unicode: bool, updated_at: Option<&st
 #[derive(Debug, Clone)]
 pub struct Game {
     pub id: i64,
-    pub room_id: i64,
+    /// None : le salon a été supprimé depuis (la partie, elle, est conservée).
+    pub room_id: Option<i64>,
     pub status: String,
     pub characters_confirmed_at: Option<String>,
     pub draw_number: i64,
@@ -201,6 +202,14 @@ pub fn game(c: &impl Q, id: i64) -> AppResult<Option<Game>> {
             })
         },
     )
+}
+
+/// Salon de la partie, s'il existe encore (il peut avoir été supprimé une fois vide).
+pub fn game_room(c: &impl Q, g: &Game) -> AppResult<Option<Room>> {
+    match g.room_id {
+        Some(id) => room(c, id),
+        None => Ok(None),
+    }
 }
 
 pub fn game_or_404(c: &impl Q, id: i64) -> AppResult<Game> {
@@ -259,7 +268,7 @@ pub fn has_seat(c: &impl Q, game_id: i64, player_id: i64) -> AppResult<bool> {
 
 /// Joueur de la partie ou membre du salon (`Game::canBeWatchedBy`).
 pub fn can_watch(c: &impl Q, g: &Game, player_id: i64) -> AppResult<bool> {
-    Ok(has_seat(c, g.id, player_id)? || c.exists("SELECT 1 FROM room_player WHERE room_id = ?1 AND player_id = ?2", [g.room_id, player_id])?)
+    Ok(has_seat(c, g.id, player_id)? || g.room_id.map_or(Ok(false), |room_id| c.exists("SELECT 1 FROM room_player WHERE room_id = ?1 AND player_id = ?2", [room_id, player_id]))?)
 }
 
 #[derive(Debug, Clone)]

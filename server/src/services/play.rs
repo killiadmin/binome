@@ -580,7 +580,8 @@ pub fn decide(tx: &Transaction, game_id: i64, round_id: i64, action_id: i64, inp
     if share {
         let target_id = a.target_player_id.unwrap_or_default();
         let mut recipients: Vec<i64> = seats(tx, g.id)?.iter().map(|s| s.player_id).collect();
-        for (id, _, _) in room_players(tx, g.room_id)? {
+        let spectators = match g.room_id { Some(room_id) => room_players(tx, room_id)?, None => vec![] };
+        for (id, _, _) in spectators {
             if !recipients.contains(&id) {
                 recipients.push(id);
             }
@@ -669,7 +670,7 @@ fn assert_host_of_running_game(c: &impl Q, g: &Game, player_id: i64, not_host: &
     if g.voting() {
         return Err(AppError::rule("Les joueurs choisissent encore leurs personnages."));
     }
-    let room = room(c, g.room_id)?;
+    let room = game_room(c, g)?;
     match room {
         Some(r) if r.created_by == player_id => Ok(r),
         _ => Err(AppError::rule(not_host)),

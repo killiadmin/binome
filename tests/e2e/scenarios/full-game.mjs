@@ -662,6 +662,13 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         if (i === everyoneInRoom.length - 1) ctx.check(/supprimé/.test(res.data.message), 'dernier départ : salon supprimé')
     }
     await ctx.refused(404, 'GET', '/rooms/:room', { params: { room: room.id } }, 'salon supprimé')
+    // La partie survit au salon : historique et classement intacts
+    const kept = await api.get('/history/games/:game', { params: { game: gameId } })
+    ctx.check(kept.status === 200 && kept.data.room_code === null && kept.data.game_stats.length === size, 'salon supprimé : la partie reste dans l\'historique (code de salon vide)')
+    const listed = (await api.get('/history/games', { expect: 200 })).data.games.find((g) => g.id === gameId)
+    ctx.check(listed && listed.room_id === null && listed.room_code === null, 'historique : partie listée sans salon')
+    const stillRanked = (await api.get('/history/leaderboard', { expect: 200 })).data.leaderboard.some((r) => r.pseudo === host.pseudo)
+    ctx.check(stillRanked, 'classement : les points de la partie sont conservés')
     for (const b of everyoneInRoom) b.rt?.close()
     return { gameId, roomId: room.id }
 }

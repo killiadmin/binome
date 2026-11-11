@@ -75,11 +75,15 @@ messages. Optionnel en production : Caddy (HTTPS automatique), un conteneur de p
 - Présence vérifiée en mémoire (plus d'appel HTTP à Reverb), minuterie du tirage de carte
   réarmée au redémarrage (plus de dépendance au worker de queue).
 
+## Évolutions après la migration (2026-11-12)
+
+- **Historique conservé** : supprimer un salon ne supprime plus ses parties (migration de schéma
+  n° 2 ; avant, le départ du dernier joueur effaçait la partie de l'historique et du classement).
+- **Suppression de parties protégée** par un mot de passe dédié, connu du seul propriétaire
+  (empreinte PBKDF2-SHA256, 5 échecs par minute au plus).
+
 ## Points ouverts
 
-- **Historique** : supprimer un salon supprime ses parties (cascade reprise telle quelle).
-  Quand le dernier joueur quitte un salon, la partie disparaît de l'historique et du
-  classement. Correction simple si besoin : garder les parties quand le salon disparaît.
 - **Identité** : `player_id` non signé (modèle de confiance d'origine, inchangé) ; un jeton
   signé à l'arrivée dans un salon fermerait l'usurpation d'un joueur par son identifiant.
 - Pistes d'allègement du front sans effet visuel : `fetch` à la place d'`axios`, sous-ensemble

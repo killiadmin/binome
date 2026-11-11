@@ -237,7 +237,8 @@ fn redraw(tx: &Transaction, g: &Game, rejected_now: &[i64]) -> AppResult<()> {
         "UPDATE games SET draw_number = draw_number + 1, rejected_character_ids = ?1, updated_at = ?2 WHERE id = ?3",
         (serde_json::to_string(&rejected).expect("json"), now_db(), g.id),
     )?;
-    let room = room_or_404(tx, g.room_id)?;
+    // Une partie en cours a toujours son salon (ses joueurs ne peuvent pas le quitter)
+    let room = game_room(tx, g)?.ok_or_else(|| AppError::rule("Le salon de cette partie n'existe plus."))?;
     assign_binomes(tx, g.id, &players, &room, &rejected)
 }
 
@@ -274,7 +275,7 @@ pub fn public_action(a: &Action, round_number: i64, names: &std::collections::Ha
 /// GET /games/{game} — état public : jamais de personnage ni de binôme non découvert.
 pub fn show(c: &impl Q, env: &Env, game_id: i64) -> AppResult<Out> {
     let g = game_or_404(c, game_id)?;
-    let room = room(c, g.room_id)?;
+    let room = game_room(c, &g)?;
     let mut seated = seats(c, g.id)?;
     seated.sort_by_key(|s| s.player_id);
     let avatars = avatar_urls(c, env, seated.iter().map(|s| s.pseudo.as_str()))?;
@@ -362,7 +363,7 @@ pub fn reveal(c: &impl Q, env: &Env, game_id: i64, input: &Input) -> AppResult<O
     let mut v = V::new(input);
     let pid = v.player(c, "player_id")?;
     v.finish()?;
-    let room = room(c, g.room_id)?;
+    let room = game_room(c, &g)?;
     if !room.is_some_and(|r| r.reveal_to_eliminated) {
         return Err(AppError::forbidden("La vue omnisciente est désactivée pour cette partie."));
     }

@@ -19,6 +19,10 @@ use crate::error::{AppError, AppResult};
 use crate::support::text::ci_key;
 
 const SCHEMA: &str = include_str!("../migrations/0001_schema.sql");
+
+/// Migrations appliquées après le schéma initial (version = `PRAGMA user_version`).
+/// Une base créée par une version antérieure à ce mécanisme est en version 1.
+const MIGRATIONS: &[(i64, &str)] = &[(2, include_str!("../migrations/0002_parties_conservees.sql"))];
 const READERS: usize = 4;
 
 #[derive(Clone)]
@@ -48,7 +52,7 @@ impl Db {
             std::fs::create_dir_all(dir).map_err(|e| AppError::Internal(format!("dossier de la base : {e}")))?;
         }
         let rw = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-        let writer = open_connection(path, rw)?;
+        let mut writer = open_connection(path, rw)?;
         writer.execute_batch("PRAGMA journal_mode = WAL;")?;
 
         let has_schema: bool = writer.query_row(
@@ -58,8 +62,10 @@ impl Db {
         )?;
         if !has_schema {
             writer.execute_batch(SCHEMA)?;
+            writer.pragma_update(None, "user_version", 1)?;
             tracing::info!("schéma créé dans {}", path.display());
         }
+        migrate(&mut writer)?;
 
         let ro = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let readers = (0..READERS)
@@ -114,6 +120,36 @@ impl Db {
     }
 }
 
+/// Applique les migrations manquantes, chacune dans sa transaction. Les clés
+/// étrangères sont suspendues pendant la reconstruction d'une table (procédure
+/// SQLite) puis revérifiées : la moindre référence cassée annule la migration.
+fn migrate(conn: &mut Connection) -> AppResult<()> {
+    let mut version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version == 0 {
+        // Base créée avant le suivi des versions : schéma initial
+        version = 1;
+        conn.pragma_update(None, "user_version", 1)?;
+    }
+    for (target, sql) in MIGRATIONS.iter().filter(|(n, _)| *n > version) {
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+        let result = (|| -> AppResult<()> {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            let broken: i64 = tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
+            if broken > 0 {
+                return Err(AppError::Internal(format!("migration {target} : {broken} référence(s) cassée(s), annulée")));
+            }
+            tx.pragma_update(None, "user_version", target)?;
+            tx.commit()?;
+            Ok(())
+        })();
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        result?;
+        tracing::info!("base migrée en version {target}");
+    }
+    Ok(())
+}
+
 impl Db {
     /// Contrôle d'intégrité (pages, index, clés étrangères) et volumes par table.
     /// L'outil `sqlite3` standard ne connaît pas la collation BINOME_CI : ce contrôle
@@ -122,7 +158,8 @@ impl Db {
         let conn = self.readers[0].lock().unwrap_or_else(|p| p.into_inner());
         let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
         let broken: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
-        let mut lines = vec![format!("intégrité : {integrity}"), format!("références cassées : {broken}")];
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let mut lines = vec![format!("intégrité : {integrity}"), format!("références cassées : {broken}"), format!("version du schéma : {version}")];
         for table in ["players", "characters", "games", "game_stats", "player_avatars", "custom_reactions"] {
             let n: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?;
             lines.push(format!("{table:<18} {n:>6}"));
@@ -196,4 +233,49 @@ impl Q for Transaction<'_> {
 /// Une violation de clé étrangère (suppression d'une ligne encore référencée).
 pub fn is_constraint(e: &AppError) -> bool {
     matches!(e, AppError::Internal(m) if m.contains("FOREIGN KEY constraint failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Base au format d'origine (version 1, cascade salon → parties), migrée à l'ouverture.
+    #[test]
+    fn migration_2_keeps_games_when_room_is_deleted() {
+        let dir = std::env::temp_dir().join(format!("binome-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v1.sqlite");
+        {
+            let conn = open_connection(&path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            conn.execute_batch(
+                "INSERT INTO players (id, pseudo) VALUES (1, 'Hote');
+                 INSERT INTO rooms (id, code, created_by) VALUES (7, 'ABCDEF', 1);
+                 INSERT INTO games (id, room_id, status) VALUES (41, 7, 'finished');
+                 INSERT INTO game_stats (game_id, player_pseudo, character_name, score) VALUES (41, 'Hote', 'X', 9);
+                 INSERT INTO games (id, room_id, status) VALUES (50, 7, 'finished');
+                 DELETE FROM games WHERE id = 50;",
+            )
+            .unwrap();
+            // Avant migration : la cascade emporterait les parties
+            let cascade: String = conn.query_row("SELECT sql FROM sqlite_master WHERE name = 'games'", [], |r| r.get(0)).unwrap();
+            assert!(cascade.contains("ON DELETE CASCADE"));
+        }
+
+        let db = Db::open(&path).unwrap();
+        db.with_writer(|c| {
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 2);
+            c.run("DELETE FROM rooms WHERE id = 7", [])?;
+            assert_eq!(c.one::<Option<i64>>("SELECT room_id FROM games WHERE id = 41", [])?, None);
+            assert_eq!(c.one::<i64>("SELECT score FROM game_stats WHERE game_id = 41", [])?, 9);
+            // Séquence conservée : pas de réutilisation de l'id 50
+            let next = c.insert("INSERT INTO games (status) VALUES ('waiting')", [])?;
+            assert_eq!(next, 51);
+            Ok(())
+        })
+        .unwrap();
+        assert!(db.check().unwrap().contains("version du schéma : 2"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

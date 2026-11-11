@@ -29,6 +29,7 @@ curl -fsSL https://get.docker.com | sh
 git clone <dépôt> binome && cd binome && git checkout <branche>
 
 cp .env.example .env          # renseigner BINOME_ADMIN_PASSWORD et BINOME_DOMAIN
+# (facultatif) mot de passe de suppression des parties : voir « Suppression de parties » plus bas
 docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
 ```
 
@@ -69,6 +70,26 @@ docker buildx build --platform linux/amd64 -t binome:latest --load .
 docker save binome:latest | gzip | ssh vps 'gunzip | docker load'
 # puis, sur le VPS : docker compose ... up -d   (sans --build)
 ```
+
+## Suppression de parties
+
+Supprimer une partie depuis l'administration exige un mot de passe dédié, dont seule
+l'empreinte est stockée. Pour le définir (ou le changer), image construite :
+
+```bash
+read -rs -p "Mot de passe de suppression : " P; echo
+printf '%s\n' "$P" | docker run --rm -i binome:latest hash-password; unset P
+# → copier la ligne BINOME_DELETE_PASSWORD_HASH=… dans .env, puis :
+docker compose up -d          # ou ./start.sh -d en local
+```
+
+Sans cette ligne, la suppression de parties est désactivée (les autres actions admin restent possibles).
+
+## Mises à jour du schéma
+
+Les évolutions de la base sont des migrations numérotées (`server/migrations/000N_*.sql`),
+appliquées une seule fois au démarrage (version dans `PRAGMA user_version`, affichée par
+`binome check`). **Faire une sauvegarde avant toute mise à jour** qui en contient une.
 
 ## Sauvegardes
 

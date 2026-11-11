@@ -59,11 +59,11 @@ ctx.closeAll()
 // ── Nettoyage par ids exacts (jamais par motif) ─────────────────────────────
 const cleanup = { games: 0, players: 0, other: 0 }
 for (const id of ctx.created.games) {
-    const r = await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true })
+    const r = await ctx.api.delete('/admin/games/:game', { params: { game: id }, admin: true, deletion: true })
     if (r.status === 200) cleanup.games++
 }
 for (const id of ctx.created.players) {
-    const r = await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true })
+    const r = await ctx.api.delete('/admin/players/:player', { params: { player: id }, query: { with_games: 1 }, admin: true, deletion: true })
     if (r.status === 200) cleanup.players++
 }
 for (const id of ctx.created.reactions) {

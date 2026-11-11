@@ -21,7 +21,16 @@ const IGNORED = [
 const strip = (catalog) => Object.fromEntries(Object.entries(catalog).map(([k, shape]) => [
     k, Object.fromEntries(Object.entries(shape).filter(([p]) => !IGNORED.some((re) => re.test(p)))),
 ]))
-const issues = compareCatalogs(strip(load(refName)), strip(load(candName)))
+// Changements VOULUS depuis la migration (validés par l'utilisateur, 2026-11-12) :
+//  - les parties survivent à la suppression de leur salon : room_id / room_code
+//    peuvent valoir null dans l'historique et l'admin ;
+//  - suppression de parties protégée par un mot de passe dédié : nouveaux refus 403.
+const ACCEPTED = [
+    /^TYPE +GET \/api\/(history|admin)\/games(\/:game)? 200 +\$(\.games\[\])?\.room_(id|code):/,
+    /^TYPE +GET \/api\/history\/players 200 +\$\.games\[\]\.room_code:/,
+    /^NOUVEAU +DELETE \/api\/admin\/(games\/:game|players\/:player) 403$/,
+]
+const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 
 if (issues.length === 0) {
     console.log(`Contrats identiques : ${candName} reproduit ${refName}.`)

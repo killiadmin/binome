@@ -26,6 +26,8 @@ export const TARGETS = {
         baseUrl: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:18101/binome',
         realtime: { protocol: 'native', wsUrl: process.env.E2E_WS_URL ?? 'ws://127.0.0.1:18101/binome/ws' },
         adminPassword: envValue('.env', 'BINOME_ADMIN_PASSWORD'),
+        // Mot de passe de suppression du serveur de test (voir rust-stack.sh), jamais le vrai
+        deletePassword: process.env.E2E_DELETE_PASSWORD ?? 'e2e-suppression-test',
     }),
 }
 
@@ -36,6 +38,7 @@ export class Context {
         this.verbose = verbose
         this.recorder = new Recorder()
         this.api = new Api({ baseUrl: target.baseUrl, recorder: this.recorder })
+        this.api.deletePassword = target.deletePassword
         this.tag = Math.random().toString(36).slice(2, 7)
         this.checks = []
         this.clients = new Set()

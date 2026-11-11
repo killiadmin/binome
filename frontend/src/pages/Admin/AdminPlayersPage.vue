@@ -16,6 +16,8 @@ const busy = reactive({})
 const showConfirm = ref(false)
 const confirmTarget = ref(null)
 const withGames = ref(false)
+// Exigé quand la suppression emporte des parties ; jamais conservé
+const deletePassword = ref('')
 const deleting = ref(false)
 
 const search = ref('')
@@ -85,6 +87,7 @@ async function removeFromRoom(player) {
 function askDelete(player) {
   confirmTarget.value = player
   withGames.value = false
+  deletePassword.value = ''
   showConfirm.value = true
 }
 
@@ -94,14 +97,16 @@ async function confirmDelete() {
   deleting.value = true
   error.value = null
   try {
-    const { data } = await adminService.deletePlayer(player.id, withGames.value)
+    const { data } = await adminService.deletePlayer(player.id, withGames.value, deletePassword.value)
+    deletePassword.value = ''
     players.value = players.value.filter((p) => p.id !== player.id)
     flash(data.message)
     showConfirm.value = false
     confirmTarget.value = null
   } catch (e) {
     error.value = e.response?.data?.message || 'La suppression a échoué.'
-    showConfirm.value = false
+    // Mot de passe refusé : la fenêtre reste ouverte pour réessayer
+    if (e.response?.status !== 403) showConfirm.value = false
   } finally {
     deleting.value = false
   }
@@ -210,11 +215,16 @@ onMounted(loadPlayers)
             <input v-model="withGames" type="checkbox" />
             Supprimer aussi ses {{ confirmTarget.games_count }} partie{{ confirmTarget.games_count > 1 ? 's' : '' }}
           </label>
+          <label v-if="withGames" class="delete-password">
+            Mot de passe de suppression
+            <input v-model="deletePassword" type="password" class="form-control" autocomplete="off" :disabled="deleting" />
+          </label>
+          <p v-if="error && showConfirm" class="text-center text-danger small mb-0">{{ error }}</p>
         </template>
       </template>
       <div class="text-center mt-3 btn-modal">
         <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm"
-                :disabled="deleting || (confirmTarget?.games_count > 0 && !withGames)" @click="confirmDelete">
+                :disabled="deleting || (confirmTarget?.games_count > 0 && !withGames) || (withGames && !deletePassword)" @click="confirmDelete">
           <i class="fa-solid fa-trash"></i> {{ deleting ? 'Suppression…' : 'Supprimer' }}
         </button>
         <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" :disabled="deleting" @click="showConfirm = false">
@@ -226,6 +236,18 @@ onMounted(loadPlayers)
 </template>
 
 <style scoped>
+/* Mot de passe de suppression : seconde clé, distincte de l'accès admin */
+.delete-password {
+  display: block;
+  max-width: 280px;
+  margin: 0.75rem auto 0;
+  font-size: 0.85rem;
+  text-align: left;
+}
+.delete-password .form-control {
+  margin-top: 0.25rem;
+}
+
 .admin-players {
   max-width: 900px;
   color: var(--arcade-beige);

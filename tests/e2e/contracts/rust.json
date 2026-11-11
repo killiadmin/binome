@@ -3,11 +3,19 @@
     "$": "object",
     "$.message": "string"
   },
+  "DELETE /api/admin/games/:game 403": {
+    "$": "object",
+    "$.message": "string"
+  },
   "DELETE /api/admin/games/:game 404": {
     "$": "object",
     "$.message": "string"
   },
   "DELETE /api/admin/players/:player 200": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "DELETE /api/admin/players/:player 403": {
     "$": "object",
     "$.message": "string"
   },
@@ -60,8 +68,8 @@
     "$.games[].created_at": "date:iso8601",
     "$.games[].id": "int",
     "$.games[].players_count": "int",
-    "$.games[].room_code": "string",
-    "$.games[].room_id": "int",
+    "$.games[].room_code": "null | string",
+    "$.games[].room_id": "int | null",
     "$.games[].rounds_count": "int",
     "$.games[].status": "string",
     "$.games[].updated_at": "date:iso8601",
@@ -382,8 +390,8 @@
     "$.games[].created_at": "date:iso8601",
     "$.games[].id": "int",
     "$.games[].players_count": "int",
-    "$.games[].room_code": "string",
-    "$.games[].room_id": "int",
+    "$.games[].room_code": "null | string",
+    "$.games[].room_id": "int | null",
     "$.games[].rounds_count": "int",
     "$.games[].status": "string",
     "$.games[].updated_at": "date:iso8601",
@@ -427,8 +435,8 @@
     "$.game_stats[].score": "int",
     "$.game_stats[].survived_full_game": "bool",
     "$.id": "int",
-    "$.room_code": "string",
-    "$.room_id": "int",
+    "$.room_code": "null | string",
+    "$.room_id": "int | null",
     "$.rounds": "array",
     "$.rounds[]": "object",
     "$.rounds[].actions": "array",
@@ -488,12 +496,12 @@
     "$.games[].is_eliminated": "bool",
     "$.games[].is_winner": "bool",
     "$.games[].played_at": "date:iso8601",
-    "$.games[].room_code": "string",
+    "$.games[].room_code": "null | string",
     "$.games[].rounds_survived": "int",
     "$.games[].score": "int",
     "$.pseudo": "string",
     "$.totals": "object",
-    "$.totals.average_score": "int",
+    "$.totals.average_score": "float | int",
     "$.totals.eliminations": "int",
     "$.totals.games_played": "int",
     "$.totals.rounds_survived": "int",
