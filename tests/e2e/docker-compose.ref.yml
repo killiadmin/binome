@@ -26,6 +26,8 @@ x-laravel: &laravel
     - binome_backend_vendor:/var/www/html/vendor:ro
   tmpfs:
     - /var/www/html/storage
+    # Caches générés par Laravel (vides dans un checkout neuf, ex. worktree)
+    - /var/www/html/bootstrap/cache
   depends_on:
     database:
       condition: service_healthy

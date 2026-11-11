@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Detects the current LAN IP and starts the full stack (database, backend,
-# reverb, queue, frontend) via Docker Compose.
+# Réseau local : détecte l'IP LAN (lien « Partager le lien ») puis lance Binome
+# (un seul conteneur : serveur Rust + front compilé) derrière le portail ../portail.
+#   ./start.sh [-d]     →  http://killiadmin.local:8095/binome/  (et localhost:8080/binome/)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,4 +37,4 @@ if [[ -z "${LAN_IP:-}" ]]; then
 fi
 
 cd "$ROOT_DIR"
-docker compose up --build "$@"
+docker compose -f docker-compose.yml -f docker-compose.portail.yml up --build "$@"

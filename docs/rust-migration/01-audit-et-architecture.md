@@ -1,6 +1,7 @@
 # Migration Rust — 01. Audit, architecture cible et plan
 
-> Statut : décisions validées le 2026-11-11 (§10). **Phase 2 terminée** (serveur Rust :
+> Statut : décisions validées le 2026-11-11 (§10). **Phases 4 et 5 terminées** (front natif,
+> image de production, `06-deploiement.md`). **Phase 2 terminée** (serveur Rust :
 > `server/`, 361 vérifications E2E). **Phase 1 terminée** : contrat API
 > (`02-contrat-api.md`), events (`03-events.md`), banc E2E (`tests/e2e/`), mesures de
 > référence (`05-performances.md`).

@@ -5,6 +5,8 @@
 //!   binome healthcheck                    sonde HTTP pour Docker (image sans shell ni curl)
 //!   binome import-mysql <dossier>         reprise unique des données de l'ancien backend
 //!   binome import-characters <fichier.json> [--images-dir D] [--skip-existing]
+//!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
+//!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
 
 mod clock;
 mod config;
@@ -50,6 +52,14 @@ fn main() {
                 run_tool(&cfg, |db| migrate::import_characters(db, std::path::Path::new(file), images.as_deref(), skip))
             }
             None => fail("usage : binome import-characters <fichier.json> [--images-dir D] [--skip-existing]"),
+        },
+        Some("check") => run_tool(&cfg, |db| db.check()),
+        Some("backup") => match args.get(1) {
+            Some(file) => run_tool(&cfg, |db| {
+                db.backup(std::path::Path::new(file))?;
+                Ok(format!("Sauvegarde écrite : {file}"))
+            }),
+            None => fail("usage : binome backup <fichier.sqlite>"),
         },
         Some(other) => fail(&format!("commande inconnue : {other}")),
     };

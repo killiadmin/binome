@@ -32,7 +32,13 @@ for (const name of names) {
     const c = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
     const page = await c.newPage()
     page.on('pageerror', (e) => problems.push(`${name} : ${e.message}`))
-    page.on('console', (m) => { if (m.type() === 'error') problems.push(`${name} console : ${m.text()}`) })
+    // lan-url.json absent hors réseau local : 404 attendu, géré par le front
+    // (services/joinUrl.js) ; le navigateur le signale quand même en console.
+    const expected404 = (url) => /\/lan-url\.json/.test(url)
+    page.on('console', (m) => {
+        if (m.type() === 'error' && !(m.text().includes('404') && expected404(m.location()?.url ?? ''))) problems.push(`${name} console : ${m.text()}`)
+    })
+    page.on('response', (r) => { if (r.status() >= 400 && !expected404(r.url())) problems.push(`${name} HTTP ${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
     pages.push(page)
 }
 const [host, ...guests] = pages
@@ -92,7 +98,7 @@ try {
     ok(myTurn.filter((n) => n > 0).length === 1, `round 1 lancé chez tous, un seul joueur a la main (round.started) [${myTurn}]`)
 
     // ── Redémarrage du serveur en pleine partie ────────────────────────────
-    execSync('docker restart binome_rust_test', { stdio: 'ignore' })
+    execSync(`docker restart ${process.env.RESTART_CONTAINER ?? 'binome_rust_test'}`, { stdio: 'ignore' })
     await Promise.all(pages.map((p) => p.getByText(/Connexion perdue/).first().waitFor({ timeout: 15_000 }).catch(() => null)))
     const lostSeen = await Promise.all(pages.map((p) => p.getByText(/Connexion perdue/).count()))
     ok(lostSeen.some((n) => n > 0), 'coupure détectée par le front (« Connexion perdue »)')

@@ -31,7 +31,8 @@
 | Charge : CPU | **332 %** moyen (backend PHP 242 %, MySQL 76 %) | **97 %** moyen (≈ 1 cœur) |
 | Charge : RAM | **961 MiB** moyen, 977 max | **31,5 MiB** moyen, 33,5 max |
 | WebSockets : 1 000 connexions tenues | oui ; Reverb +11 MiB | oui ; +13 MiB (après réduction des tampons, voir ci-dessous) |
-| Taille des images Docker | 932 MB (×3) + 264 MB + 793 MB | à mesurer (phase 5) ; binaire seul : **6,6 MB** |
+| Taille des images Docker | 932 MB (×3) + 264 MB + 793 MB | **9,3 MB** (une image `scratch` : binaire 6,6 MB + front) |
+| Conteneurs / processus en production | 5 conteneurs, 86 PIDs | **1 conteneur** (2 avec HTTPS : + Caddy) |
 
 > **Provisoire** : serveur Rust compilé en `release` mais lancé dans une image de
 > compilation (pas l'image finale), sur une copie de la base. Ces mesures seront

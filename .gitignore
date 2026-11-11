@@ -41,3 +41,9 @@ backend/database/binome/
 backend/database/*.sqlite
 # Données de personnages (catalogue, images, propositions) — gardées hors du repo
 backend/database/data/
+
+# Schéma SQL du serveur Rust (versionné, contrairement aux dumps)
+!server/migrations/*.sql
+
+# Configuration locale (mot de passe admin) — jamais versionnée
+/.env

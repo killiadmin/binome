@@ -27,7 +27,13 @@ binome serve                                   # défaut
 binome healthcheck                             # pour Docker (image sans shell)
 binome import-mysql <dossier>                  # reprise unique (voir scripts/export-mysql.sh)
 binome import-characters <f.json> [--images-dir D] [--skip-existing]
+binome backup <fichier.sqlite>                 # copie cohérente, serveur en marche
+binome check                                   # intégrité + volumes (BINOME_DATABASE)
 ```
+
+La collation `BINOME_CI` (pseudos insensibles à la casse et aux accents) n'existe que dans le
+binaire : l'outil `sqlite3` standard lit la base mais ne peut ni la contrôler ni requêter ces
+colonnes. Utiliser `binome check`.
 
 `import-characters` reprend `php artisan characters:import`, sauf le téléchargement d'images
 par URL (non utilisé : les images s'importent depuis la popup de validation) : déposer le
@@ -42,6 +48,7 @@ fichier dans le dossier d'images.
 | `BINOME_STATIC_DIR` | — | Dossier du front compilé ; absent : API seule (dev avec Vite) |
 | `BINOME_PUBLIC_PREFIX` | `/binome` | Préfixe de toutes les routes et des URLs d'images |
 | `BINOME_ADMIN_PASSWORD` (ou `CHARACTERS_ACCESS_PASSWORD`) | — | Mot de passe d'administration ; vide = admin fermée |
+| `BINOME_LAN_URL_FILE` | — | `lan-url.json` du bouton « Partager le lien » (réseau local) |
 | `RUST_LOG` | `binome=info` | Journaux |
 
 ## Organisation

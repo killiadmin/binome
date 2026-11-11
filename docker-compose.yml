@@ -1,106 +1,44 @@
+# Binome en production : UN conteneur (serveur Rust + front compilé), données dans
+# un volume SQLite. Ni MySQL, ni PHP, ni Node, ni worker de queue.
+#
+#   cp .env.example .env            # mot de passe d'administration
+#   docker compose up -d --build    # http://<hôte>:8080/binome/
+#
+# Variantes (fichiers à ajouter avec -f) :
+#   docker-compose.https.yml    VPS : HTTPS automatique (Caddy + Let's Encrypt)
+#   docker-compose.portail.yml  réseau local derrière ../portail (killiadmin.local:8095)
+# Développement (Vite HMR + cargo run) : docker-compose.dev.yml, à utiliser seul.
+
+name: binome
+
 services:
-
-  database:
-    image: mysql:8
-    container_name: binome_db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: binome
-    ports:
-      - "9090:3306"
-    volumes:
-      - ./backend/database/binome:/var/lib/mysql
-    networks:
-      - binome
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
-  backend:
-    build:
-      context: ./backend
-    container_name: binome_backend
-    restart: unless-stopped
-    ports:
-      - "8001:8000"
-    volumes:
-      - ./backend:/var/www/html
-      - backend_vendor:/var/www/html/vendor
-    env_file:
-      - ./backend/.env
-    depends_on:
-      database:
-        condition: service_healthy
-    command: >
-      sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
-    networks:
-      - binome
-
-  reverb:
-    build:
-      context: ./backend
-    container_name: binome_reverb
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./backend:/var/www/html
-      - backend_vendor:/var/www/html/vendor
-    env_file:
-      - ./backend/.env
-    depends_on:
-      database:
-        condition: service_healthy
-    command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
-    networks:
-      - binome
-
-  queue:
-    build:
-      context: ./backend
-    container_name: binome_queue
-    restart: unless-stopped
-    volumes:
-      - ./backend:/var/www/html
-      - backend_vendor:/var/www/html/vendor
-    env_file:
-      - ./backend/.env
-    depends_on:
-      database:
-        condition: service_healthy
-    command: php artisan queue:listen --tries=1
-    networks:
-      - binome
-
-  frontend:
-    build:
-      context: ./frontend
-    container_name: binome_frontend
-    restart: unless-stopped
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
-    env_file:
-      - ./frontend/.env
-    depends_on:
-      - backend
-    networks:
-      - binome
-      # Réseau partagé avec le portail (../portail), qui sert l'app sur http://killiadmin.local:8095/binome/
-      - meszappli
-
-networks:
   binome:
-    driver: bridge
-  meszappli:
-    name: meszappli
+    build:
+      context: .
+      args:
+        PUBLIC_PREFIX: ${BINOME_PUBLIC_PREFIX:-/binome}
+    image: binome:latest
+    container_name: binome
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BINOME_PUBLIC_PREFIX: ${BINOME_PUBLIC_PREFIX:-/binome}
+    ports:
+      - "${BINOME_PORT:-8080}:8080"
+    volumes:
+      - binome_data:/data
+    # Durcissement : système de fichiers en lecture seule (hors /data), aucun privilège
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
-  backend_vendor:
-  frontend_node_modules:
+  binome_data:

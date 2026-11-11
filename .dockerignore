@@ -1,0 +1,12 @@
+# Contexte de build de l'image de production : seuls frontend/ et server/ servent.
+*
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/vite.config.js
+!frontend/public
+!frontend/src
+!server/Cargo.toml
+!server/Cargo.lock
+!server/src
+!server/migrations

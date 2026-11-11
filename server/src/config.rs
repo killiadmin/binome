@@ -15,6 +15,9 @@ pub struct Config {
     pub public_prefix: String,
     /// Mot de passe d'administration ; vide → administration fermée (403), comme Laravel.
     pub admin_password: Option<String>,
+    /// `lan-url.json` (lien de partage sur le réseau local, écrit par
+    /// scripts/update-lan-ip.sh) relu à chaque requête ; absent hors LAN.
+    pub lan_url_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -36,6 +39,7 @@ impl Config {
             public_prefix: if public_prefix == "/" { String::new() } else { public_prefix },
             // Même variable que l'ancien backend, pour réutiliser le .env existant.
             admin_password: var("BINOME_ADMIN_PASSWORD").or_else(|| var("CHARACTERS_ACCESS_PASSWORD")),
+            lan_url_file: var("BINOME_LAN_URL_FILE").map(PathBuf::from),
         })
     }
 }

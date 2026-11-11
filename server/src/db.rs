@@ -35,7 +35,8 @@ fn open_connection(path: &Path, flags: OpenFlags) -> rusqlite::Result<Connection
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA busy_timeout = 5000;
-         PRAGMA synchronous = NORMAL;",
+         PRAGMA synchronous = NORMAL;
+         PRAGMA temp_store = MEMORY;",
     )?;
     Ok(conn)
 }
@@ -110,6 +111,36 @@ impl Db {
     pub fn with_writer<T>(&self, f: impl FnOnce(&mut Connection) -> AppResult<T>) -> AppResult<T> {
         let mut conn = self.writer.lock().unwrap_or_else(|p| p.into_inner());
         f(&mut conn)
+    }
+}
+
+impl Db {
+    /// Contrôle d'intégrité (pages, index, clés étrangères) et volumes par table.
+    /// L'outil `sqlite3` standard ne connaît pas la collation BINOME_CI : ce contrôle
+    /// passe donc par le binaire.
+    pub fn check(&self) -> AppResult<String> {
+        let conn = self.readers[0].lock().unwrap_or_else(|p| p.into_inner());
+        let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+        let broken: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
+        let mut lines = vec![format!("intégrité : {integrity}"), format!("références cassées : {broken}")];
+        for table in ["players", "characters", "games", "game_stats", "player_avatars", "custom_reactions"] {
+            let n: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?;
+            lines.push(format!("{table:<18} {n:>6}"));
+        }
+        if integrity != "ok" || broken > 0 {
+            return Err(AppError::Internal(lines.join("\n")));
+        }
+        Ok(lines.join("\n"))
+    }
+
+    /// Copie cohérente de la base, serveur en marche (`VACUUM INTO`).
+    pub fn backup(&self, target: &Path) -> AppResult<()> {
+        if target.exists() {
+            return Err(AppError::Internal(format!("{} existe déjà : rien n'est écrasé", target.display())));
+        }
+        let conn = self.readers[0].lock().unwrap_or_else(|p| p.into_inner());
+        conn.execute("VACUUM INTO ?1", [target.to_string_lossy()])?;
+        Ok(())
     }
 }
 

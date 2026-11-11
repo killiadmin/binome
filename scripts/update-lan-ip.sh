@@ -2,12 +2,12 @@
 # Détecte l'IP LAN de l'hôte, l'écrit dans frontend/public/lan-url.json et
 # affiche l'URL que les amis sur le même Wi-Fi doivent ouvrir pour rejoindre.
 #
-# Le navigateur ne parle qu'à l'origine du serveur Vite, qui proxifie /api,
-# /broadcasting et le WebSocket /app vers les conteneurs backend & Reverb : rien
-# à régénérer côté proxy quand le réseau change. Ce fichier lan-url.json sert
+# Le navigateur ne parle qu'à une seule origine (le serveur Binome, ou Vite en
+# dev) : rien à régénérer quand le réseau change. Ce fichier lan-url.json sert
 # uniquement au bouton « Partager le lien » de la navbar, pour que l'hôte (qui
 # ouvre souvent http://localhost:8095/binome/) puisse partager l'URL LAN réelle.
-# Le lien passe par le portail nginx (../portail), qui tient le port 8095.
+# Le lien passe par le portail nginx (../portail), qui tient le port 8095. Le serveur
+# Binome le relit à chaque requête (BINOME_LAN_URL_FILE, docker-compose.portail.yml).
 #
 # Usage :
 #   scripts/update-lan-ip.sh               détection unique

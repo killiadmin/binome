@@ -1,0 +1,7 @@
+# Reverse proxy HTTPS devant Binome (docker-compose.https.yml).
+# Certificat Let's Encrypt obtenu et renouvelé automatiquement ; WebSocket relayé tel quel.
+{$BINOME_DOMAIN} {
+	# Les fichiers du front sont déjà précompressés (gzip) ; Caddy compresse l'API JSON.
+	encode zstd gzip
+	reverse_proxy binome:8080
+}

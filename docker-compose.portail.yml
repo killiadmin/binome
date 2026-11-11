@@ -1,0 +1,24 @@
+# Réseau local : Binome derrière le portail ../portail (http://killiadmin.local:8095/binome/).
+#
+#   ./start.sh       (lance cette variante et met à jour le lien de partage)
+#
+# Le portail relaie /binome/ vers « binome_frontend:5173 » sur le réseau partagé
+# `meszappli` : le serveur prend ce nom (alias) et ce port, le portail n'a rien à changer.
+
+services:
+  binome:
+    environment:
+      BINOME_BIND: 0.0.0.0:5173
+      BINOME_LAN_URL_FILE: /lan/lan-url.json
+    volumes:
+      # Dossier (et non fichier) : update-lan-ip.sh remplace le fichier à chaque changement de Wi-Fi
+      - ./frontend/public:/lan:ro
+    networks:
+      default:
+      meszappli:
+        aliases: [binome_frontend]
+
+networks:
+  meszappli:
+    name: meszappli
+    external: true

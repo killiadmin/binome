@@ -1,0 +1,39 @@
+# VPS : HTTPS automatique (certificat Let's Encrypt renouvelé par Caddy).
+# Prérequis : un nom de domaine dont l'enregistrement DNS A pointe vers le VPS,
+# ports 80 et 443 ouverts.
+#
+#   BINOME_DOMAIN=binome.exemple.fr docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+#
+# Le serveur Binome n'est alors plus exposé directement : seul Caddy l'est.
+# Application à la racine du domaine plutôt que sous /binome : BINOME_PUBLIC_PREFIX=/
+
+services:
+  binome:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: binome_caddy
+    restart: unless-stopped
+    depends_on:
+      - binome
+    environment:
+      BINOME_DOMAIN: ${BINOME_DOMAIN:?Renseigne BINOME_DOMAIN (nom de domaine du VPS)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -359,16 +359,36 @@ async fn admin_reaction_destroy(State(st): State<AppState>, Path(p): Params) -> 
     st.write(move |tx, _| social::admin_reaction_destroy(tx, id(&p, "reaction")?)).await
 }
 
-/// Journalise les requêtes de plus d'une seconde (diagnostic de blocages).
+/// Journalise les requêtes de plus d'une seconde (diagnostic de blocages) et pose
+/// le cache des fichiers du front : assets à empreinte (`/assets/…-HASH.js`) en
+/// cache d'un an, le reste (index.html) toujours revalidé.
 async fn log_slow(req: Request, next: Next) -> Response {
     let (method, path) = (req.method().clone(), req.uri().path().to_string());
     let started = std::time::Instant::now();
-    let res = next.run(req).await;
+    let mut res = next.run(req).await;
+    if res.status().is_success() && !path.contains("/api/") && !res.headers().contains_key(header::CACHE_CONTROL) {
+        let policy = if path.contains("/assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
+        res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
+    }
     let ms = started.elapsed().as_millis();
     if ms >= 1000 {
         tracing::warn!("requête lente : {method} {path} → {} en {ms} ms", res.status().as_u16());
     }
     res
+}
+
+/// `lan-url.json` relu à chaque requête (le fichier est remplacé quand le Wi-Fi change).
+async fn lan_url(State(st): State<AppState>) -> Response {
+    let Some(path) = st.cfg.lan_url_file.clone() else { return AppError::NotFound.into_response() };
+    match tokio::fs::read(path).await {
+        Ok(bytes) => {
+            let mut res = Response::new(Body::from(bytes));
+            res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            res
+        }
+        Err(_) => AppError::NotFound.into_response(),
+    }
 }
 
 async fn not_found() -> Response {
@@ -443,11 +463,16 @@ pub fn router(state: AppState) -> Router {
     let mut app = Router::new()
         .nest("/api", api)
         .route("/ws", get(ws::upgrade))
-        .route("/up", get(|| async { "ok" }));
+        .route("/up", get(|| async { "ok" }))
+        .route("/lan-url.json", get(lan_url));
 
     // Front compilé : fichiers statiques, repli SPA sur index.html
     if let Some(dir) = state.cfg.static_dir.clone() {
-        let spa = ServeDir::new(&dir).append_index_html_on_directories(true).fallback(ServeFile::new(dir.join("index.html")));
+        // .gz produits au build (aucune compression à l'exécution)
+        let spa = ServeDir::new(&dir)
+            .append_index_html_on_directories(true)
+            .precompressed_gzip()
+            .fallback(ServeFile::new(dir.join("index.html")).precompressed_gzip());
         app = app.fallback_service(spa);
     }
 
@@ -463,7 +488,7 @@ pub fn router(state: AppState) -> Router {
         // `/binome/` (lien partagé aux joueurs) : axum ne l'envoie pas au routeur
         // imbriqué sous `/binome`, on le déclare donc ici.
         outer = match index {
-            Some(index) => outer.route_service(&home, ServeFile::new(index)),
+            Some(index) => outer.route_service(&home, ServeFile::new(index).precompressed_gzip()),
             None => outer,
         };
         outer.nest(&prefix, app)
