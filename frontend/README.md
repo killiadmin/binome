@@ -24,7 +24,7 @@
 | Router | Vue Router |
 | UI | Bootstrap Vue Next |
 | HTTP | Axios |
-| WebSocket | Laravel Echo + Pusher JS (broadcaster: reverb) |
+| WebSocket | `WebSocket` natif du navigateur (protocole du serveur Rust, `docs/rust-migration/04-protocole-ws.md`) |
 | Persistance session | localStorage |
 
 ---
@@ -54,7 +54,6 @@ src/
 │
 ├── composables/
 │   ├── usePhotoCapture.js      # Prise de vue (caméra / webcam) ou import → recadrage (avatar, emojis)
-│   └── useEcho.js              # (non utilisé — remplacé par useReverb)
 │
 ├── pages/
 │   ├── Admin/                    # Espace /admin (cadenas de la navbar, accès `charactersAccess`)
@@ -90,7 +89,7 @@ src/
 │   └── roomService.js          # Appels API salon
 │
 ├── sockets/
-│   └── useReverb.js            # Singleton Echo + joinRoom/joinGame/joinLobbyChat
+│   └── useReverb.js            # Singleton WebSocket natif + joinRoom/joinGame/joinLobbyChat
 │
 ├── stores/
 │   └── gameStore.js            # Store Pinia (en cours)
@@ -105,22 +104,22 @@ src/
 
 ## Variables d'environnement
 
-Fichier `.env` à créer à la racine du projet frontend :
+Aucune. Le navigateur ne parle qu'à l'origine qui a servi la page, sous `/binome/` :
+`/binome/api` (REST) et `/binome/ws` (WebSocket).
+
+- **Production** : le serveur Rust sert lui-même le front compilé (`dist/`), l'API et le
+  WebSocket. Node n'est pas utilisé.
+- **Développement** : le serveur Vite (HMR) relaie `/binome/api` et `/binome/ws` vers le
+  conteneur `server` (Rust), sans réécrire les chemins. L'IP LAN n'apparaît dans aucune config.
+
+Hors Docker uniquement (`npm run dev`), le nom de service `server` ne résout pas :
 
 ```env
-VITE_REVERB_APP_KEY=reverb_key
+VITE_PROXY_SERVER=http://127.0.0.1:8080
 ```
 
-> `VITE_REVERB_APP_KEY` doit correspondre exactement à `REVERB_APP_KEY` du `.env` Laravel backend.
-
-Le navigateur ne parle qu'à l'origine qui a servi la page, sous `/binome/` (`http://killiadmin.local:8095/binome/` via le portail `../portail`, ou `http://localhost:5173/binome/`). `vite.config.js` proxifie `/binome/api` et `/binome/broadcasting` vers le conteneur `backend`, et le WebSocket `/binome/app` vers le conteneur `reverb`, par nom de service Docker, en retirant le préfixe. **L'IP LAN n'apparaît donc dans aucune config front** : changer de Wi-Fi ne demande aucune regénération.
-
-Hors Docker uniquement (`npm run dev`), les noms de service ne résolvent pas — surcharger alors :
-
-```env
-VITE_PROXY_BACKEND=http://127.0.0.1:8001
-VITE_PROXY_REVERB=http://127.0.0.1:8080
-```
+Le préfixe `/binome` peut être changé au build (`VITE_BASE=/` pour servir l'application à la
+racine d'un domaine), avec `BINOME_PUBLIC_PREFIX` identique côté serveur.
 
 ---
 
@@ -137,7 +136,7 @@ npm install
 npm run dev -- --host
 ```
 
-Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost). Renseigne alors `VITE_PROXY_BACKEND` / `VITE_PROXY_REVERB` dans `.env` (voir [Variables d'environnement](#variables-denvironnement)).
+Le flag `--host` expose Vite sur le réseau local (nécessaire si tu accèdes depuis un autre appareil que localhost). Renseigne alors `VITE_PROXY_SERVER` dans `.env` (voir [Variables d'environnement](#variables-denvironnement)).
 
 ---
 
@@ -201,7 +200,9 @@ Les anciennes adresses `/characters` et `/characters/list` redirigent vers
 
 ### `useReverb.js` — Singleton WebSocket
 
-Echo est instancié **une seule fois** (singleton) avec le `playerId` comme header d'auth.
+Une seule connexion WebSocket (singleton), ouverte avec le `playerId` :
+`/binome/ws?player_id=…`. Le fichier garde son nom et son interface d'origine (Echo) : les
+pages n'ont pas changé lors du passage au serveur Rust.
 
 ```js
 // Création de l'instance (appelée après avoir le playerId)
@@ -219,28 +220,25 @@ Deux helpers complètent le singleton :
 - `hasEcho()` — savoir si le singleton existe, pour éviter de rouvrir une connexion juste pour la fermer
   dans un `onUnmounted`.
 
-**Headers d'auth envoyés à chaque requête `/broadcasting/auth` :**
-```js
-auth: {
-    headers: {
-        'X-Player-Id': playerId,
-        'Accept': 'application/json',
-    }
-}
-```
+**Autorisation** : faite par le serveur à chaque abonnement (mêmes règles qu'avant), sans
+requête HTTP séparée. Refus → callback `onError`.
+
+**Connexion** : reconnexion automatique (1 → 10 s), réabonnement à tous les canaux et nouvel
+appel de `onHere` ; ping toutes les 25 s (liaison jugée morte sans réponse en 10 s), ping
+immédiat au retour sur l'onglet, reconnexion immédiate au retour du réseau (`online`).
 
 #### Méthodes disponibles
 
 | Méthode | Channel | Description |
 |---|---|---|
-| `joinRoom(roomId, callbacks)` | `presence-room.{id}` | Rejoindre le lobby WebSocket |
-| `leaveRoom(roomId)` | `presence-room.{id}` | Quitter le lobby |
+| `joinRoom(roomId, callbacks)` | `room.{id}` | Rejoindre le lobby WebSocket |
+| `leaveRoom(roomId)` | `room.{id}` | Quitter le lobby |
 | `joinLobbyChat(callbacks)` | `lobby` (**public**) | Chat commun du hall — aucune auth, donc accessible sans `playerId` |
 | `leaveLobbyChat()` | `lobby` | Quitter le chat commun |
-| `joinGame(gameId, callbacks)` | `presence-game.{id}` | Rejoindre la partie WebSocket |
-| `leaveGame(gameId)` | `presence-game.{id}` | Quitter la partie |
-| `joinPlayerChannel(playerId, callbacks)` | `private-player.{id}` | Messages à soi seul — `onCardWordShared` (mot interdit montré par un autre joueur) |
-| `leavePlayerChannel(playerId)` | `private-player.{id}` | Quitter son channel privé |
+| `joinGame(gameId, callbacks)` | `game.{id}` | Rejoindre la partie WebSocket |
+| `leaveGame(gameId)` | `game.{id}` | Quitter la partie |
+| `joinPlayerChannel(playerId, callbacks)` | `player.{id}` | Messages à soi seul — `onCardWordShared` (mot interdit montré par un autre joueur) |
+| `leavePlayerChannel(playerId)` | `player.{id}` | Quitter son channel privé |
 
 #### Callbacks disponibles pour `joinRoom`
 
@@ -470,7 +468,7 @@ Page de jeu principale. Gère :
 - **Tirage de carte** après « Je ne sais pas » : modale chez le questionneur (cartes face cachée →
   mot visible 5 s puis effacé de la page → « Montrer aux autres » / « Garder pour moi », compte à
   rebours de 30 s). Les autres voient un bandeau « X choisit une carte… » ; ceux à qui le mot est
-  montré reçoivent une popup 5 s via `private-player.{id}`. Après un rechargement, la modale
+  montré reçoivent une popup 5 s via `player.{id}`. Après un rechargement, la modale
   rouvre en phase décision (le mot ne se revoit pas). Bouton « Tirer ma carte » si elle est fermée
 - Historique complet des actions groupées par round
 - Animation de transition entre les rounds
