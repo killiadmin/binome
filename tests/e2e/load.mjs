@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Mesure de charge : mêmes conditions pour Laravel et Rust.
 //
-//   node tests/e2e/load.mjs --target laravel-ref --games 6 --duration 60 --ws 1000 [--idle 20]
+//   node tests/e2e/load.mjs [--containers binome_rust_test] --games 6 --duration 60 --ws 1000 [--rate N] [--idle 20]
 //
 // Déroulé :
 //   1. repos       : échantillonne CPU / RAM des conteneurs pendant --idle s
@@ -18,7 +18,7 @@ import { sleep } from './lib/bots.mjs'
 
 const args = process.argv.slice(2)
 const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i === -1 ? d : args[i + 1] }
-const targetName = opt('target', 'laravel-ref')
+const targetName = opt('target', 'rust')
 const games = Number(opt('games', 6))
 const wsCount = Number(opt('ws', 500))
 const idleSeconds = Number(opt('idle', 20))
@@ -28,9 +28,7 @@ const duration = Number(opt('duration', 60))
 // vite (charge maximale, le débit dépend du serveur).
 const rate = opt('rate', null) === null ? null : Number(opt('rate'))
 
-const CONTAINERS = {
-    'laravel-ref': ['binome_ref-database-1', 'binome_ref-backend-1', 'binome_ref-reverb-1', 'binome_ref-queue-1'],
-}
+const CONTAINERS = { rust: ['binome_rust_test'] }
 const containers = (opt('containers', null)?.split(',')) ?? CONTAINERS[targetName]
 
 // ── Échantillonnage docker stats (flux continu, ~1 mesure/s/conteneur) ─────────

@@ -1,6 +1,6 @@
 // Client temps réel du banc, indépendant du protocole.
 //
-//   const rt = await connect({ protocol: 'pusher', ... , playerId })
+//   const rt = await connect({ protocol: 'native', wsUrl, playerId })
 //   const members = await rt.subscribe('game.12')   // presence : membres présents
 //   await rt.waitFor((e) => e.event === 'round.started' && e.channel === 'game.12')
 //   rt.close()
@@ -8,11 +8,8 @@
 // Chaque message reçu est journalisé dans rt.log sous la forme
 //   { channel: 'game.12', event: 'round.started', data: {...}, at }
 // et les mouvements de présence sous les pseudo-events « presence:joining » /
-// « presence:leaving » (data = membre). Seul ce fichier connaît les protocoles :
-// le scénario ne change pas quand on passe de Reverb (Pusher) au serveur Rust.
-
-const PRESENCE = /^(room|game)\.\d+$/
-const PRIVATE = /^player\.\d+$/
+// « presence:leaving » (data = membre). Seul ce fichier connaît le protocole
+// (docs/rust-migration/04-protocole-ws.md).
 
 class RealtimeClient {
     constructor({ label, recorder }) {
@@ -64,116 +61,6 @@ class RealtimeClient {
     }
 
     mark() { return this.log.length }
-}
-
-// ─── Protocole Pusher (Laravel Reverb) ───────────────────────────────────────
-
-class PusherClient extends RealtimeClient {
-    constructor(opts) {
-        super(opts)
-        this.opts = opts
-        this.pending = new Map() // canal pusher → { resolve, reject }
-    }
-
-    static wireName(channel) {
-        if (PRESENCE.test(channel)) return `presence-${channel}`
-        if (PRIVATE.test(channel)) return `private-${channel}`
-        return channel
-    }
-
-    static logicalName(wire) {
-        return wire.replace(/^(presence|private)-/, '')
-    }
-
-    connect() {
-        const { wsUrl, appKey } = this.opts
-        return new Promise((resolve, reject) => {
-            this.ws = new WebSocket(`${wsUrl}/app/${appKey}?protocol=7&client=js&version=8.4.0&flash=false`)
-            this.ws.onerror = (e) => reject(new Error(`[${this.label}] WebSocket : ${e.message ?? 'erreur'}`))
-            this.ws.onclose = () => { this.closed = true }
-            this.ws.onmessage = (msg) => {
-                const m = JSON.parse(msg.data)
-                const data = typeof m.data === 'string' ? safeJson(m.data) : m.data
-                switch (m.event) {
-                    case 'pusher:connection_established':
-                        this.socketId = data.socket_id
-                        resolve(this)
-                        break
-                    case 'pusher:ping':
-                        this.send('pusher:pong', {})
-                        break
-                    case 'pusher_internal:subscription_succeeded': {
-                        const p = this.pending.get(m.channel)
-                        this.pending.delete(m.channel)
-                        const members = data?.presence ? Object.values(data.presence.hash) : []
-                        p?.resolve(members)
-                        break
-                    }
-                    case 'pusher:subscription_error': {
-                        const p = this.pending.get(m.channel)
-                        this.pending.delete(m.channel)
-                        p?.reject(Object.assign(new Error(`[${this.label}] abonnement refusé : ${m.channel}`), { status: data?.status }))
-                        break
-                    }
-                    case 'pusher_internal:member_added':
-                        this.push({ channel: PusherClient.logicalName(m.channel), event: 'presence:joining', data: { id: Number(data.user_id), ...data.user_info } })
-                        break
-                    case 'pusher_internal:member_removed':
-                        this.push({ channel: PusherClient.logicalName(m.channel), event: 'presence:leaving', data: { id: Number(data.user_id) } })
-                        break
-                    case 'pusher:error':
-                        this.push({ channel: '-', event: 'protocol:error', data })
-                        break
-                    default:
-                        if (m.channel) this.push({ channel: PusherClient.logicalName(m.channel), event: m.event, data })
-                }
-            }
-        })
-    }
-
-    send(event, data) {
-        this.ws.send(JSON.stringify({ event, data }))
-    }
-
-    /** S'abonne ; renvoie les membres présents (presence) ou []. Rejette si refusé. */
-    async subscribe(channel) {
-        const wire = PusherClient.wireName(channel)
-        const payload = { channel: wire }
-
-        if (wire !== channel) {
-            // Canal privé / presence : auth HTTP comme laravel-echo
-            const res = await fetch(`${this.opts.authUrl}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    Accept: 'application/json',
-                    'X-Player-Id': String(this.opts.playerId),
-                },
-                body: new URLSearchParams({ socket_id: this.socketId, channel_name: wire }),
-            })
-            if (res.status !== 200) {
-                throw Object.assign(new Error(`[${this.label}] abonnement refusé : ${channel} (${res.status})`), { status: res.status })
-            }
-            Object.assign(payload, await res.json())
-        }
-
-        return new Promise((resolve, reject) => {
-            this.pending.set(wire, { resolve, reject })
-            this.send('pusher:subscribe', payload)
-            setTimeout(() => {
-                if (this.pending.delete(wire)) reject(new Error(`[${this.label}] pas de confirmation d'abonnement : ${channel}`))
-            }, 8000)
-        })
-    }
-
-    unsubscribe(channel) {
-        this.send('pusher:unsubscribe', { channel: PusherClient.wireName(channel) })
-    }
-
-    close() {
-        this.closed = true
-        this.ws?.close()
-    }
 }
 
 // ─── Protocole natif (serveur Rust) ──────────────────────────────────────────
@@ -241,18 +128,8 @@ class NativeClient extends RealtimeClient {
     }
 }
 
-function safeJson(text) {
-    try { return JSON.parse(text) } catch { return text }
-}
-
-/**
- * Ouvre une connexion temps réel.
- * pusher : { wsUrl: 'ws://127.0.0.1:18080', appKey, authUrl: 'http://…/broadcasting/auth' }
- */
+/** Ouvre une connexion temps réel : { protocol: 'native', wsUrl }. */
 export async function connect({ protocol, label, recorder, playerId = null, ...opts }) {
-    if (protocol === 'pusher') {
-        return new PusherClient({ label, recorder, playerId, ...opts }).connect()
-    }
     if (protocol === 'native') {
         return new NativeClient({ label, recorder, playerId, ...opts }).connect()
     }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Serveur Rust de test, sur une COPIE de la base (jamais la base réelle).
 #
-#   tests/e2e/rust-stack.sh prepare     # base SQLite de référence : export de la pile de
-#                                       # référence (ref-stack.sh up) puis import Rust
+#   tests/e2e/rust-stack.sh prepare [f.sqlite]  # base de test : copie de f.sqlite, ou à défaut
+#                                       # sauvegarde à chaud de la base en service (conteneur binome)
 #   tests/e2e/rust-stack.sh up [release]  # compile puis lance sur 127.0.0.1:18101/binome
 #     STATIC_DIR=chemin/dist …            # sert aussi le front compilé (comme en production)
 #   tests/e2e/rust-stack.sh down
@@ -12,17 +12,24 @@ root="$(cd "$here/../.." && pwd)"
 data="$here/.data"
 mkdir -p "$data"
 
-# Mot de passe admin repris du .env existant, dans un fichier privé (jamais affiché)
+# Mot de passe admin repris du .env du projet, dans un fichier privé (jamais affiché)
 env_file() {
   umask 077
-  grep '^CHARACTERS_ACCESS_PASSWORD=' "$root/backend/.env" > "$data/rust.env" || true
+  grep '^BINOME_ADMIN_PASSWORD=' "$root/.env" > "$data/rust.env" || true
 }
 
 case "${1:-}" in
   prepare)
-    rm -rf "$data/export" "$data/base.sqlite"*
-    "$root/scripts/export-mysql.sh" "$data/export" binome_ref-database-1
-    CARGO_ENV="-v $data:/work -e BINOME_DATABASE=/work/base.sqlite" "$root/server/cargo.sh" run -q -- import-mysql /work/export
+    rm -f "$data/base.sqlite"*
+    if [[ -n "${2:-}" ]]; then
+      cp "$2" "$data/base.sqlite"
+    else
+      # Copie cohérente de la base en service (VACUUM INTO), sortie du volume puis effacée
+      name="e2e-base-$$.sqlite"
+      docker exec binome /binome backup "/data/$name"
+      docker run --rm -v binome_binome_data:/data -v "$data:/out" alpine sh -c "mv /data/$name /out/base.sqlite && chown $(id -u):$(id -g) /out/base.sqlite"
+    fi
+    echo "Base de test prête : $data/base.sqlite"
     ;;
   up)
     profile="${2:-debug}"

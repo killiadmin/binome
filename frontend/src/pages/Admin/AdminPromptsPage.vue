@@ -4,7 +4,7 @@ import { BContainer } from 'bootstrap-vue-next'
 import { copyToClipboard } from '../../services/copyToClipboard'
 
 // Prompts de génération de personnages, repris de
-// backend/database/data/GENERATION.md — garder les deux synchronisés.
+// docs/generation-personnages.md — garder les deux synchronisés.
 
 // ─── PARAMÈTRES ───────────────────────────────────────────────────────────────
 
@@ -20,9 +20,9 @@ const safeCount = computed(() => Math.min(Math.max(parseInt(binomeCount.value, 1
 
 // ─── COMMANDES ────────────────────────────────────────────────────────────────
 
-const CMD_LIST = `docker compose exec -T backend php artisan tinker --execute="App\\Models\\Character::with('universe')->get()->each(fn(\\$c)=>print(\\$c->universe->name.' / '.\\$c->name.(\\$c->hidden?' [refusé]':'').PHP_EOL));"`
-const CMD_IMPORT = `docker compose exec -T backend php artisan characters:import database/data/${batchPrefix}.json`
-const CMD_PENDING = `docker compose exec -T backend php artisan tinker --execute="echo App\\Models\\Character::pendingValidation()->get()->groupBy(fn(\\$c)=>\\$c->universe_id.'-'.\\$c->level_affectation)->count();"`
+const CMD_LIST = `docker exec binome /binome list-characters`
+const CMD_IMPORT = `docker exec binome /binome import-characters /import/${batchPrefix}.json`
+const CMD_PENDING = `docker exec binome /binome count-pending`
 
 const RULES = `RÈGLES DE GÉNÉRATION
 - Personnages TRÈS connus uniquement, cohérents avec leur univers et leur cosmos.
@@ -34,17 +34,17 @@ const RULES = `RÈGLES DE GÉNÉRATION
 - Format : tableau JSON d'objets { name, universe, cosmos, forbidden_words:[3 chaînes], level_affectation:entier }.`
 
 const CONTEXT = `CONTEXTE
-- Commande d'import : docker compose exec -T backend php artisan characters:import database/data/<fichier>.json
+- Commande d'import : docker exec binome /binome import-characters /import/<fichier>.json
 - Les personnages importés arrivent en verif_manual=false → je les valide ensuite un par un
   dans la popup de /admin/binomes (relecture + correction des mots interdits + import des images).
 - L'import est idempotent (clé = univers + nom) et ignore automatiquement les personnages déjà refusés.`
 
 const BEFORE = `AVANT DE GÉNÉRER
-- Liste d'abord TOUS les personnages déjà en base, y compris les masqués (hidden), pour ne rien reproposer :
+- Liste d'abord TOUS les personnages déjà en base, y compris les refusés, pour ne rien reproposer :
   ${CMD_LIST}`
 
 const AFTER = `ENSUITE
-- Écris le lot dans backend/database/data/proposals-AAAA-MM-batch-NN.json (incrémente NN par rapport au dernier).
+- Écris le lot dans data/characters/proposals-AAAA-MM-batch-NN.json (incrémente NN par rapport au dernier).
 - Lance l'import et vérifie le rapport (0 erreur attendu).
 - Dis-moi combien de binômes sont désormais en attente de validation.`
 

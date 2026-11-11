@@ -3,8 +3,9 @@
 //!
 //!   binome [serve]                        serveur (défaut)
 //!   binome healthcheck                    sonde HTTP pour Docker (image sans shell ni curl)
-//!   binome import-mysql <dossier>         reprise unique des données de l'ancien backend
 //!   binome import-characters <fichier.json> [--images-dir D] [--skip-existing]
+//!   binome list-characters                catalogue complet (refusés compris)
+//!   binome count-pending                  binômes en attente de validation
 //!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
 //!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
 
@@ -13,13 +14,13 @@ mod config;
 mod db;
 mod error;
 mod http;
-mod migrate;
 mod ratelimit;
 mod realtime;
 mod services;
 mod state;
 mod support;
 mod timers;
+mod tools;
 
 use std::sync::Arc;
 
@@ -41,19 +42,17 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         None | Some("serve") => serve(cfg),
         Some("healthcheck") => healthcheck(&cfg),
-        Some("import-mysql") => match args.get(1) {
-            Some(dir) => run_tool(&cfg, |db| migrate::import_mysql_export(db, std::path::Path::new(dir))),
-            None => fail("usage : binome import-mysql <dossier d'export>"),
-        },
         Some("import-characters") => match args.get(1) {
             Some(file) => {
                 let images = args.iter().position(|a| a == "--images-dir").and_then(|i| args.get(i + 1)).cloned();
                 let skip = args.iter().any(|a| a == "--skip-existing");
-                run_tool(&cfg, |db| migrate::import_characters(db, std::path::Path::new(file), images.as_deref(), skip))
+                run_tool(&cfg, |db| tools::import_characters(db, std::path::Path::new(file), images.as_deref(), skip))
             }
             None => fail("usage : binome import-characters <fichier.json> [--images-dir D] [--skip-existing]"),
         },
         Some("check") => run_tool(&cfg, |db| db.check()),
+        Some("list-characters") => run_tool(&cfg, tools::list_characters),
+        Some("count-pending") => run_tool(&cfg, tools::count_pending),
         Some("backup") => match args.get(1) {
             Some(file) => run_tool(&cfg, |db| {
                 db.backup(std::path::Path::new(file))?;

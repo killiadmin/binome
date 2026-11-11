@@ -490,7 +490,7 @@ Page de jeu principale. Gère :
   « Passer son tour » (absent quand le joueur doit répondre à une question — une réponse est
   obligatoire) et « Exclure » (modale de confirmation). Les autres voient « en attente de son
   retour ou de la décision de l'hôte », ou « la partie attend son retour » si c'est l'hôte qui
-  est parti. Le serveur revérifie la présence via Reverb.
+  est parti. Le serveur revérifie la présence dans sa propre table de présence.
 - **Exclusion** (`player.excluded`) : l'exclu et son binôme passent éliminés (badge « 🚪 exclu »),
   l'action annulée (`cancelled_action_id`) est retirée de l'historique et son auteur peut rejouer.
 - **Reconnexion** : `onConnectionChange()` (useReverb) affiche « Connexion perdue » et, au retour

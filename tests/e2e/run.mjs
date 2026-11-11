@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Banc E2E de la migration Rust.
 //
-//   node tests/e2e/run.mjs --target laravel-ref [--only lobby,catalog,game8,game7] [--save] [--verbose]
+//   node tests/e2e/run.mjs [--only lobby,catalog,game8,game7] [--save] [--verbose]
 //
 // --save : écrit le contrat observé (formes JSON des réponses et des events)
 //          dans tests/e2e/contracts/<cible>.json et les latences dans results/.
@@ -20,7 +20,7 @@ const opt = (name, fallback = null) => {
 }
 const flag = (name) => args.includes(`--${name}`)
 
-const targetName = opt('target', 'laravel-ref')
+const targetName = opt('target', 'rust')
 if (!TARGETS[targetName]) {
     console.error(`Cible inconnue « ${targetName} ». Connues : ${Object.keys(TARGETS).join(', ')}`)
     process.exit(2)

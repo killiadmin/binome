@@ -29,6 +29,8 @@ services:
       - "${BINOME_PORT:-8080}:8080"
     volumes:
       - binome_data:/data
+      # Catalogue de personnages à importer (docs/generation-personnages.md), lecture seule
+      - ./data/characters:/import:ro
     # Durcissement : système de fichiers en lecture seule (hors /data), aucun privilège
     read_only: true
     cap_drop: [ALL]

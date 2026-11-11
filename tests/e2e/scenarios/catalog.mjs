@@ -110,8 +110,8 @@ export async function catalog(ctx) {
     ctx.check(created.emoji === emoji && created.url === null && created.is_enabled === true, 'admin : emoji Unicode ajouté')
     await ctx.refused(422, 'POST', '/admin/reactions', { body: { name: 'Doublon', emoji }, admin: true }, 'emoji Unicode en double')
     await ctx.refused(422, 'POST', '/admin/reactions', { body: { name: 'Lettre', emoji: 'A' }, admin: true }, 'pas un emoji')
-    // Laravel accepte « 🦩🦩 » malgré la règle « un seul emoji » (`^\X$`) : écart connu
-    const twin = await ctx.refused(422, 'POST', '/admin/reactions', { body: { name: 'Deux', emoji: `${emoji}${emoji}` }, admin: true }, 'deux emojis', { knownOn: 'laravel-ref' })
+    // (l'ancien backend acceptait deux emojis : corrigé lors de la migration)
+    const twin = await ctx.refused(422, 'POST', '/admin/reactions', { body: { name: 'Deux', emoji: `${emoji}${emoji}` }, admin: true }, 'deux emojis')
     if (twin.status === 201) ctx.created.reactions.add(twin.data.reaction.id)
     const off = (await api.patch('/admin/reactions/:reaction', { params: { reaction: created.id }, body: { is_enabled: false, name: 'E2E off' }, admin: true, expect: 200 })).data.reaction
     ctx.check(off.is_enabled === false && off.name === 'E2E off', 'admin : emoji masqué et renommé')

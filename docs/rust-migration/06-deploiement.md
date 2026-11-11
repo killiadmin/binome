@@ -11,7 +11,6 @@ SQLite dans le volume `binome_data`. Au repos : ~5 Mo de RAM, 0 % de CPU.
 | `docker-compose.https.yml` | + Caddy : HTTPS automatique (Let's Encrypt) — **VPS** |
 | `docker-compose.portail.yml` | Réseau local derrière `../portail` (utilisé par `./start.sh`) |
 | `docker-compose.dev.yml` | Développement : Vite (HMR) + `cargo run` |
-| `scripts/migrate-to-sqlite.sh` | Reprise unique des données MySQL de l'ancien backend |
 
 ## VPS (Hostinger KVM ou équivalent)
 
@@ -36,12 +35,11 @@ docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
 L'application répond sur `https://<domaine>/binome/` (la racine redirige). Pour la servir à la
 racine du domaine : `BINOME_PUBLIC_PREFIX=/` dans `.env` avant le build.
 
-**Reprendre les données actuelles** (une fois, depuis la machine qui héberge MySQL)
+**Transférer les données actuelles** (depuis la machine où Binome tourne aujourd'hui)
 
 ```bash
-docker compose build                                   # image binome:latest
-scripts/migrate-to-sqlite.sh binome_db binome          # → volume binome_binome_data, contrôlé
-docker run --rm -v binome_binome_data:/data -v "$PWD":/out alpine cp /data/binome.sqlite /out/
+docker exec binome /binome backup /data/transfert.sqlite        # copie cohérente, à chaud
+docker run --rm -v binome_binome_data:/data -v "$PWD":/out alpine mv /data/transfert.sqlite /out/binome.sqlite
 scp binome.sqlite vps:binome/
 # Sur le VPS, conteneur arrêté :
 docker compose -f docker-compose.yml -f docker-compose.https.yml stop binome
@@ -50,6 +48,9 @@ docker run --rm -v binome_binome_data:/data -v "$PWD":/in alpine \
 docker compose -f docker-compose.yml -f docker-compose.https.yml start binome
 docker exec binome /binome check
 ```
+
+Le catalogue de personnages à importer (`data/characters/`, hors dépôt) se copie à part s'il
+doit servir sur le VPS (voir `docs/generation-personnages.md`).
 
 **Mettre à jour**
 
@@ -92,9 +93,9 @@ la collation `BINOME_CI` (insensible à la casse et aux accents) n'existe que da
 Le conteneur prend l'alias `binome_frontend:5173` sur le réseau `meszappli` : le portail n'a
 rien à changer. Le lien « Partager le lien » suit les changements de Wi-Fi comme avant.
 
-## Retour arrière
+## Ancienne version (Laravel)
 
-L'ancienne pile (Laravel + MySQL) reste intacte tant que la phase 7 n'est pas validée : la
-base MySQL n'est jamais modifiée par la migration. Revenir = arrêter `binome` et relancer
-l'ancien `docker-compose.yml` depuis la branche `main`. Les parties jouées entre-temps sur
-Rust ne seraient pas reportées dans MySQL.
+L'ancien backend (Laravel + Reverb + MySQL) a été supprimé en phase 7 ; sa dernière version est
+l'étiquette git `laravel-final`, et sa base MySQL est conservée en dump
+(`~/Meszappli/backups/binome/2026-11-11-bascule/binome.sql`). Les parties jouées depuis la
+bascule n'existent que dans la base SQLite.

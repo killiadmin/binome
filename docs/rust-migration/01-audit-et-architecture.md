@@ -1,6 +1,7 @@
 # Migration Rust — 01. Audit, architecture cible et plan
 
-> Statut : décisions validées le 2026-11-11 (§10). **Phase 6 terminée** (mesures finales et
+> Statut : **migration terminée** le 2026-11-11 (phase 7 : Laravel supprimé, bilan dans
+> `07-bilan.md`). Ce document décrit l'état AVANT migration. **Phase 6 terminée** (mesures finales et
 > validation : `05-performances.md`). **Phases 4 et 5 terminées** (front natif,
 > image de production, `06-deploiement.md`). **Phase 2 terminée** (serveur Rust :
 > `server/`, 361 vérifications E2E). **Phase 1 terminée** : contrat API

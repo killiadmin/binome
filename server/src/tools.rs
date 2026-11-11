@@ -1,12 +1,12 @@
-//! Outils hors serveur :
-//! - reprise unique des données de l'ancien backend (export MySQL → SQLite) ;
-//! - import de personnages en masse (port de `php artisan characters:import`).
+//! Outils en ligne de commande pour le catalogue de personnages (flux décrit dans
+//! docs/generation-personnages.md et la page admin « Prompts ») :
+//! - `import-characters` : import de personnages en masse (propositions à valider) ;
+//! - `list-characters`   : tout le catalogue, refusés compris (avant de générer un lot) ;
+//! - `count-pending`     : nombre de binômes en attente de validation.
 
 use std::fs;
-use std::io::BufRead;
 use std::path::Path;
 
-use rusqlite::types::Value as Sql;
 use serde_json::Value;
 
 use crate::clock::now_db;
@@ -14,87 +14,6 @@ use crate::db::{Db, Q};
 use crate::error::{AppError, AppResult};
 use crate::support::image;
 use crate::support::text::slug;
-
-/// Tables dans l'ordre des clés étrangères, avec les colonnes du nouveau schéma.
-/// Les colonnes mortes de MySQL (actions.character_id, binomes.is_discovered,
-/// binomes.discovered_by_player_id) et les tables Laravel techniques sont ignorées.
-const TABLES: &[(&str, &[&str])] = &[
-    ("players", &["id", "pseudo", "created_at", "updated_at"]),
-    ("cosmos", &["id", "name", "slug", "created_at", "updated_at"]),
-    ("universes", &["id", "name", "slug", "cosmos_id", "created_at", "updated_at"]),
-    ("characters", &["id", "universe_id", "level_affectation", "verif_manual", "hidden", "name", "slug", "image", "forbidden_words", "created_at", "updated_at"]),
-    ("rooms", &["id", "code", "is_private", "is_locked", "max_players", "game_mode", "cosmos_id", "reveal_to_eliminated", "best_question_vote", "created_by", "created_at", "updated_at"]),
-    ("room_player", &["id", "room_id", "player_id", "is_ready", "created_at", "updated_at"]),
-    ("games", &["id", "room_id", "status", "characters_confirmed_at", "draw_number", "rejected_character_ids", "created_at", "updated_at"]),
-    ("binomes", &["id", "game_id", "universe_id", "is_orphan", "created_at", "updated_at"]),
-    ("binome_player", &["id", "binome_id", "player_id", "character_id", "character_vote", "score", "is_eliminated", "is_excluded", "eliminated_round", "created_at", "updated_at"]),
-    ("rounds", &["id", "game_id", "number", "current_player_id", "is_finished", "created_at", "updated_at"]),
-    ("actions", &["id", "round_id", "player_id", "target_player_id", "type", "content", "character_name", "is_valid", "accusation_correct", "accusation_confirmed", "answer", "answer_corrected_from", "answer_corrected_at", "card_draw_status", "card_count", "card_draw_deadline", "drawn_word", "created_at", "updated_at"]),
-    ("question_votes", &["id", "round_id", "action_id", "voter_id", "created_at", "updated_at"]),
-    ("game_stats", &["id", "game_id", "player_pseudo", "character_name", "eliminations", "best_questions", "rounds_survived", "survived_full_game", "score", "is_winner", "is_eliminated", "is_excluded", "created_at", "updated_at"]),
-    ("chat_messages", &["id", "player_id", "author_name", "author_key", "body", "created_at", "updated_at"]),
-    ("player_avatars", &["id", "pseudo", "image", "created_at", "updated_at"]),
-    ("custom_reactions", &["id", "name", "emoji", "image", "created_by_pseudo", "is_enabled", "created_at", "updated_at"]),
-];
-
-const JSON_COLUMNS: &[&str] = &["forbidden_words", "rejected_character_ids"];
-
-/// Valeur JSON exportée par MySQL → valeur SQLite.
-fn to_sql(column: &str, v: &Value) -> Sql {
-    match v {
-        Value::Null => Sql::Null,
-        Value::Bool(b) => Sql::Integer(i64::from(*b)),
-        Value::Number(n) => n.as_i64().map(Sql::Integer).unwrap_or_else(|| Sql::Real(n.as_f64().unwrap_or_default())),
-        // Colonnes JSON : MySQL les exporte en tableau, SQLite les stocke en texte
-        Value::Array(_) | Value::Object(_) => Sql::Text(v.to_string()),
-        Value::String(s) if JSON_COLUMNS.contains(&column) => Sql::Text(s.clone()),
-        // Dates « 2026-11-11 10:00:00.000000 » → précision seconde, comme TIMESTAMP
-        Value::String(s) if column.ends_with("_at") || column == "card_draw_deadline" => {
-            Sql::Text(s.get(..19).unwrap_or(s).replace('T', " "))
-        }
-        Value::String(s) => Sql::Text(s.clone()),
-    }
-}
-
-/// Importe `<dossier>/<table>.ndjson` (une ligne JSON par enregistrement,
-/// produit par `scripts/export-mysql.sh`) dans une base SQLite **vide**.
-pub fn import_mysql_export(db: &Db, dir: &Path) -> AppResult<String> {
-    db.with_writer(|conn| {
-        let filled: i64 = conn.one("SELECT (SELECT COUNT(*) FROM players) + (SELECT COUNT(*) FROM characters)", [])?;
-        if filled > 0 {
-            return Err(AppError::Internal("la base SQLite n'est pas vide : import refusé (rien n'est écrasé)".into()));
-        }
-        let tx = conn.transaction()?;
-        let mut report = vec![];
-        for (table, columns) in TABLES {
-            let path = dir.join(format!("{table}.ndjson"));
-            let file = fs::File::open(&path).map_err(|e| AppError::Internal(format!("{} : {e}", path.display())))?;
-            let placeholders = (1..=columns.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ");
-            let sql = format!("INSERT INTO {table} ({}) VALUES ({placeholders})", columns.join(", "));
-            let mut n = 0;
-            for line in std::io::BufReader::new(file).lines() {
-                let line = line.map_err(|e| AppError::Internal(format!("lecture {table} : {e}")))?;
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let row: Value = serde_json::from_str(&line).map_err(|e| AppError::Internal(format!("{table} ligne {} : {e}", n + 1)))?;
-                let values: Vec<Sql> = columns.iter().map(|c| to_sql(c, row.get(*c).unwrap_or(&Value::Null))).collect();
-                tx.run(&sql, rusqlite::params_from_iter(values))?;
-                n += 1;
-            }
-            report.push(format!("{table:<18} {n:>6}"));
-        }
-        // Contrôles : clés étrangères et taille des images (à comparer à MySQL)
-        let broken: i64 = tx.one("SELECT COUNT(*) FROM pragma_foreign_key_check", [])?;
-        if broken > 0 {
-            return Err(AppError::Internal(format!("{broken} référence(s) cassée(s) : import annulé")));
-        }
-        let images: i64 = tx.one("SELECT COALESCE(SUM(LENGTH(image)), 0) FROM characters", [])?;
-        tx.commit()?;
-        report.push(format!("octets d'images de personnages : {images}"));
-        Ok(format!("Import terminé :\n{}", report.join("\n")))
-    })
-}
 
 // ─── Import de personnages (JSON) ───────────────────────────────────────────
 
@@ -241,5 +160,37 @@ pub fn import_characters(db: &Db, file: &Path, images_dir: Option<&str>, skip_ex
             report.push_str(&errors.join("\n"));
         }
         Ok(report)
+    })
+}
+
+/// `Univers / Nom`, suivi de « [refusé] » ou « [à valider] », trié par univers puis nom.
+pub fn list_characters(db: &Db) -> AppResult<String> {
+    db.with_writer(|conn| {
+        let rows = conn.all(
+            "SELECT u.name, c.name, c.hidden, c.verif_manual FROM characters c JOIN universes u ON u.id = c.universe_id
+             ORDER BY u.name, c.name",
+            [],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?)),
+        )?;
+        Ok(rows
+            .iter()
+            .map(|(u, n, hidden, verified)| {
+                let state = if *hidden { " [refusé]" } else if !verified { " [à valider]" } else { "" };
+                format!("{u} / {n}{state}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n"))
+    })
+}
+
+/// Binômes proposés en attente de validation (groupes univers + niveau).
+pub fn count_pending(db: &Db) -> AppResult<String> {
+    db.with_writer(|conn| {
+        let n: i64 = conn.one(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM characters WHERE verif_manual = 0 AND hidden = 0
+             GROUP BY universe_id, level_affectation)",
+            [],
+        )?;
+        Ok(n.to_string())
     })
 }

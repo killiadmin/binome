@@ -27,6 +27,7 @@ services:
       - binome_cargo_registry:/usr/local/cargo/registry
       - binome_cargo_target:/app/target
       - binome_dev_data:/data
+      - ./data/characters:/import:ro
 
   frontend:
     image: node:22-alpine

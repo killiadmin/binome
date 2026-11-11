@@ -15,27 +15,17 @@ function envValue(file, key) {
 }
 
 /**
- * Cibles connues. On n'ouvre jamais la pile en service (ports 8001 / 5173) :
- * le banc crée, modifie et supprime des données.
+ * Cible du banc : le serveur Rust de test (copie de la base), lancé par
+ * tests/e2e/rust-stack.sh. On n'ouvre jamais la pile en service : le banc crée,
+ * modifie et supprime des données. Le contrat de l'ancien backend Laravel est
+ * figé dans contracts/laravel-ref.json (référence de compare.mjs).
  */
 export const TARGETS = {
-    'laravel-ref': () => ({
-        name: 'laravel-ref',
-        baseUrl: 'http://127.0.0.1:18001',
-        realtime: {
-            protocol: 'pusher',
-            wsUrl: 'ws://127.0.0.1:18080',
-            appKey: envValue('backend/.env', 'REVERB_APP_KEY'),
-            authUrl: 'http://127.0.0.1:18001/broadcasting/auth',
-        },
-        adminPassword: envValue('backend/.env', 'CHARACTERS_ACCESS_PASSWORD'),
-    }),
-    // Serveur Rust de test (copie de la base), lancé par tests/e2e/rust-stack.sh
     rust: () => ({
         name: 'rust',
-        baseUrl: 'http://127.0.0.1:18101/binome',
-        realtime: { protocol: 'native', wsUrl: 'ws://127.0.0.1:18101/binome/ws' },
-        adminPassword: envValue('backend/.env', 'CHARACTERS_ACCESS_PASSWORD'),
+        baseUrl: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:18101/binome',
+        realtime: { protocol: 'native', wsUrl: process.env.E2E_WS_URL ?? 'ws://127.0.0.1:18101/binome/ws' },
+        adminPassword: envValue('.env', 'BINOME_ADMIN_PASSWORD'),
     }),
 }
 
@@ -80,24 +70,9 @@ export class Context {
         return Boolean(condition)
     }
 
-    /**
-     * Écart connu de la référence : la règle documentée n'est pas respectée par
-     * Laravel. Signalé à part (pas compté comme échec) sur `knownOn`, vérifié
-     * normalement sur les autres cibles.
-     */
-    deviation(condition, message, knownOn, detail) {
-        if (!condition && knownOn === this.target.name) {
-            this.checks.push({ ok: true, known: true, message })
-            console.log(`   ⚠ écart connu de ${knownOn} : ${message}`)
-            return false
-        }
-        return this.check(condition, message, detail)
-    }
-
     /** Appel censé échouer avec un statut précis (règle métier, validation…). */
-    async refused(status, method, template, options, message, { knownOn = null } = {}) {
+    async refused(status, method, template, options, message) {
         const res = await this.api.call(method, template, options)
-        if (knownOn) return this.deviation(res.status === status, `${message} → ${status}`, knownOn), res
         this.check(res.status === status, `${message} → ${status}`, res.status === status ? undefined : { status: res.status, data: res.data })
         if (res.status === status && status !== 404 && res.data && typeof res.data === 'object') {
             this.check(typeof res.data.message === 'string' && res.data.message.length > 0, `${message} : message d'erreur présent`)

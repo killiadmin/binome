@@ -9,8 +9,8 @@
  * Purement indicatif : aucun bouton n'est bloqué, la cible garde toujours le
  * dernier mot (faute de frappe du questionneur, cas exceptionnel…).
  *
- * Port PHP à garder synchronisé : backend/app/Support/ForbiddenWordMatcher.php
- * (utilisé par le récap de fin de partie).
+ * Port Rust à garder synchronisé : server/src/support/forbidden.rs (récap de fin de
+ * partie) ; sa parité est testée sur des cas générés par tests/e2e/gen-forbidden-vectors.mjs.
  */
 
 export const NEAR_THRESHOLD = 0.8

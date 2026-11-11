@@ -184,11 +184,11 @@ const showExcludeModal = ref(false)
 const notice = ref(null)
 let noticeTimer = null
 
-// WebSocket coupé (écran verrouillé, Wi-Fi qui saute) : Pusher se reconnecte
+// WebSocket coupé (écran verrouillé, Wi-Fi qui saute) : useReverb se reconnecte
 // seul, mais les events émis pendant la coupure sont perdus → resync().
 const connectionLost = ref(false)
 // Abonnement à game.{id} refusé (auth échouée pendant une reconnexion) : la
-// socket est connectée mais on ne reçoit plus rien. Pusher se réabonne à la
+// socket est connectée mais on ne reçoit plus rien. useReverb se réabonne à la
 // prochaine reconnexion ; le `here` qui suit l'abonnement réussi le remet à false.
 const subscriptionFailed = ref(false)
 // Échec du chargement de l'état : effacé par le prochain resync() réussi.
@@ -334,7 +334,7 @@ const hostPseudo = computed(() =>
 // Le joueur attendu est hors ligne : la partie est en pause. Seul l'hôte
 // décide, après AFK_GRACE_SECONDS : passer son tour (sauf s'il doit répondre à
 // une question — une réponse est obligatoire) ou l'exclure. Le serveur
-// revérifie la présence via Reverb.
+// revérifie la présence (table de présence du serveur).
 const afkBlocker = computed(() => {
   const b = blocker.value
   if (!b?.playerId || isOnline(b.playerId)) return null
@@ -1293,7 +1293,7 @@ async function submitConfirmAccusation(confirmed) {
 
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
 
-// Message lisible à partir d'une erreur API : une 422 Laravel porte le détail
+// Message lisible à partir d'une erreur API : une 422 de validation porte le détail
 // dans `errors` (un tableau de messages par champ), les autres cas n'ont que
 // `message`.
 function apiErrorMessage(e, fallback) {
@@ -1423,7 +1423,7 @@ function backToHome() {
         <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
       </div>
 
-      <!-- Connexion WebSocket coupée : Pusher se reconnecte seul, puis resync() -->
+      <!-- Connexion WebSocket coupée : useReverb se reconnecte seul, puis resync() -->
       <div v-if="connectionLost || subscriptionFailed" class="net-banner" role="status">
         <i class="fa-solid fa-wifi"></i>
         <template v-if="connectionLost">Connexion perdue — reconnexion en cours<span class="caret">_</span></template>

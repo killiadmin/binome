@@ -3,11 +3,11 @@
 // contrat observé (tests/e2e/contracts/<cible>.json). Les descriptions sont ici ;
 // les formes JSON viennent toujours de la mesure.
 //
-//   node tests/e2e/render-contract.mjs [laravel-ref]
+//   node tests/e2e/render-contract.mjs [rust]
 
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const target = process.argv[2] ?? 'laravel-ref'
+const target = process.argv[2] ?? 'rust'
 const contract = JSON.parse(readFileSync(new URL(`./contracts/${target}.json`, import.meta.url), 'utf8'))
 const DOCS = new URL('../../docs/rust-migration/', import.meta.url)
 
@@ -121,7 +121,7 @@ const ordered = [...new Set([...Object.keys(ROUTES), ...byRoute.keys()])]
 let api = `# Migration Rust — 02. Contrat de l'API REST
 
 > **Généré** par \`tests/e2e/render-contract.mjs\` depuis \`tests/e2e/contracts/${target}.json\`
-> (formes observées par le banc E2E sur la pile Laravel de référence). Ne pas éditer à la main.
+> (formes observées par le banc E2E, identiques au contrat figé de l'ancien backend Laravel,\n> `contracts/laravel-ref.json`). Ne pas éditer à la main.
 
 ## Conventions communes
 

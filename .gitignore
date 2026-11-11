@@ -36,11 +36,9 @@ frontend/public/lan-url.json.tmp.*
 backups/
 *.sql
 
-# Données MySQL (volume Docker) et base sqlite locale
-backend/database/binome/
-backend/database/*.sqlite
-# Données de personnages (catalogue, images, propositions) — gardées hors du repo
-backend/database/data/
+# Catalogue de personnages (lots JSON, images) : données réelles, gardées hors du repo.
+# Procédure : docs/generation-personnages.md
+data/
 
 # Schéma SQL du serveur Rust (versionné, contrairement aux dumps)
 !server/migrations/*.sql
