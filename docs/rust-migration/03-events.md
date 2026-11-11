@@ -1,6 +1,6 @@
 # Migration Rust — 03. Événements temps réel
 
-> Formes **générées** par `tests/e2e/render-contract.mjs` depuis `tests/e2e/contracts/laravel-ref.json`.
+> Formes **générées** par `tests/e2e/render-contract.mjs` depuis `tests/e2e/contracts/rust.json`.
 
 ## Canaux
 
@@ -304,7 +304,9 @@ $.cancelled_action_id                            null
 $.excluded_by                                    object
 $.excluded_by.id                                 int
 $.excluded_by.pseudo                             string
-$.partner                                        null
+$.partner                                        null | object
+$.partner.id                                     int
+$.partner.pseudo                                 string
 $.player                                         object
 $.player.id                                      int
 $.player.pseudo                                  string

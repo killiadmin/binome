@@ -1,7 +1,8 @@
 # Migration Rust — 02. Contrat de l'API REST
 
-> **Généré** par `tests/e2e/render-contract.mjs` depuis `tests/e2e/contracts/laravel-ref.json`
-> (formes observées par le banc E2E sur la pile Laravel de référence). Ne pas éditer à la main.
+> **Généré** par `tests/e2e/render-contract.mjs` depuis `tests/e2e/contracts/rust.json`
+> (formes observées par le banc E2E, identiques au contrat figé de l'ancien backend Laravel,
+> `contracts/laravel-ref.json`). Ne pas éditer à la main.
 
 ## Conventions communes
 
@@ -420,7 +421,14 @@ $.updated_at                                     date:iso8601
 
 Supprimer une partie (cascade) — accès : admin
 
-Statuts observés : `404`
+Statuts observés : `200`, `404`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+```
 
 ### `GET /api/admin/players`
 
@@ -1014,7 +1022,7 @@ $.message                                        string
 
 État public (jamais de personnage ni de binôme non découvert) — accès : public
 
-Statuts observés : `200`
+Statuts observés : `200`, `404`
 
 Réponse `200` :
 
@@ -1143,7 +1151,7 @@ $.eliminations[].round                           int
 $.eliminations[].target                          string
 $.exclusions                                     array
 $.exclusions[]                                   object
-$.exclusions[].partner                           null
+$.exclusions[].partner                           null | string
 $.exclusions[].pseudo                            string
 $.exclusions[].round                             int
 $.game_id                                        int
@@ -1379,7 +1387,6 @@ $.action.answer_corrected_from                   null
 $.action.card_count                              int | null
 $.action.card_draw_deadline                      date:eloquent | null
 $.action.card_draw_status                        null | string
-$.action.character_id                            null
 $.action.character_name                          null
 $.action.content                                 string
 $.action.created_at                              date:eloquent
@@ -1430,7 +1437,6 @@ $.action.answer_corrected_from                   null
 $.action.card_count                              null
 $.action.card_draw_deadline                      null
 $.action.card_draw_status                        null
-$.action.character_id                            null
 $.action.character_name                          string
 $.action.content                                 string
 $.action.created_at                              date:eloquent
@@ -1444,41 +1450,7 @@ $.action.player.updated_at                       date:eloquent
 $.action.player_id                               int
 $.action.round                                   object
 $.action.round.created_at                        date:eloquent
-$.action.round.current_player                    object
-$.action.round.current_player.created_at         date:eloquent
-$.action.round.current_player.id                 int
-$.action.round.current_player.pseudo             string
-$.action.round.current_player.updated_at         date:eloquent
 $.action.round.current_player_id                 int
-$.action.round.game                              object
-$.action.round.game.binomes                      array
-$.action.round.game.binomes[]                    object
-$.action.round.game.binomes[].created_at         date:eloquent
-$.action.round.game.binomes[].discovered_by_player_id null
-$.action.round.game.binomes[].game_id            int
-$.action.round.game.binomes[].id                 int
-$.action.round.game.binomes[].is_discovered      bool
-$.action.round.game.binomes[].is_orphan          bool
-$.action.round.game.binomes[].universe_id        int
-$.action.round.game.binomes[].updated_at         date:eloquent
-$.action.round.game.characters_confirmed_at      date:eloquent
-$.action.round.game.created_at                   date:eloquent
-$.action.round.game.draw_number                  int
-$.action.round.game.id                           int
-$.action.round.game.rejected_character_ids       array
-$.action.round.game.rejected_character_ids[]     int
-$.action.round.game.room_id                      int
-$.action.round.game.rounds                       array
-$.action.round.game.rounds[]                     object
-$.action.round.game.rounds[].created_at          date:eloquent
-$.action.round.game.rounds[].current_player_id   int
-$.action.round.game.rounds[].game_id             int
-$.action.round.game.rounds[].id                  int
-$.action.round.game.rounds[].is_finished         int
-$.action.round.game.rounds[].number              int
-$.action.round.game.rounds[].updated_at          date:eloquent
-$.action.round.game.status                       string
-$.action.round.game.updated_at                   date:eloquent
 $.action.round.game_id                           int
 $.action.round.id                                int
 $.action.round.is_finished                       int

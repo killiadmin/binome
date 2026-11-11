@@ -121,7 +121,8 @@ const ordered = [...new Set([...Object.keys(ROUTES), ...byRoute.keys()])]
 let api = `# Migration Rust — 02. Contrat de l'API REST
 
 > **Généré** par \`tests/e2e/render-contract.mjs\` depuis \`tests/e2e/contracts/${target}.json\`
-> (formes observées par le banc E2E, identiques au contrat figé de l'ancien backend Laravel,\n> `contracts/laravel-ref.json`). Ne pas éditer à la main.
+> (formes observées par le banc E2E, identiques au contrat figé de l'ancien backend Laravel,
+> \`contracts/laravel-ref.json\`). Ne pas éditer à la main.
 
 ## Conventions communes
 
