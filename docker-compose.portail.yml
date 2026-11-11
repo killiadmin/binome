@@ -10,6 +10,9 @@ services:
     environment:
       BINOME_BIND: 0.0.0.0:5173
       BINOME_LAN_URL_FILE: /lan/lan-url.json
+    # Le serveur écoute sur 5173 (port attendu par le portail) : le port publié suit
+    ports: !override
+      - "${BINOME_PORT:-8080}:5173"
     volumes:
       # Dossier (et non fichier) : update-lan-ip.sh remplace le fichier à chaque changement de Wi-Fi
       - ./frontend/public:/lan:ro
