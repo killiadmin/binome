@@ -1,18 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { createHmac } from 'node:crypto'
 import { Api } from './http.mjs'
 import { Recorder } from './recorder.mjs'
 import { connect } from './realtime.mjs'
-
-const ROOT = new URL('../../../', import.meta.url)
-
-/** Lit une clé d'un fichier .env sans jamais l'afficher. */
-function envValue(file, key) {
-    const line = readFileSync(new URL(file, ROOT), 'utf8')
-        .split('\n')
-        .find((l) => l.startsWith(`${key}=`))
-    return line ? line.slice(key.length + 1).trim().replace(/^"|"$/g, '') : null
-}
 
 /**
  * Cible du banc : le serveur Rust de test (copie de la base), lancé par
@@ -25,8 +13,8 @@ export const TARGETS = {
         name: 'rust',
         baseUrl: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:18101/binome',
         realtime: { protocol: 'native', wsUrl: process.env.E2E_WS_URL ?? 'ws://127.0.0.1:18101/binome/ws' },
-        adminPassword: envValue('.env', 'BINOME_ADMIN_PASSWORD'),
-        // Mot de passe de suppression du serveur de test (voir rust-stack.sh), jamais le vrai
+        // Mots de passe du serveur de test (voir rust-stack.sh), jamais les vrais
+        adminPassword: process.env.E2E_ADMIN_PASSWORD ?? 'e2e-admin-test',
         deletePassword: process.env.E2E_DELETE_PASSWORD ?? 'e2e-suppression-test',
     }),
 }
@@ -61,9 +49,9 @@ export class Context {
     async loginAdmin() {
         const { data } = await this.api.post('/access/characters', { body: { password: this.target.adminPassword }, expect: 200 })
         this.api.adminToken = data.token
-        // Même dérivation que EnsureCharactersAccess::token() : garde-fou du contrat
-        const expected = createHmac('sha256', this.target.adminPassword).update('binome-characters-access').digest('hex')
-        this.check(data.token === expected, 'jeton admin = HMAC-SHA256(mot de passe, « binome-characters-access »)')
+        // Jeton = HMAC-SHA256(empreinte configurée, « binome-characters-access ») :
+        // non recalculable ici, on vérifie sa forme (son acceptation est testée par les routes admin)
+        this.check(/^[0-9a-f]{64}$/.test(data.token), 'jeton admin : 64 caractères hexadécimaux')
     }
 
     check(condition, message, detail = undefined) {

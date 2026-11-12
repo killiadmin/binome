@@ -1,5 +1,6 @@
-//! Mot de passe de suppression des parties : seule son empreinte est stockée
-//! (variable BINOME_DELETE_PASSWORD_HASH), jamais le mot de passe lui-même.
+//! Mots de passe d'administration et de suppression des parties : seule leur
+//! empreinte est stockée (BINOME_ADMIN_PASSWORD_HASH, BINOME_DELETE_PASSWORD_HASH),
+//! jamais le mot de passe lui-même.
 //!
 //! Format : `pbkdf2-sha256:<itérations>:<sel hex>:<empreinte hex>` — sans `$`
 //! (Docker Compose l'interpréterait dans un fichier .env).

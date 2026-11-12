@@ -6,7 +6,9 @@
 //!   binome import-characters <fichier.json> [--images-dir D] [--skip-existing]
 //!   binome list-characters                catalogue complet (refusés compris)
 //!   binome count-pending                  binômes en attente de validation
-//!   binome hash-password [--iterations N] empreinte du mot de passe de suppression (lu sur stdin)
+//!   binome hash-password [--admin] [--iterations N]
+//!                                         empreinte du mot de passe de suppression, ou
+//!                                         d'administration avec --admin (lu sur stdin)
 //!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
 //!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
 
@@ -68,7 +70,8 @@ fn main() {
 }
 
 /// Lit le mot de passe sur l'entrée standard (jamais en argument : il finirait
-/// dans l'historique du shell) et affiche la ligne à mettre dans le .env.
+/// dans l'historique du shell) et affiche la ligne à mettre dans le .env :
+/// mot de passe de suppression par défaut, d'administration avec `--admin`.
 fn hash_password(args: &[String]) -> i32 {
     let iterations = match args.iter().position(|a| a == "--iterations").and_then(|i| args.get(i + 1)) {
         Some(n) => n.parse().unwrap_or_else(|_| fail("--iterations : entier attendu")),
@@ -82,7 +85,8 @@ fn hash_password(args: &[String]) -> i32 {
     if password.chars().count() < 8 {
         fail("mot de passe trop court (8 caractères minimum)");
     }
-    println!("BINOME_DELETE_PASSWORD_HASH={}", support::password::hash(password, iterations));
+    let var = if args.iter().any(|a| a == "--admin") { "BINOME_ADMIN_PASSWORD_HASH" } else { "BINOME_DELETE_PASSWORD_HASH" };
+    println!("{var}={}", support::password::hash(password, iterations));
     0
 }
 
@@ -127,8 +131,15 @@ fn serve(cfg: Config) -> i32 {
             Some(h) if !support::password::is_well_formed(h) => fail("BINOME_DELETE_PASSWORD_HASH mal formée : régénère-la avec `binome hash-password`"),
             Some(_) => {}
         }
-        if cfg.admin_password.is_none() {
-            tracing::warn!("aucun mot de passe d'administration : la gestion des personnages est fermée (403)");
+        match cfg.admin_password_hash.as_deref() {
+            None => tracing::warn!("aucun mot de passe d'administration : la gestion des personnages est fermée (403)"),
+            Some(h) if !support::password::is_well_formed(h) => fail("BINOME_ADMIN_PASSWORD_HASH mal formée : régénère-la avec `binome hash-password --admin`"),
+            Some(_) => {}
+        }
+        if cfg.legacy_admin_password_set {
+            tracing::warn!(
+                "BINOME_ADMIN_PASSWORD (mot de passe en clair) est ignorée : retire-la du .env et utilise BINOME_ADMIN_PASSWORD_HASH (`binome hash-password --admin`)"
+            );
         }
         let state = AppState {
             db,

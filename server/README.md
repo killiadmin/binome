@@ -30,7 +30,8 @@ binome list-characters                         # catalogue complet, refusés com
 binome count-pending                           # binômes en attente de validation
 binome backup <fichier.sqlite>                 # copie cohérente, serveur en marche
 binome check                                   # intégrité, version du schéma, volumes (BINOME_DATABASE)
-binome hash-password [--iterations N]          # empreinte du mot de passe de suppression (lu sur stdin)
+binome hash-password [--admin] [--iterations N]  # empreinte du mot de passe de suppression,
+                                               # ou d'administration avec --admin (lu sur stdin)
 ```
 
 La collation `BINOME_CI` (pseudos insensibles à la casse et aux accents) n'existe que dans le
@@ -48,7 +49,7 @@ Flux de création de personnages : `docs/generation-personnages.md` (page admin 
 | `BINOME_DATABASE` | `/data/binome.sqlite` | Fichier SQLite (créé avec son schéma s'il n'existe pas) |
 | `BINOME_STATIC_DIR` | — | Dossier du front compilé ; absent : API seule (dev avec Vite) |
 | `BINOME_PUBLIC_PREFIX` | `/binome` | Préfixe de toutes les routes et des URLs d'images |
-| `BINOME_ADMIN_PASSWORD` (ou `CHARACTERS_ACCESS_PASSWORD`) | — | Mot de passe d'administration ; vide = admin fermée |
+| `BINOME_ADMIN_PASSWORD_HASH` | — | Empreinte du mot de passe d'administration (`hash-password --admin`) ; absente = admin fermée. Connexion limitée à 2 tentatives par minute (global). L'ancienne variable en clair `BINOME_ADMIN_PASSWORD` est ignorée (avertissement au démarrage) |
 | `BINOME_DELETE_PASSWORD_HASH` | — | Empreinte du mot de passe exigé pour supprimer des parties ; absente = suppression désactivée |
 | `BINOME_LAN_URL_FILE` | — | `lan-url.json` du bouton « Partager le lien » (réseau local) |
 | `RUST_LOG` | `binome=info` | Journaux |

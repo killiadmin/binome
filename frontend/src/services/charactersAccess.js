@@ -16,7 +16,7 @@ export const isCharactersUnlocked = computed(() => !!state.token)
 export const charactersAccess = {
     /**
      * Échange le mot de passe contre un token et le persiste en session.
-     * Lève l'erreur axios (422) si le mot de passe est incorrect.
+     * Lève l'erreur axios (422 si le mot de passe est incorrect, 429 après 2 échecs dans la minute).
      */
     async unlock(password) {
         const { data } = await api.post('/access/characters', { password })

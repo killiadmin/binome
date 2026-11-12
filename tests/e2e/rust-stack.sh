@@ -12,10 +12,17 @@ root="$(cd "$here/../.." && pwd)"
 data="$here/.data"
 mkdir -p "$data"
 
-# Mot de passe admin repris du .env du projet, dans un fichier privé (jamais affiché)
+# Empreintes des mots de passe du serveur de TEST (jetables, coût réduit),
+# dans un fichier privé ; le vrai mot de passe admin n'est connu que du propriétaire
 env_file() {
+  local profile="$1"
   umask 077
-  grep '^BINOME_ADMIN_PASSWORD=' "$root/.env" > "$data/rust.env" || true
+  : > "$data/rust.env"
+  printf '%s\n' "${E2E_ADMIN_PASSWORD:-e2e-admin-test}" | docker run --rm -i -v binome_cargo_target:/target:ro \
+    rust:1-bookworm "/target/$profile/binome" hash-password --admin --iterations 1000 >> "$data/rust.env"
+  # Le banc l'envoie pour les suppressions de parties
+  printf '%s\n' "${E2E_DELETE_PASSWORD:-e2e-suppression-test}" | docker run --rm -i -v binome_cargo_target:/target:ro \
+    rust:1-bookworm "/target/$profile/binome" hash-password --iterations 1000 >> "$data/rust.env"
 }
 
 case "${1:-}" in
@@ -36,11 +43,7 @@ case "${1:-}" in
     flag=""; [[ "$profile" == release ]] && flag="--release"
     "$root/server/cargo.sh" build $flag -q
     [[ -f "$data/base.sqlite" ]] || { echo "Base absente : lance d'abord « $0 prepare »" >&2; exit 1; }
-    env_file
-    # Mot de passe de suppression du serveur de TEST (jetable, coût réduit) ;
-    # le banc l'envoie pour les suppressions de parties
-    printf '%s\n' "${E2E_DELETE_PASSWORD:-e2e-suppression-test}" | docker run --rm -i -v binome_cargo_target:/target:ro \
-      rust:1-bookworm "/target/$profile/binome" hash-password --iterations 1000 >> "$data/rust.env"
+    env_file "$profile"
     docker rm -f binome_rust_test >/dev/null 2>&1 || true
     rm -f "$data/run.sqlite"*
     cp "$data/base.sqlite" "$data/run.sqlite"

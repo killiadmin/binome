@@ -92,7 +92,7 @@ fn image_response(mime: &str, bytes: Vec<u8>) -> Response {
 
 async fn require_admin(State(st): State<AppState>, req: Request, next: Next) -> Response {
     let provided = req.headers().get("x-characters-access").and_then(|v| v.to_str().ok());
-    match catalog::check_access(st.cfg.admin_password.as_deref(), provided) {
+    match catalog::check_access(st.cfg.admin_password_hash.as_deref(), provided) {
         Ok(()) => next.run(req).await,
         Err(e) => e.into_response(),
     }
@@ -244,10 +244,33 @@ async fn reactions_image(State(st): State<AppState>, Path(p): Params) -> Respons
 
 // ─── Catalogue et administration ────────────────────────────────────────────
 
+/// Connexion admin : au plus 2 tentatives par minute, tous clients confondus
+/// (ni player_id ni IP : falsifiables, ou identiques derrière le portail).
+/// La tentative est réservée avant la vérification (PBKDF2, hors des threads
+/// réseau) puis rendue si elle réussit : seuls les échecs comptent.
 async fn access_login(State(st): State<AppState>, input: Input) -> Response {
-    match catalog::login(st.cfg.admin_password.as_deref(), &input) {
-        Ok(out) => st.finish(out),
-        Err(e) => e.into_response(),
+    const BUCKET: (&str, &str) = ("admin-login", "tentatives");
+    let given = match catalog::login_input(&input) {
+        Ok(g) => g,
+        Err(e) => return e.into_response(),
+    };
+    if !st.limiter.hit(BUCKET.0, BUCKET.1, 2) {
+        tracing::warn!("connexion admin refusée : trop de tentatives");
+        return AppError::TooManyRequests.into_response();
+    }
+    let stored = st.cfg.admin_password_hash.clone();
+    let result = tokio::task::spawn_blocking(move || catalog::login(stored.as_deref(), &given))
+        .await
+        .unwrap_or_else(|e| Err(AppError::Internal(format!("vérification du mot de passe admin : {e}"))));
+    match result {
+        Ok(out) => {
+            st.limiter.release(BUCKET.0, BUCKET.1);
+            st.finish(out)
+        }
+        Err(e) => {
+            tracing::warn!("connexion admin refusée : mot de passe incorrect");
+            e.into_response()
+        }
     }
 }
 async fn cosmos_index(State(st): State<AppState>) -> Response {

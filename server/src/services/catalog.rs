@@ -18,34 +18,41 @@ use crate::support::text::slug;
 
 // ─── Accès ──────────────────────────────────────────────────────────────────
 
-/// Jeton stable dérivé du mot de passe (même valeur que l'ancien backend :
-/// `hash_hmac('sha256', 'binome-characters-access', $password)`).
-pub fn access_token(password: &str) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(password.as_bytes()).expect("clé HMAC");
+/// Jeton admin stable, dérivé de l'empreinte configurée
+/// (`BINOME_ADMIN_PASSWORD_HASH`) : le serveur ne connaît pas le mot de passe.
+/// Changer de mot de passe change l'empreinte, donc invalide les jetons émis.
+pub fn access_token(password_hash: &str) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(password_hash.trim().as_bytes()).expect("clé HMAC");
     mac.update(b"binome-characters-access");
     hex::encode(mac.finalize().into_bytes())
 }
 
-/// Contrôle de l'en-tête `X-Characters-Access`.
-pub fn check_access(password: Option<&str>, provided: Option<&str>) -> AppResult<()> {
-    let Some(password) = password else {
+/// Contrôle de l'en-tête `X-Characters-Access` (jetons de même longueur :
+/// la comparaison à temps constant ne sort pas tôt).
+pub fn check_access(password_hash: Option<&str>, provided: Option<&str>) -> AppResult<()> {
+    let Some(password_hash) = password_hash else {
         return Err(AppError::forbidden("L'accès à la gestion des personnages n'est pas configuré."));
     };
-    let expected = access_token(password);
+    let expected = access_token(password_hash);
     match provided {
         Some(p) if bool::from(p.as_bytes().ct_eq(expected.as_bytes())) => Ok(()),
         _ => Err(AppError::forbidden("Mot de passe requis pour accéder à la gestion des personnages.")),
     }
 }
 
-/// POST /access/characters
-pub fn login(password: Option<&str>, input: &Input) -> AppResult<Out> {
+/// POST /access/characters — validation du corps, avant toute limite de débit.
+pub fn login_input(input: &Input) -> AppResult<String> {
     let mut v = V::new(input);
     let given = v.req_str("password", None, None);
     v.finish()?;
-    let given = given.expect("validé");
-    match password {
-        Some(p) if bool::from(p.as_bytes().ct_eq(given.as_bytes())) => Ok(Out::ok(json!({ "token": access_token(p) }))),
+    Ok(given.expect("validé"))
+}
+
+/// POST /access/characters — vérification PBKDF2 (coûteuse : à lancer hors
+/// des threads réseau). Sans empreinte configurée, aucun mot de passe n'ouvre.
+pub fn login(password_hash: Option<&str>, given: &str) -> AppResult<Out> {
+    match password_hash {
+        Some(h) if crate::support::password::verify(given, h) => Ok(Out::ok(json!({ "token": access_token(h) }))),
         _ => Err(AppError::unprocessable("Mot de passe incorrect.")),
     }
 }
@@ -459,4 +466,28 @@ pub fn character_destroy(tx: &Transaction, id: i64) -> AppResult<Out> {
 pub fn character_image(c: &impl Q, id: i64) -> AppResult<(String, Vec<u8>)> {
     let data: Option<String> = c.opt("SELECT image FROM characters WHERE id = ?1", [id], |r| r.get(0))?.flatten();
     data.as_deref().and_then(image::decode_data_uri).ok_or(AppError::NotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::support::password;
+
+    #[test]
+    fn admin_login_with_hash() {
+        let h = password::hash("mot de passe admin", 1000);
+        let token = access_token(&h);
+        assert_eq!(token.len(), 64);
+        assert!(login(Some(&h), "mot de passe admin").is_ok());
+        assert!(login(Some(&h), "mot de passe Admin").is_err());
+        assert!(login(Some(&h), "x").is_err()); // longueur différente
+        assert!(login(None, "mot de passe admin").is_err());
+        assert!(check_access(Some(&h), Some(&token)).is_ok());
+        assert!(check_access(Some(&h), Some("abc")).is_err());
+        assert!(check_access(Some(&h), None).is_err());
+        assert!(check_access(None, Some(&token)).is_err());
+        // Nouvelle empreinte (même mot de passe, autre sel) → anciens jetons refusés
+        let h2 = password::hash("mot de passe admin", 1000);
+        assert!(check_access(Some(&h2), Some(&token)).is_err());
+    }
 }

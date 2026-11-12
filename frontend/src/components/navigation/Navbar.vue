@@ -34,7 +34,9 @@ async function submitUnlock() {
     passwordInput.value = '';
     router.push('/admin');
   } catch (e) {
-    unlockError.value = e.response?.data?.message || 'Mot de passe incorrect.';
+    unlockError.value = e.response?.status === 429
+      ? 'Trop de tentatives, réessayez dans une minute.'
+      : e.response?.data?.message || 'Mot de passe incorrect.';
   } finally {
     unlocking.value = false;
   }

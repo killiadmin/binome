@@ -50,6 +50,16 @@ impl RateLimiter {
         q.push_back(now);
         true
     }
+
+    /// Annule la dernière tentative enregistrée par `hit` (ex. une connexion
+    /// réussie, qui ne doit pas compter). Réserver avant de vérifier, puis
+    /// rendre, évite que des requêtes simultanées passent toutes le contrôle.
+    pub fn release(&self, bucket: &str, key: &str) {
+        let mut map = self.hits.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(q) = map.get_mut(&format!("{bucket}|{key}")) {
+            q.pop_back();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -75,5 +85,15 @@ mod tests {
         assert!(!l.is_limited("delete", "admin", 2));
         l.record("delete", "admin");
         assert!(l.is_limited("delete", "admin", 2));
+    }
+
+    #[test]
+    fn released_attempts_do_not_count() {
+        let l = RateLimiter::default();
+        assert!(l.hit("admin-login", "tentatives", 2));
+        l.release("admin-login", "tentatives"); // réussite
+        assert!(l.hit("admin-login", "tentatives", 2));
+        assert!(l.hit("admin-login", "tentatives", 2));
+        assert!(!l.hit("admin-login", "tentatives", 2));
     }
 }

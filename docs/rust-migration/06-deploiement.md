@@ -28,8 +28,8 @@ ouverts dans le pare-feu.
 curl -fsSL https://get.docker.com | sh
 git clone <dépôt> binome && cd binome && git checkout <branche>
 
-cp .env.example .env          # renseigner BINOME_ADMIN_PASSWORD et BINOME_DOMAIN
-# (facultatif) mot de passe de suppression des parties : voir « Suppression de parties » plus bas
+cp .env.example .env          # renseigner BINOME_DOMAIN
+# empreinte du mot de passe admin, et (facultatif) de suppression : voir « Mots de passe » plus bas
 docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
 ```
 
@@ -71,20 +71,27 @@ docker save binome:latest | gzip | ssh vps 'gunzip | docker load'
 # puis, sur le VPS : docker compose ... up -d   (sans --build)
 ```
 
-## Suppression de parties
+## Mots de passe (administration, suppression de parties)
 
-Supprimer une partie depuis l'administration exige un mot de passe dédié, dont seule
-l'empreinte est stockée. Pour le définir (ou le changer), image construite :
+Le serveur ne stocke que des empreintes (PBKDF2-SHA256), jamais les mots de passe :
+- **administration** (`BINOME_ADMIN_PASSWORD_HASH`) : sans elle, l'administration est fermée.
+  Connexion limitée à 2 tentatives par minute, tous clients confondus (429 au-delà) ;
+- **suppression de parties** (`BINOME_DELETE_PASSWORD_HASH`) : seconde clé, distincte ; sans
+  elle, la suppression de parties est désactivée (les autres actions admin restent possibles).
+
+Pour les définir (ou les changer), image construite :
 
 ```bash
-# Linux / VPS (bash) — sur macOS (zsh), la 1re ligne s'écrit : read -rs "P?Mot de passe de suppression : "; echo
-read -rs -p "Mot de passe de suppression : " P; echo
-printf '%s\n' "$P" | docker run --rm -i binome:latest hash-password; unset P
-# → copier la ligne BINOME_DELETE_PASSWORD_HASH=… dans .env, puis :
+# Linux / VPS (bash) — sur macOS (zsh), la 1re ligne s'écrit : read -rs "P?Mot de passe : "; echo
+read -rs -p "Mot de passe : " P; echo
+printf '%s\n' "$P" | docker run --rm -i binome:latest hash-password --admin; unset P   # administration
+printf '%s\n' "$P" | docker run --rm -i binome:latest hash-password; unset P           # suppression
+# → copier la ligne BINOME_…_HASH=… affichée dans .env, puis :
 docker compose up -d          # ou ./start.sh -d en local
 ```
 
-Sans cette ligne, la suppression de parties est désactivée (les autres actions admin restent possibles).
+Changer le mot de passe admin invalide les sessions admin ouvertes (le jeton dérive de
+l'empreinte). L'ancienne variable en clair `BINOME_ADMIN_PASSWORD` est ignorée : la retirer du `.env`.
 
 ## Mises à jour du schéma
 

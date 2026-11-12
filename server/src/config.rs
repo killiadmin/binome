@@ -13,8 +13,12 @@ pub struct Config {
     pub static_dir: Option<PathBuf>,
     /// Préfixe public de l'application (`/binome`) : routes servies dessous et URLs d'images.
     pub public_prefix: String,
-    /// Mot de passe d'administration ; vide → administration fermée (403), comme Laravel.
-    pub admin_password: Option<String>,
+    /// Empreinte du mot de passe d'administration (`binome hash-password
+    /// --admin`) ; absente → administration fermée (403).
+    pub admin_password_hash: Option<String>,
+    /// Ancienne variable en clair (BINOME_ADMIN_PASSWORD / CHARACTERS_ACCESS_PASSWORD)
+    /// encore présente : ignorée, signalée au démarrage pour être retirée du .env.
+    pub legacy_admin_password_set: bool,
     /// Empreinte du mot de passe exigé pour supprimer des parties (`binome
     /// hash-password`) ; absente → suppression de parties désactivée.
     pub delete_password_hash: Option<String>,
@@ -40,8 +44,8 @@ impl Config {
             database: var("BINOME_DATABASE").unwrap_or_else(|| "/data/binome.sqlite".into()).into(),
             static_dir: var("BINOME_STATIC_DIR").map(PathBuf::from),
             public_prefix: if public_prefix == "/" { String::new() } else { public_prefix },
-            // Même variable que l'ancien backend, pour réutiliser le .env existant.
-            admin_password: var("BINOME_ADMIN_PASSWORD").or_else(|| var("CHARACTERS_ACCESS_PASSWORD")),
+            admin_password_hash: var("BINOME_ADMIN_PASSWORD_HASH"),
+            legacy_admin_password_set: var("BINOME_ADMIN_PASSWORD").is_some() || var("CHARACTERS_ACCESS_PASSWORD").is_some(),
             lan_url_file: var("BINOME_LAN_URL_FILE").map(PathBuf::from),
             delete_password_hash: var("BINOME_DELETE_PASSWORD_HASH"),
         })
