@@ -5,7 +5,9 @@
 #   docker compose up -d --build    # http://<hôte>:8080/binome/
 #
 # Variantes (fichiers à ajouter avec -f) :
-#   docker-compose.https.yml    VPS : HTTPS automatique (Caddy + Let's Encrypt)
+#   docker-compose.https.yml    VPS : HTTPS automatique (Caddy + Let's Encrypt). Sur le VPS,
+#                               COMPOSE_FILE et BINOME_PORT=127.0.0.1:8080 dans .env empêchent
+#                               d'exposer le port 8080 en clair (06-deploiement.md)
 #   docker-compose.portail.yml  réseau local derrière ../portail (killiadmin.local:8095)
 # Développement (Vite HMR + cargo run) : docker-compose.dev.yml, à utiliser seul.
 

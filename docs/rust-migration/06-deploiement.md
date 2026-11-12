@@ -7,7 +7,7 @@ SQLite dans le volume `binome_data`. Au repos : ~5 Mo de RAM, 0 % de CPU.
 | Fichier | Rôle |
 |---|---|
 | `Dockerfile` | Image de production (front → binaire musl → `scratch`) |
-| `docker-compose.yml` | Production, HTTP sur le port 8080 |
+| `docker-compose.yml` | Production, HTTP sur le port 8080 — **jamais seul sur le VPS** |
 | `docker-compose.https.yml` | + Caddy : HTTPS automatique (Let's Encrypt) — **VPS** |
 | `docker-compose.portail.yml` | Réseau local derrière `../portail` (utilisé par `./start.sh`) |
 | `docker-compose.dev.yml` | Développement : Vite (HMR) + `cargo run` |
@@ -28,10 +28,24 @@ ouverts dans le pare-feu.
 curl -fsSL https://get.docker.com | sh
 git clone <dépôt> binome && cd binome && git checkout <branche>
 
-cp .env.example .env          # renseigner BINOME_DOMAIN
-# empreinte du mot de passe admin, et (facultatif) de suppression : voir « Mots de passe » plus bas
-docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+cp .env.example .env && chmod 600 .env
+# renseigner BINOME_DOMAIN, décommenter COMPOSE_FILE et BINOME_PORT (section « VPS »), puis
+# l'empreinte du mot de passe admin, et (facultatif) de suppression : voir « Mots de passe » plus bas
+docker compose up -d --build  # = docker-compose.yml + docker-compose.https.yml (COMPOSE_FILE)
 ```
+
+**HTTP en clair impossible.** `docker-compose.yml` seul publie le port 8080 en HTTP, et Docker
+publie ses ports **en contournant UFW** : le pare-feu de l'hôte ne le bloquerait pas. D'où deux
+lignes dans le `.env` du VPS :
+
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml   # toute commande docker compose sans -f
+BINOME_PORT=127.0.0.1:8080    # filet : si docker-compose.yml est lancé seul, port local au VPS
+```
+
+Contrôle depuis une autre machine : `curl -m 5 http://<IP du VPS>:8080/` doit échouer, et
+`http://<domaine>/` doit rediriger vers `https://`. Toutes les commandes `docker compose` de ce
+document s'écrivent alors sans `-f` sur le VPS (elles sont données en forme longue, valable partout).
 
 L'application répond sur `https://<domaine>/binome/` (la racine redirige). Pour la servir à la
 racine du domaine : `BINOME_PUBLIC_PREFIX=/` dans `.env` avant le build.
