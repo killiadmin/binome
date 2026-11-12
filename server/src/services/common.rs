@@ -17,6 +17,10 @@ use crate::support::text::ci_key;
 pub struct Env {
     pub prefix: String,
     pub hub: Arc<Hub>,
+    /// Clé de signature des jetons de profil (services/profile.rs).
+    pub profile_secret: Arc<Vec<u8>>,
+    /// Pseudo du profil administrateur (`BINOME_ADMIN_PSEUDO`).
+    pub admin_pseudo: Option<String>,
 }
 
 // ─── Joueurs ────────────────────────────────────────────────────────────────
@@ -158,6 +162,10 @@ pub fn reaction_url(env: &Env, id: i64, is_unicode: bool, updated_at: Option<&st
 
 // ─── Parties ────────────────────────────────────────────────────────────────
 
+/// Demandes de changement de personnage par joueur et par partie : au-delà, il
+/// garde le personnage tiré (sauf retirage demandé par un autre joueur).
+pub const MAX_CHARACTER_CHANGES: i64 = 2;
+
 #[derive(Debug, Clone)]
 pub struct Game {
     pub id: i64,
@@ -167,6 +175,8 @@ pub struct Game {
     pub characters_confirmed_at: Option<String>,
     pub draw_number: i64,
     pub rejected_character_ids: Vec<i64>,
+    /// Demandes de changement de personnage déjà consommées, par joueur.
+    pub character_changes: std::collections::BTreeMap<i64, i64>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -178,6 +188,10 @@ impl Game {
     pub fn finished(&self) -> bool {
         self.status == "finished"
     }
+    /// Demandes de changement de personnage qu'il reste à ce joueur.
+    pub fn character_changes_left(&self, player_id: i64) -> i64 {
+        (MAX_CHARACTER_CHANGES - self.character_changes.get(&player_id).copied().unwrap_or(0)).max(0)
+    }
     /// Vote des personnages en cours : aucun round tant qu'il dure.
     pub fn voting(&self) -> bool {
         self.in_progress() && self.characters_confirmed_at.is_none()
@@ -186,7 +200,7 @@ impl Game {
 
 pub fn game(c: &impl Q, id: i64) -> AppResult<Option<Game>> {
     c.opt(
-        "SELECT id, room_id, status, characters_confirmed_at, draw_number, rejected_character_ids, created_at, updated_at FROM games WHERE id = ?1",
+        "SELECT id, room_id, status, characters_confirmed_at, draw_number, rejected_character_ids, created_at, updated_at, character_changes FROM games WHERE id = ?1",
         [id],
         |r| {
             let rejected: Option<String> = r.get(5)?;
@@ -197,6 +211,7 @@ pub fn game(c: &impl Q, id: i64) -> AppResult<Option<Game>> {
                 characters_confirmed_at: r.get(3)?,
                 draw_number: r.get(4)?,
                 rejected_character_ids: rejected.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default(),
+                character_changes: r.get::<_, Option<String>>(8)?.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default(),
                 created_at: r.get(6)?,
                 updated_at: r.get(7)?,
             })

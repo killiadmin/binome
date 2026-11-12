@@ -1,5 +1,5 @@
 <script setup>
-import {ref, onMounted, onUnmounted, computed} from 'vue'
+import {ref, onMounted, onUnmounted, computed, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {roomService} from '../../services/roomService'
 import {characterService} from '../../services/characterService'
@@ -12,6 +12,10 @@ import LobbyChat from '../../components/chat/LobbyChat.vue'
 import JoinQrCode from '../../components/room/JoinQrCode.vue'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 import AvatarEditor from '../../components/player/AvatarEditor.vue'
+import PasswordPromptModal from '../../components/player/PasswordPromptModal.vue'
+import {profileService} from '../../services/profileService'
+import {isLoggedIn, profilePlayer, setProfile, updateProfilePlayer} from '../../services/profile'
+import {resumeFromProfile} from '../../services/gameSession'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +27,29 @@ const showCreateModal = ref(false)
 const showJoinModal = ref(false)
 const codeToJoin = ref('')
 const error = ref(null)
+
+// ─── PROFIL ───────────────────────────────────────────────────────────────────
+// Connecté : le pseudo est celui du profil, non modifiable. Créer ou rejoindre
+// un salon connecte automatiquement au profil du pseudo saisi ; on propose
+// alors une seule fois de le protéger par un mot de passe.
+watch(profilePlayer, (p) => { if (p) playerName.value = p.pseudo }, {immediate: true})
+const showPasswordPrompt = ref(false)
+// Pseudo protégé saisi sans être connecté : lien vers la connexion
+const protectedPseudo = ref(null)
+
+function afterRoomEntry(data) {
+  if (!data.profile_token || !data.profile) return
+  setProfile(data.profile_token, data.profile)
+  const p = data.profile
+  if (!p.has_password && !p.password_prompted && !p.is_admin) showPasswordPrompt.value = true
+}
+
+function roomEntryError(e, fallback) {
+  const status = e.response?.status
+  const message = e.response?.data?.message
+  protectedPseudo.value = status === 403 && /protégé/.test(message ?? '') ? playerName.value.trim() : null
+  return message || fallback
+}
 
 const roomId = ref(null)
 const gameCode = ref(null)
@@ -133,7 +160,15 @@ function clearSession() {
 }
 
 async function restoreSession() {
-  const raw = localStorage.getItem('session')
+  let raw = localStorage.getItem('session')
+  if (!raw && isLoggedIn.value) {
+    // Autre navigateur : on retrouve le salon / la partie du profil connecté
+    try {
+      const {data} = await profileService.show()
+      updateProfilePlayer(data.player)
+      if (resumeFromProfile(data.player.id, data.current)) raw = localStorage.getItem('session')
+    } catch { /* profil indisponible : hall normal */ }
+  }
   if (!raw) return
 
   try {
@@ -200,6 +235,22 @@ function prefillJoinFromLink() {
   router.replace({ query: {} })
   if (gameCode.value || showRejoinModal.value) return
   codeToJoin.value = code
+  // Connecté : le pseudo est connu, le code aussi → on entre directement
+  if (isLoggedIn.value) handleJoinGame()
+  else showJoinModal.value = true
+}
+
+// Connecté, le pseudo est le seul champ : pas de modale, création immédiate.
+function openCreate() {
+  error.value = null
+  protectedPseudo.value = null
+  if (isLoggedIn.value) handleCreateGame()
+  else showCreateModal.value = true
+}
+
+function openJoin() {
+  error.value = null
+  protectedPseudo.value = null
   showJoinModal.value = true
 }
 
@@ -334,8 +385,9 @@ const handleCreateGame = async () => {
     initLobby(roomId.value)
 
     showCreateModal.value = false
+    afterRoomEntry(res.data)
   } catch (e) {
-    error.value = e.response?.data?.message || 'Erreur lors de la création du salon.'
+    error.value = roomEntryError(e, 'Erreur lors de la création du salon.')
   }
 }
 
@@ -365,8 +417,9 @@ const handleJoinGame = async () => {
     initLobby(roomId.value)
 
     showJoinModal.value = false
+    afterRoomEntry(res.data)
   } catch (e) {
-    error.value = e.response?.data?.message || 'Erreur lors de la connexion au salon.'
+    error.value = roomEntryError(e, 'Erreur lors de la connexion au salon.')
   }
 }
 
@@ -484,15 +537,18 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
       <div v-if="error && !showCreateModal && !showJoinModal" class="arcade-alert">
         <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+        <router-link v-if="protectedPseudo" :to="{ name: 'Login', query: { pseudo: protectedPseudo } }" class="login-link">
+          Se connecter
+        </router-link>
       </div>
 
       <!-- Boutons principaux : masqués quand un salon est actif, pour libérer l'écran -->
       <div v-if="!gameCode" class="cabinet-buttons">
-        <button class="cabinet-btn stacked" type="button" @click="error = null; showCreateModal = true">
+        <button class="cabinet-btn stacked" type="button" @click="openCreate">
           <span class="cabinet-btn__icon"><i class="fa-solid fa-plus"></i></span>
           <span class="cabinet-btn__label">Créer une partie</span>
         </button>
-        <button class="cabinet-btn stacked" type="button" @click="error = null; showJoinModal = true">
+        <button class="cabinet-btn stacked" type="button" @click="openJoin">
           <span class="cabinet-btn__icon"><i class="fa-solid fa-right-to-bracket"></i></span>
           <span class="cabinet-btn__label">Rejoindre une partie</span>
         </button>
@@ -763,8 +819,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
       <AvatarEditor
           v-model="showAvatarEditor"
           :player="me"
-          @updated="url => setAvatar(playerId, url)"
+          @updated="url => { setAvatar(playerId, url); updateProfilePlayer({ avatar_url: url }) }"
       />
+
+      <PasswordPromptModal v-model="showPasswordPrompt" />
 
       <!-- Chat commun : déplié par défaut hors salon, replié dès qu'on en rejoint un -->
       <LobbyChat :player-id="playerId" :is-in-room="!!gameCode" />
@@ -774,14 +832,21 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
         <!-- L'alerte de la page est masquée par la modale : on la répète ici -->
         <div v-if="error" class="arcade-alert mb-3" role="alert">
           <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+          <router-link v-if="protectedPseudo" :to="{ name: 'Login', query: { pseudo: protectedPseudo } }" class="login-link">
+            Se connecter
+          </router-link>
         </div>
         <div class="mb-3">
           <label class="form-label">Votre nom :</label>
           <BFormInput
               v-model="playerName"
               placeholder="Entrez votre nom"
+              :readonly="isLoggedIn"
               @keyup.enter="handleCreateGame"
           />
+          <p v-if="!isLoggedIn" class="pseudo-hint">
+            Déjà un profil protégé ? <router-link :to="{ name: 'Login' }">Connecte-toi</router-link>
+          </p>
         </div>
         <div class="text-center">
           <button type="button" class="cabinet-btn cabinet-btn--sm" @click="handleCreateGame">Créer</button>
@@ -794,13 +859,21 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
         <!-- L'alerte de la page est masquée par la modale : on la répète ici -->
         <div v-if="error" class="arcade-alert mb-3" role="alert">
           <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+          <router-link v-if="protectedPseudo" :to="{ name: 'Login', query: { pseudo: protectedPseudo } }" class="login-link">
+            Se connecter
+          </router-link>
         </div>
         <div class="mb-3">
           <label class="form-label">Votre nom :</label>
           <BFormInput
               v-model="playerName"
               placeholder="Entrez votre nom"
+              :readonly="isLoggedIn"
           />
+          <p v-if="isLoggedIn" class="pseudo-hint">Pseudo de ton profil.</p>
+          <p v-else class="pseudo-hint">
+            Déjà un profil protégé ? <router-link :to="{ name: 'Login' }">Connecte-toi</router-link>
+          </p>
         </div>
         <div class="mb-3">
           <label class="form-label">Code de la partie :</label>
@@ -838,6 +911,19 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 </template>
 
 <style scoped>
+.pseudo-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.login-link {
+  margin-left: 0.4rem;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+}
+
 .arcade-page {
   font-family: 'Baloo 2', system-ui, sans-serif;
   min-height: 100vh;

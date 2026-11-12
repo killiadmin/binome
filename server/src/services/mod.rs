@@ -15,6 +15,7 @@ pub mod common;
 pub mod game;
 pub mod history;
 pub mod play;
+pub mod profile;
 pub mod rooms;
 pub mod score;
 pub mod social;

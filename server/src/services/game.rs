@@ -43,8 +43,8 @@ pub fn start(tx: &Transaction, _env: &Env, room_id: i64, input: &Input) -> AppRe
 
     let now = now_db();
     let game_id = tx.insert(
-        "INSERT INTO games (room_id, status, draw_number, created_at, updated_at) VALUES (?1, 'in_progress', 1, ?2, ?2)",
-        (room.id, &now),
+        "INSERT INTO games (room_id, room_code, status, draw_number, created_at, updated_at) VALUES (?1, ?2, 'in_progress', 1, ?3, ?3)",
+        (room.id, &room.code, &now),
     )?;
     let ids: Vec<i64> = players.iter().map(|p| p.0).collect();
     assign_binomes(tx, game_id, &ids, &room, &[])?;
@@ -190,6 +190,11 @@ pub fn vote_character(tx: &Transaction, _env: &Env, game_id: i64, input: &Input)
     if seat.character_vote.is_some() {
         return Err(AppError::rule("Tu as déjà voté pour ce tirage."));
     }
+    if !accepted && g.character_changes_left(pid) == 0 {
+        return Err(AppError::rule(format!(
+            "Tu as déjà changé {MAX_CHARACTER_CHANGES} fois de personnage : tu joues avec celui-ci."
+        )));
+    }
     tx.run(
         "UPDATE binome_player SET character_vote = ?1, updated_at = ?2 WHERE binome_id = ?3 AND player_id = ?4",
         (if accepted { "accepted" } else { "change" }, now_db(), seat.binome_id, pid),
@@ -208,11 +213,17 @@ pub fn vote_character(tx: &Transaction, _env: &Env, game_id: i64, input: &Input)
     if acc.len() + change.len() < total {
         events.push(vote_cast(acc, change, g.draw_number));
     } else if !change.is_empty() {
-        redraw(tx, &g, &change_chars)?;
+        let changes = redraw(tx, &g, &change, &change_chars)?;
         events.push(Event::on(
             game_channel(g.id),
             "characters.redrawn",
-            json!({ "game_id": g.id, "draw_number": g.draw_number + 1, "change_count": change.len() }),
+            json!({
+                "game_id": g.id,
+                "draw_number": g.draw_number + 1,
+                "change_count": change.len(),
+                "change_player_ids": change,
+                "character_changes_left": changes_left_list(tx, &changes)?,
+            }),
         ));
     } else {
         tx.run("UPDATE games SET characters_confirmed_at = ?1, updated_at = ?1 WHERE id = ?2", (now_db(), g.id))?;
@@ -224,7 +235,8 @@ pub fn vote_character(tx: &Transaction, _env: &Env, game_id: i64, input: &Input)
 }
 
 /// Nouveau tirage complet avec les mêmes joueurs (pas les spectateurs arrivés depuis).
-fn redraw(tx: &Transaction, g: &Game, rejected_now: &[i64]) -> AppResult<()> {
+/// Chaque demandeur consomme une de ses demandes de changement. Renvoie la partie à jour.
+fn redraw(tx: &Transaction, g: &Game, askers: &[i64], rejected_now: &[i64]) -> AppResult<Game> {
     let players: Vec<i64> = seats(tx, g.id)?.iter().map(|s| s.player_id).collect();
     let mut rejected = g.rejected_character_ids.clone();
     for id in rejected_now {
@@ -232,14 +244,26 @@ fn redraw(tx: &Transaction, g: &Game, rejected_now: &[i64]) -> AppResult<()> {
             rejected.push(*id);
         }
     }
+    let mut changes = g.character_changes.clone();
+    for id in askers {
+        *changes.entry(*id).or_default() += 1;
+    }
     tx.run("DELETE FROM binomes WHERE game_id = ?1", [g.id])?;
     tx.run(
-        "UPDATE games SET draw_number = draw_number + 1, rejected_character_ids = ?1, updated_at = ?2 WHERE id = ?3",
-        (serde_json::to_string(&rejected).expect("json"), now_db(), g.id),
+        "UPDATE games SET draw_number = draw_number + 1, rejected_character_ids = ?1, character_changes = ?2, updated_at = ?3 WHERE id = ?4",
+        (serde_json::to_string(&rejected).expect("json"), serde_json::to_string(&changes).expect("json"), now_db(), g.id),
     )?;
     // Une partie en cours a toujours son salon (ses joueurs ne peuvent pas le quitter)
     let room = game_room(tx, g)?.ok_or_else(|| AppError::rule("Le salon de cette partie n'existe plus."))?;
-    assign_binomes(tx, g.id, &players, &room, &rejected)
+    assign_binomes(tx, g.id, &players, &room, &rejected)?;
+    game_or_404(tx, g.id)
+}
+
+/// Demandes de changement restantes de chaque joueur assis, par id croissant.
+fn changes_left_list(tx: &Transaction, g: &Game) -> AppResult<Vec<Value>> {
+    let mut ids: Vec<i64> = seats(tx, g.id)?.iter().map(|s| s.player_id).collect();
+    ids.sort_unstable();
+    Ok(ids.into_iter().map(|id| json!({ "player_id": id, "left": g.character_changes_left(id) })).collect())
 }
 
 /// Action telle que la montre le journal public de la partie.
@@ -304,7 +328,9 @@ pub fn show(c: &impl Q, env: &Env, game_id: i64) -> AppResult<Out> {
             "is_eliminated": s.is_eliminated,
             "is_excluded": s.is_excluded,
             "avatar_url": avatars.get(&crate::support::text::ci_key(&s.pseudo)),
+            "character_changes_left": g.character_changes_left(s.player_id),
         })).collect::<Vec<_>>(),
+        "max_character_changes": MAX_CHARACTER_CHANGES,
         "has_orphan": seated.iter().any(|s| s.is_orphan),
         "host_id": room.as_ref().map(|r| r.created_by),
         "characters_confirmed": !voting,

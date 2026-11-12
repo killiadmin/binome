@@ -156,6 +156,12 @@ $.game_id                                        int
 ```
 $                                                object
 $.change_count                                   int
+$.change_player_ids                              array
+$.change_player_ids[]                            int
+$.character_changes_left                         array
+$.character_changes_left[]                       object
+$.character_changes_left[].left                  int
+$.character_changes_left[].player_id             int
 $.draw_number                                    int
 $.game_id                                        int
 ```

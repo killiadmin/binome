@@ -40,6 +40,7 @@ Mesures : toujours sous `caffeinate -dims` (un Mac capot fermé se met en veille
 | `catalog` | accès admin, cosmos / univers / personnages (multipart, `_method=PUT`), validation, emojis admin, joueurs admin |
 | `game8` | partie complète à 8 + spectateur : refus de règles, retirage, questions, corrections de l'hôte, tirages de carte (montré / gardé / expiré à 30 s), accusations, vue omnisciente, vote des éliminés, réactions, déconnexions (passage de tour, accusé hors ligne, exclusion), fin, scores, récap, historique, classement |
 | `game7` | partie à 7 (orphelin) en accusations directes |
+| `profile` | connexion / création de profil, jeton (falsifié, révoqué), création connectée, proposition unique de mot de passe, pseudo protégé (salon, photo), reconnexion avec salon en cours, prise de contrôle refusée, changement / retrait du mot de passe, renommage, profil admin (`BINOME_ADMIN_PSEUDO=e2eAdminBanc` sur le serveur de test) |
 
 Le nettoyage se fait **par ids exacts** de ce que le banc a créé, jamais par motif.
 

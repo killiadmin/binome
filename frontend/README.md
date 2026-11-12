@@ -316,6 +316,10 @@ onMounted          → restoreSession() → roomService.get() → initLobby()
 
 ### `restoreSession()`
 
+Sans session locale mais **connecté à un profil**, `RoomPage` demande d'abord `GET /api/profile`
+et reconstruit la session à partir du salon / de la partie du profil
+(`services/gameSession.js` → `resumeFromProfile`) : c'est la reprise depuis un autre navigateur.
+
 Au `onMounted` de `RoomPage`, si une session existe :
 1. Appelle `GET /api/rooms/{roomId}` pour vérifier que la room existe encore
 2. Restaure le state Vue
@@ -323,6 +327,32 @@ Au `onMounted` de `RoomPage`, si une session existe :
 4. Appelle `initLobby()` pour se reconnecter au channel WebSocket
 
 Si la room n'existe plus → `clearSession()`.
+
+---
+
+## Profil connecté
+
+- `services/profile.js` — état réactif du profil, persisté sous la clé `profile` :
+  `{ token, player: { id, pseudo, avatar_url, has_password, password_prompted, is_admin } }`.
+  Exporte `isLoggedIn`, `isAdminProfile`, `profilePlayer`, `setProfile()`, `updateProfilePlayer()`,
+  `logout()` (qui reverrouille aussi l'accès admin). `api.js` envoie le jeton dans l'en-tête
+  `X-Profile-Token` sur toutes les requêtes.
+- `services/profileService.js` — `POST /profile/login`, `GET|PATCH /profile`,
+  `PUT|DELETE /profile/password`, `POST /profile/password-prompt`.
+- `services/gameSession.js` — lecture / reprise de la session de jeu (`resumeFromProfile`).
+- `pages/Profile/LoginPage.vue` (`/connexion`, `?pseudo=` pré-remplit) — après connexion :
+  partie en cours → `RoundPage`, salon → `/rooms`, sinon `/profil`. Profil admin : le jeton
+  `admin_token` reçu est stocké comme celui du cadenas (`charactersAccess.setToken`).
+- `pages/Profile/ProfilePage.vue` (`/profil`, garde `requiresProfile`) — photo (`AvatarEditor`),
+  pseudo, mot de passe, salon / partie en cours, parties jouées (lien `/historique?partie=ID`).
+- `components/player/PasswordPromptModal.vue` — proposition unique de mot de passe après la
+  première création / arrivée dans un salon (toute fermeture vaut refus).
+- `Navbar.vue` — onglet Connexion, ou onglet Profil (photo + pseudo) une fois connecté ; le
+  cadenas d'administration n'est rendu que pour le profil admin, et `router.js` refuse `/admin`
+  sans profil admin connecté.
+- `RoomPage.vue` — connecté : pseudo du profil en lecture seule, « Créer une partie » sans
+  modale, lien `?code=` rejoint directement ; la réponse de création / arrivée (`profile`,
+  `profile_token`) connecte automatiquement.
 
 ---
 

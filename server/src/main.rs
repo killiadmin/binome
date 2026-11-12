@@ -11,6 +11,7 @@
 //!                                         d'administration avec --admin (lu sur stdin)
 //!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
 //!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
+//!   binome prune-rooms [--apply]          adhésions de salon mortes (essai à blanc sans --apply)
 
 mod clock;
 mod config;
@@ -57,6 +58,10 @@ fn main() {
         Some("hash-password") => hash_password(&args),
         Some("list-characters") => run_tool(&cfg, tools::list_characters),
         Some("count-pending") => run_tool(&cfg, tools::count_pending),
+        Some("prune-rooms") => {
+            let apply = args.iter().any(|a| a == "--apply");
+            run_tool(&cfg, |db| tools::prune_rooms(db, apply))
+        }
         Some("backup") => match args.get(1) {
             Some(file) => run_tool(&cfg, |db| {
                 db.backup(std::path::Path::new(file))?;
@@ -141,7 +146,17 @@ fn serve(cfg: Config) -> i32 {
                 "BINOME_ADMIN_PASSWORD (mot de passe en clair) est ignorée : retire-la du .env et utilise BINOME_ADMIN_PASSWORD_HASH (`binome hash-password --admin`)"
             );
         }
+        let profile_secret = match db.profile_secret() {
+            Ok(s) => Arc::new(s),
+            Err(e) => fail(&format!("secret des jetons de profil : {e:?}")),
+        };
+        match (cfg.admin_pseudo.as_deref(), cfg.admin_password_hash.is_some()) {
+            (None, _) => tracing::warn!("BINOME_ADMIN_PSEUDO absent : aucun profil administrateur (le cadenas d'administration reste masqué)"),
+            (Some(p), false) => tracing::warn!("profil administrateur « {p} » inaccessible : BINOME_ADMIN_PASSWORD_HASH absente"),
+            (Some(p), true) => tracing::info!("profil administrateur : « {p} »"),
+        }
         let state = AppState {
+            profile_secret,
             db,
             hub: realtime::hub::Hub::new(),
             cfg: Arc::new(cfg.clone()),

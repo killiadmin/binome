@@ -16,6 +16,8 @@ export const TARGETS = {
         // Mots de passe du serveur de test (voir rust-stack.sh), jamais les vrais
         adminPassword: process.env.E2E_ADMIN_PASSWORD ?? 'e2e-admin-test',
         deletePassword: process.env.E2E_DELETE_PASSWORD ?? 'e2e-suppression-test',
+        // Pseudo du profil administrateur du serveur de test (BINOME_ADMIN_PSEUDO)
+        adminPseudo: process.env.E2E_ADMIN_PSEUDO ?? 'e2eAdminBanc',
     }),
 }
 

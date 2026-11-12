@@ -18,6 +18,11 @@ api.interceptors.request.use((config) => {
     if (token) {
         config.headers['X-Characters-Access'] = token
     }
+    // Jeton du profil connecté (clé partagée avec services/profile.js)
+    try {
+        const profile = JSON.parse(localStorage.getItem('profile') ?? 'null')
+        if (profile?.token) config.headers['X-Profile-Token'] = profile.token
+    } catch { /* clé illisible : requête sans profil */ }
     return config
 })
 

@@ -13,6 +13,8 @@ pub struct AppState {
     pub hub: Arc<Hub>,
     pub cfg: Arc<Config>,
     pub limiter: Arc<RateLimiter>,
+    /// Clé de signature des jetons de profil (table `app_secrets`).
+    pub profile_secret: Arc<Vec<u8>>,
 }
 
 impl AppState {

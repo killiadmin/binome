@@ -20,7 +20,7 @@ pub struct Input(pub Map<String, Value>);
 
 fn normalize(key: &str, v: Value) -> Value {
     match v {
-        Value::String(s) if key == "password" => Value::String(s),
+        Value::String(s) if key.ends_with("password") => Value::String(s),
         Value::String(s) => {
             let t = s.trim();
             if t.is_empty() { Value::Null } else { Value::String(t.to_string()) }

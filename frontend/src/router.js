@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getCharactersAccessToken } from "./services/charactersAccess";
+import { getProfileToken, isAdminProfile } from "./services/profile";
 
 import HomePage from "./pages/Home/HomePage.vue";
 import RoomPage from "./pages/Rooms/RoomPage.vue";
@@ -29,6 +30,18 @@ const routes = [
         path: "/historique",
         name: "History",
         component: () => import("./pages/History/HistoryPage.vue"),
+    },
+    {
+        path: "/connexion",
+        name: "Login",
+        component: () => import("./pages/Profile/LoginPage.vue"),
+    },
+    {
+        // Visible seulement une fois connecté (garde ci-dessous).
+        path: "/profil",
+        name: "Profile",
+        component: () => import("./pages/Profile/ProfilePage.vue"),
+        meta: { requiresProfile: true },
     },
     {
         path: '/game/:gameId',
@@ -85,10 +98,15 @@ const router = createRouter({
     routes,
 });
 
-// Accès direct à une page d'administration sans token -> retour à l'accueil.
+// Administration : réservée au profil administrateur connecté (et à son token
+// d'accès) ; accès direct par URL sinon -> retour à l'accueil. Le serveur
+// exige de toute façon le token sur chaque requête d'administration.
 router.beforeEach((to) => {
-    if (to.meta.requiresCharactersAccess && !getCharactersAccessToken()) {
+    if (to.meta.requiresCharactersAccess && !(getCharactersAccessToken() && isAdminProfile.value)) {
         return { name: 'Home' };
+    }
+    if (to.meta.requiresProfile && !getProfileToken()) {
+        return { name: 'Login' };
     }
 });
 

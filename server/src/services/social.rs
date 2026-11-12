@@ -139,6 +139,15 @@ fn avatar_event(tx: &Transaction, p: &Player, url: Option<String>) -> AppResult<
     Ok(Event::new(channels, "player.avatar.updated", json!({ "player_id": p.id, "avatar_url": url })))
 }
 
+/// Photo d'un profil protégé : seul son propriétaire connecté peut la changer.
+fn guard_protected(tx: &Transaction, env: &Env, p: &Player, token: Option<&str>) -> AppResult<()> {
+    let prof = crate::services::profile::by_id(tx, p.id)?.ok_or(AppError::NotFound)?;
+    if prof.is_protected(env) && crate::services::profile::authenticate(tx, env, token)?.map(|a| a.id) != Some(p.id) {
+        return Err(AppError::forbidden("Ce profil est protégé : connecte-toi pour changer sa photo."));
+    }
+    Ok(())
+}
+
 fn same_player(input: &Input, v: &mut V, p: &Player) -> AppResult<()> {
     let pid = v.req_int("player_id");
     let _ = input;
@@ -151,7 +160,7 @@ fn same_player(input: &Input, v: &mut V, p: &Player) -> AppResult<()> {
 }
 
 /// POST /players/{player}/avatar — JPEG carré 64–512 px ≤ 200 ko, recadré par le navigateur.
-pub fn avatar_update(tx: &Transaction, env: &Env, player_id: i64, input: &Input) -> AppResult<Out> {
+pub fn avatar_update(tx: &Transaction, env: &Env, player_id: i64, input: &Input, token: Option<&str>) -> AppResult<Out> {
     let p = player_or_404(tx, player_id)?;
     let mut v = V::new(input);
     let pid = v.req_int("player_id");
@@ -163,6 +172,7 @@ pub fn avatar_update(tx: &Transaction, env: &Env, player_id: i64, input: &Input)
     if pid != Some(p.id) {
         return Err(AppError::forbidden("Tu ne peux modifier que ta propre photo."));
     }
+    guard_protected(tx, env, &p, token)?;
     let bytes = image::check_square_jpeg(
         &data.expect("validé"),
         200 * 1024,
@@ -183,11 +193,12 @@ pub fn avatar_update(tx: &Transaction, env: &Env, player_id: i64, input: &Input)
 }
 
 /// DELETE /players/{player}/avatar
-pub fn avatar_destroy(tx: &Transaction, player_id: i64, input: &Input) -> AppResult<Out> {
+pub fn avatar_destroy(tx: &Transaction, env: &Env, player_id: i64, input: &Input, token: Option<&str>) -> AppResult<Out> {
     let p = player_or_404(tx, player_id)?;
     let mut v = V::new(input);
     same_player(input, &mut v, &p)?;
     v.finish()?;
+    guard_protected(tx, env, &p, token)?;
     tx.run("DELETE FROM player_avatars WHERE pseudo = ?1", [&p.pseudo])?;
     let event = avatar_event(tx, &p, None)?;
     Ok(Out::ok(json!({ "message": "Photo supprimée.", "avatar_url": null })).event(event))

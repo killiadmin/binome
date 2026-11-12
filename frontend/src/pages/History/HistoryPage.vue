@@ -1,5 +1,6 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { BContainer } from 'bootstrap-vue-next'
 import { historyService } from '../../services/historyService'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
@@ -138,9 +139,23 @@ function actionTail(a) {
 
 const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' }
 
-onMounted(() => {
-  loadGames()
+// Lien direct vers une partie (page Profil) : /historique?partie=ID l'ouvre.
+const route = useRoute()
+
+async function openLinkedGame() {
+  const id = Number(route.query.partie)
+  const game = id && games.value.find((g) => g.id === id)
+  if (!game) return
+  tab.value = 'games'
+  await toggleGame(game)
+  await nextTick()
+  document.getElementById(`partie-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
+onMounted(async () => {
   loadLeaderboard()
+  await loadGames()
+  openLinkedGame()
 })
 </script>
 
@@ -183,7 +198,7 @@ onMounted(() => {
       <p v-else-if="games.length === 0" class="muted">Aucune partie terminée pour le moment.</p>
 
       <ul v-else class="hist-list">
-        <li v-for="game in games" :key="game.id" class="hist-card">
+        <li v-for="game in games" :id="`partie-${game.id}`" :key="game.id" class="hist-card">
           <button type="button" class="hist-card__head" :aria-expanded="expandedGame === game.id" @click="toggleGame(game)">
             <div class="hist-card__main">
               <span class="hist-card__title">Partie #{{ game.id }}</span>
@@ -440,6 +455,8 @@ onMounted(() => {
 }
 
 .hist-card {
+  /* Lien direct (?partie=) : la carte ne passe pas sous la navbar fixe */
+  scroll-margin-top: calc(var(--navbar-height) + var(--navbar-gap));
   background: var(--arcade-dark-2);
   border: 2px solid var(--arcade-blue-grey-dark);
   border-radius: 12px;

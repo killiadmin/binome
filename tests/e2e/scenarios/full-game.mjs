@@ -73,7 +73,8 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         ctx.check(!left.data.players.some((p) => p.id === leaver.id) && left.data.new_host_id === null, 'player.left : liste à jour, pas de changement d\'hôte')
         mk = marks([host])
         const rejoin = await api.post('/rooms/join', { body: { pseudo: leaver.pseudo, code: room.code }, expect: 200 })
-        leaver.setId(rejoin.data.player.id) // supprimé au départ (n'avait jamais joué) → nouvel id
+        ctx.check(rejoin.data.player.id === leaver.id, 'retour au salon : le joueur garde son profil (même id)')
+        leaver.setId(rejoin.data.player.id)
         await leaver.reconnect()
         await leaver.sub(roomCh)
         await everyone([host], roomCh, 'player.joined', { pred: (d) => d.player.id === leaver.id, since: mk })
@@ -194,10 +195,38 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
             } else {
                 const [ev] = await everyone(watchers(), gameCh, 'characters.redrawn', { since: mk })
                 ctx.check(ev.data.draw_number === 2 && ev.data.change_count === 1, 'characters.redrawn : tirage n°2, 1 demande')
+                const left = new Map(ev.data.character_changes_left.map((c) => [c.player_id, c.left]))
+                ctx.check(left.size === bots.length && left.get(asker.id) === 1 && bots.every((x) => x === asker || left.get(x.id) === 2),
+                    'characters.redrawn : 1 changement restant au demandeur, 2 aux autres')
             }
         }
         await loadCharacters()
         ctx.check(!bots.some((b) => b.character.id === oldIds.get(asker.id)), 'retirage : le personnage refusé n\'est plus distribué')
+
+        // Deuxième et dernier changement du même joueur → tirage n°3, puis refus
+        let mk = marks(watchers())
+        for (const b of bots) {
+            await api.post('/games/:game/character-vote', { params: { game: gameId }, body: { player_id: b.id, character_id: b.character.id, accepted: b !== asker }, expect: 200 })
+        }
+        const [ev3] = await everyone(watchers(), gameCh, 'characters.redrawn', { since: mk })
+        ctx.check(ev3.data.draw_number === 3 && ev3.data.character_changes_left.find((c) => c.player_id === asker.id)?.left === 0,
+            'characters.redrawn : tirage n°3, plus aucun changement pour le demandeur')
+        const st = await gameState(ctx, gameId)
+        ctx.check(st.max_character_changes === 2 && st.players.find((p) => p.id === asker.id)?.character_changes_left === 0
+            && st.players.every((p) => p.id === asker.id || p.character_changes_left === 2), 'GET /games : changements restants par joueur')
+        await loadCharacters()
+        await ctx.refused(409, 'POST', '/games/:game/character-vote', { params: { game: gameId }, body: { player_id: asker.id, character_id: asker.character.id, accepted: false } }, 'troisième demande de changement')
+
+        // Un autre joueur peut encore demander : retirage pour tous, demandeur compris
+        const other = bots[2]
+        mk = marks(watchers())
+        for (const b of bots) {
+            await api.post('/games/:game/character-vote', { params: { game: gameId }, body: { player_id: b.id, character_id: b.character.id, accepted: b !== other }, expect: 200 })
+        }
+        const [ev4] = await everyone(watchers(), gameCh, 'characters.redrawn', { since: mk })
+        const left4 = new Map(ev4.data.character_changes_left.map((c) => [c.player_id, c.left]))
+        ctx.check(ev4.data.draw_number === 4 && left4.get(asker.id) === 0 && left4.get(other.id) === 1, 'characters.redrawn : retirage demandé par un autre joueur')
+        await loadCharacters()
     }
 
     m = marks(watchers())
@@ -664,9 +693,9 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     await ctx.refused(404, 'GET', '/rooms/:room', { params: { room: room.id } }, 'salon supprimé')
     // La partie survit au salon : historique et classement intacts
     const kept = await api.get('/history/games/:game', { params: { game: gameId } })
-    ctx.check(kept.status === 200 && kept.data.room_code === null && kept.data.game_stats.length === size, 'salon supprimé : la partie reste dans l\'historique (code de salon vide)')
+    ctx.check(kept.status === 200 && kept.data.room_code === room.code && kept.data.game_stats.length === size, 'salon supprimé : la partie reste dans l\'historique, avec le code de son salon')
     const listed = (await api.get('/history/games', { expect: 200 })).data.games.find((g) => g.id === gameId)
-    ctx.check(listed && listed.room_id === null && listed.room_code === null, 'historique : partie listée sans salon')
+    ctx.check(listed && listed.room_id === null && listed.room_code === room.code, 'historique : partie listée sans salon, code conservé')
     const stillRanked = (await api.get('/history/leaderboard', { expect: 200 })).data.leaderboard.some((r) => r.pseudo === host.pseudo)
     ctx.check(stillRanked, 'classement : les points de la partie sont conservés')
     for (const b of everyoneInRoom) b.rt?.close()

@@ -10,6 +10,7 @@ use crate::error::{AppError, AppResult};
 use crate::http::input::{Input, V};
 use crate::realtime::hub::Event;
 use crate::services::common::*;
+use crate::services::profile;
 use crate::services::{Events, Out};
 
 const PSEUDO_MESSAGES: &[(&str, &str)] = &[
@@ -33,7 +34,7 @@ fn first_or_create_player(tx: &Transaction, pseudo: &str) -> AppResult<Player> {
 }
 
 /// Un pseudo = un joueur : refusé s'il est connecté ailleurs (présence en mémoire).
-fn pseudo_in_use(tx: &Transaction, env: &Env, pseudo: &str) -> AppResult<()> {
+pub(crate) fn pseudo_in_use(tx: &Transaction, env: &Env, pseudo: &str) -> AppResult<()> {
     let Some(p) = tx.opt("SELECT id, pseudo FROM players WHERE pseudo = ?1", [pseudo], |r| Ok(Player { id: r.get(0)?, pseudo: r.get(1)? }))? else {
         return Ok(());
     };
@@ -71,8 +72,16 @@ fn player_json(tx: &Transaction, env: &Env, p: &Player) -> AppResult<Value> {
     Ok(json!({ "id": p.id, "pseudo": p.pseudo, "avatar_url": urls.get(&crate::support::text::ci_key(&p.pseudo)) }))
 }
 
+/// Connexion automatique au profil après création / arrivée dans un salon.
+fn with_profile(tx: &Transaction, env: &Env, mut body: Value, player_id: i64) -> AppResult<Value> {
+    let p = profile::by_id(tx, player_id)?.expect("joueur");
+    body["profile"] = profile::profile_json(tx, env, &p)?;
+    body["profile_token"] = Value::String(profile::token(env, &p));
+    Ok(body)
+}
+
 /// POST /rooms
-pub fn store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
+pub fn store(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) -> AppResult<Out> {
     let mut v = V::new(input).messages(&[
         PSEUDO_MESSAGES[0],
         PSEUDO_MESSAGES[1],
@@ -88,6 +97,7 @@ pub fn store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
     v.finish()?;
     let pseudo = pseudo.expect("validé");
 
+    profile::guard_pseudo(tx, env, &pseudo, token)?;
     pseudo_in_use(tx, env, &pseudo)?;
     let player = first_or_create_player(tx, &pseudo)?;
     let code = generate_code(tx)?;
@@ -100,15 +110,16 @@ pub fn store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
     )?;
     tx.run("INSERT INTO room_player (room_id, player_id, is_ready, created_at, updated_at) VALUES (?1, ?2, 0, ?3, ?3)", (room_id, player.id, &now))?;
 
-    Ok(Out::created(json!({
+    let body = json!({
         "message": "Salon créé avec succès.",
         "room": { "id": room_id, "code": code, "is_private": is_private, "max_players": max },
         "player": player_json(tx, env, &player)?,
-    })))
+    });
+    Ok(Out::created(with_profile(tx, env, body, player.id)?))
 }
 
 /// POST /rooms/join
-pub fn join(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
+pub fn join(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) -> AppResult<Out> {
     let mut v = V::new(input).messages(&[
         PSEUDO_MESSAGES[0],
         PSEUDO_MESSAGES[1],
@@ -137,6 +148,7 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
     if count >= room.max_players {
         return Err(AppError::rule("Ce salon est complet."));
     }
+    profile::guard_pseudo(tx, env, &pseudo, token)?;
     pseudo_in_use(tx, env, &pseudo)?;
     let player = first_or_create_player(tx, &pseudo)?;
     if tx.exists("SELECT 1 FROM room_player WHERE room_id = ?1 AND player_id = ?2", [room.id, player.id])? {
@@ -152,7 +164,7 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
         json!({ "player": { "id": player.id, "pseudo": player.pseudo, "is_ready": false }, "players": players }),
     );
 
-    Ok(Out::ok(json!({
+    let body = json!({
         "message": "Tu as rejoint le salon.",
         "room": {
             "id": room.id,
@@ -166,8 +178,8 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
             "players": players,
         },
         "player": player_json(tx, env, &player)?,
-    }))
-    .event(joined))
+    });
+    Ok(Out::ok(with_profile(tx, env, body, player.id)?).event(joined))
 }
 
 /// GET /rooms/{room}
@@ -289,12 +301,6 @@ pub fn remove_player(tx: &Transaction, env: &Env, room: &Room, player_id: i64, e
     Ok(())
 }
 
-/// Le joueur a-t-il déjà joué (ses parties pointent sur lui) ?
-pub fn has_played(c: &impl Q, player_id: i64) -> AppResult<bool> {
-    Ok(c.exists("SELECT 1 FROM binome_player WHERE player_id = ?1", [player_id])?
-        || c.exists("SELECT 1 FROM actions WHERE player_id = ?1", [player_id])?)
-}
-
 /// DELETE /rooms/{room}/leave
 pub fn leave(tx: &Transaction, env: &Env, room_id: i64, input: &Input) -> AppResult<Out> {
     let room = room_or_404(tx, room_id)?;
@@ -314,10 +320,8 @@ pub fn leave(tx: &Transaction, env: &Env, room_id: i64, input: &Input) -> AppRes
     }
     let count: i64 = tx.one("SELECT COUNT(*) FROM room_player WHERE room_id = ?1", [room.id])?;
     let mut events = vec![];
+    // Le joueur garde son profil (photo, mot de passe, historique) même sans avoir joué
     remove_player(tx, env, &room, pid, &mut events)?;
-    if !has_played(tx, pid)? {
-        tx.run("DELETE FROM players WHERE id = ?1", [pid])?;
-    }
     let msg = if count == 1 { "Salon supprimé car vide." } else { "Tu as quitté le salon." };
     Ok(Out::message(msg).with(events))
 }

@@ -27,7 +27,7 @@
 
 ## Couverture
 
-63 routes ; 63 observées par le banc.
+69 routes ; 69 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -448,7 +448,7 @@ $.players[].games_count                          int
 $.players[].id                                   int
 $.players[].in_game                              bool
 $.players[].pseudo                               string
-$.players[].room_code                            string
+$.players[].room_code                            null | string
 $.players[].score                                int
 $.players[].updated_at                           date:iso8601
 $.players[].wins                                 int
@@ -870,7 +870,7 @@ $.message                                        string
 
 Créer un salon (`409` si le pseudo est connecté ailleurs) — accès : public
 
-Statuts observés : `201`, `409`, `422`
+Statuts observés : `201`, `403`, `409`, `422`
 
 Réponse `201` :
 
@@ -881,6 +881,14 @@ $.player                                         object
 $.player.avatar_url                              null
 $.player.id                                      int
 $.player.pseudo                                  string
+$.profile                                        object
+$.profile.avatar_url                             null
+$.profile.has_password                           bool
+$.profile.id                                     int
+$.profile.is_admin                               bool
+$.profile.password_prompted                      bool
+$.profile.pseudo                                 string
+$.profile_token                                  string
 $.room                                           object
 $.room.code                                      string
 $.room.id                                        int
@@ -892,7 +900,7 @@ $.room.max_players                               int
 
 Rejoindre par code (mêmes `409`) — accès : public
 
-Statuts observés : `200`, `409`, `422`
+Statuts observés : `200`, `403`, `409`, `422`
 
 Réponse `200` :
 
@@ -903,6 +911,14 @@ $.player                                         object
 $.player.avatar_url                              null
 $.player.id                                      int
 $.player.pseudo                                  string
+$.profile                                        object
+$.profile.avatar_url                             null
+$.profile.has_password                           bool
+$.profile.id                                     int
+$.profile.is_admin                               bool
+$.profile.password_prompted                      bool
+$.profile.pseudo                                 string
+$.profile_token                                  string
 $.room                                           object
 $.room.best_question_vote                        bool
 $.room.code                                      string
@@ -972,7 +988,7 @@ $.reveal_to_eliminated                           bool
 
 Bascule prêt / pas prêt — accès : membre
 
-Statuts observés : `200`, `422`
+Statuts observés : `200`, `403`, `422`
 
 Réponse `200` :
 
@@ -1066,9 +1082,11 @@ $.draw_number                                    int
 $.game_id                                        int
 $.has_orphan                                     bool
 $.host_id                                        int
+$.max_character_changes                          int
 $.players                                        array
 $.players[]                                      object
 $.players[].avatar_url                           null | string
+$.players[].character_changes_left               int
 $.players[].id                                   int
 $.players[].is_eliminated                        bool
 $.players[].is_excluded                          bool
@@ -1493,4 +1511,144 @@ Réponse `200` :
 ```
 $                                                object
 $.message                                        string
+```
+
+### `DELETE /api/profile/password`
+
+— — accès : —
+
+Statuts observés : `200`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.player                                         object
+$.player.avatar_url                              string
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+$.token                                          string
+```
+
+### `GET /api/profile`
+
+— — accès : —
+
+Statuts observés : `200`, `401`
+
+Réponse `200` :
+
+```
+$                                                object
+$.current                                        null | object
+$.current.game_id                                null
+$.current.host_id                                int
+$.current.room_code                              string
+$.current.room_game_id                           null
+$.current.room_id                                int
+$.games                                          array
+$.player                                         object
+$.player.avatar_url                              null | string
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+$.totals                                         object
+$.totals.games_played                            int
+$.totals.total_score                             int
+$.totals.wins                                    int
+```
+
+### `PATCH /api/profile`
+
+— — accès : —
+
+Statuts observés : `200`, `403`, `409`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.player                                         object
+$.player.avatar_url                              string
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+$.token                                          string
+```
+
+### `POST /api/profile/login`
+
+— — accès : —
+
+Statuts observés : `200`, `409`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.admin_token                                    string
+$.current                                        null | object
+$.current.game_id                                null
+$.current.host_id                                int
+$.current.room_code                              string
+$.current.room_game_id                           null
+$.current.room_id                                int
+$.message                                        string
+$.player                                         object
+$.player.avatar_url                              null | string
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+$.token                                          string
+```
+
+### `POST /api/profile/password-prompt`
+
+— — accès : —
+
+Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.player                                         object
+$.player.avatar_url                              null
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+```
+
+### `PUT /api/profile/password`
+
+— — accès : —
+
+Statuts observés : `200`, `403`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.player                                         object
+$.player.avatar_url                              null
+$.player.has_password                            bool
+$.player.id                                      int
+$.player.is_admin                                bool
+$.player.password_prompted                       bool
+$.player.pseudo                                  string
+$.token                                          string
 ```

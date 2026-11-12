@@ -3,6 +3,8 @@ import {ref, watch, nextTick, onMounted, onBeforeUnmount} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
 import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
+import {isLoggedIn, isAdminProfile, profilePlayer} from '../../services/profile';
+import PlayerAvatar from '../player/PlayerAvatar.vue';
 import {copyToClipboard} from '../../services/copyToClipboard';
 import {resolveJoinUrl} from '../../services/joinUrl';
 import {isImmersive} from '../../composables/useImmersiveMode';
@@ -166,6 +168,16 @@ async function shareJoinUrl() {
       <BNavItem to="/historique" class="arcade-nav-link">
         <i class="fa-solid fa-ranking-star"></i> Historique
       </BNavItem>
+      <!-- Onglet Profil seulement une fois connecté ; sinon onglet Connexion -->
+      <BNavItem v-if="isLoggedIn" to="/profil" class="arcade-nav-link">
+        <span class="arcade-nav-avatar">
+          <PlayerAvatar :pseudo="profilePlayer.pseudo" :url="profilePlayer.avatar_url" :letters="1" />
+        </span>
+        <span class="arcade-nav-pseudo">{{ profilePlayer.pseudo }}</span>
+      </BNavItem>
+      <BNavItem v-else to="/connexion" class="arcade-nav-link">
+        <i class="fa-solid fa-user"></i> Connexion
+      </BNavItem>
       <li class="arcade-nav-link nav-item">
         <button
           type="button"
@@ -204,7 +216,8 @@ async function shareJoinUrl() {
           }}</span>
         </button>
       </li>
-      <li class="arcade-nav-link nav-item">
+      <!-- Administration : visible uniquement pour le profil administrateur -->
+      <li v-if="isAdminProfile" class="arcade-nav-link nav-item">
         <button
           v-if="!isCharactersUnlocked"
           type="button"
@@ -372,6 +385,29 @@ async function shareJoinUrl() {
 
 .arcade-copy-label {
   margin-left: 0.4rem;
+}
+
+/* Photo du profil connecté dans l'onglet Profil */
+.arcade-nav-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--arcade-taupe);
+  border: 2px solid var(--arcade-beige);
+  font-size: 0.8rem;
+  margin-right: 0.45rem;
+}
+
+.arcade-nav-pseudo {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .arcade-lock-btn.is-done {

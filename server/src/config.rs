@@ -16,6 +16,9 @@ pub struct Config {
     /// Empreinte du mot de passe d'administration (`binome hash-password
     /// --admin`) ; absente → administration fermée (403).
     pub admin_password_hash: Option<String>,
+    /// Pseudo du profil administrateur (`BINOME_ADMIN_PSEUDO`) : ce profil ne
+    /// s'ouvre qu'avec le mot de passe d'administration, et ouvre l'espace admin.
+    pub admin_pseudo: Option<String>,
     /// Ancienne variable en clair (BINOME_ADMIN_PASSWORD / CHARACTERS_ACCESS_PASSWORD)
     /// encore présente : ignorée, signalée au démarrage pour être retirée du .env.
     pub legacy_admin_password_set: bool,
@@ -45,6 +48,7 @@ impl Config {
             static_dir: var("BINOME_STATIC_DIR").map(PathBuf::from),
             public_prefix: if public_prefix == "/" { String::new() } else { public_prefix },
             admin_password_hash: var("BINOME_ADMIN_PASSWORD_HASH"),
+            admin_pseudo: var("BINOME_ADMIN_PSEUDO").map(|p| p.trim().to_string()),
             legacy_admin_password_set: var("BINOME_ADMIN_PASSWORD").is_some() || var("CHARACTERS_ACCESS_PASSWORD").is_some(),
             lan_url_file: var("BINOME_LAN_URL_FILE").map(PathBuf::from),
             delete_password_hash: var("BINOME_DELETE_PASSWORD_HASH"),

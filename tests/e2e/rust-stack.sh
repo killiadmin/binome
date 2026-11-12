@@ -23,6 +23,8 @@ env_file() {
   # Le banc l'envoie pour les suppressions de parties
   printf '%s\n' "${E2E_DELETE_PASSWORD:-e2e-suppression-test}" | docker run --rm -i -v binome_cargo_target:/target:ro \
     rust:1-bookworm "/target/$profile/binome" hash-password --iterations 1000 >> "$data/rust.env"
+  # Profil administrateur du banc (scénario profile)
+  printf 'BINOME_ADMIN_PSEUDO=%s\n' "${E2E_ADMIN_PSEUDO:-e2eAdminBanc}" >> "$data/rust.env"
 }
 
 case "${1:-}" in

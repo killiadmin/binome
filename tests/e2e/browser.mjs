@@ -44,6 +44,16 @@ for (const name of names) {
 const [host, ...guests] = pages
 const modal = (page) => page.locator('.modal.show')
 
+// Créer / rejoindre connecte au profil du pseudo et propose, une seule fois,
+// de le protéger par un mot de passe : on refuse (« Non merci »).
+async function declinePasswordPrompt(page) {
+    const prompt = modal(page).filter({ hasText: 'Protéger ton profil' })
+    await prompt.waitFor({ timeout: 8000 })
+    await prompt.getByRole('button', { name: 'Non merci' }).click()
+    await prompt.waitFor({ state: 'hidden', timeout: 8000 })
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('profile') ?? '{}').player?.password_prompted === true)
+}
+
 try {
     // ── Création du salon par l'interface ──────────────────────────────────
     await host.goto(`${base}/rooms`)
@@ -54,6 +64,7 @@ try {
     const session = await host.evaluate(() => JSON.parse(localStorage.getItem('session')))
     ok(session.gameCode?.length === 6, `salon créé par l'interface (code ${session.gameCode})`)
     ctx.created.players.add(session.playerId)
+    await declinePasswordPrompt(host)
 
     // ── Arrivée des invités par l'interface ────────────────────────────────
     for (const [i, page] of guests.entries()) {
@@ -64,7 +75,10 @@ try {
         await modal(page).getByRole('button', { name: 'Rejoindre' }).click()
         await page.waitForFunction(() => JSON.parse(localStorage.getItem('session') ?? '{}').roomId)
         ctx.created.players.add(await page.evaluate(() => JSON.parse(localStorage.getItem('session')).playerId))
+        await declinePasswordPrompt(page)
     }
+    const logged = await Promise.all(pages.map((p) => p.evaluate(() => JSON.parse(localStorage.getItem('profile') ?? '{}'))))
+    ok(logged.every((p, i) => p.token && p.player?.pseudo === names[i] && p.player.password_prompted), 'créer / rejoindre : connexion automatique au profil, proposition de mot de passe vue une fois')
     // Temps réel : l'hôte voit arriver tout le monde sans recharger
     for (const n of names.slice(1)) await host.getByText(n).first().waitFor({ timeout: 8000 })
     ok(true, 'l\'hôte voit les 3 invités arriver en temps réel (player.joined)')

@@ -22,7 +22,12 @@ const SCHEMA: &str = include_str!("../migrations/0001_schema.sql");
 
 /// Migrations appliquées après le schéma initial (version = `PRAGMA user_version`).
 /// Une base créée par une version antérieure à ce mécanisme est en version 1.
-const MIGRATIONS: &[(i64, &str)] = &[(2, include_str!("../migrations/0002_parties_conservees.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (2, include_str!("../migrations/0002_parties_conservees.sql")),
+    (3, include_str!("../migrations/0003_profils.sql")),
+    (4, include_str!("../migrations/0004_code_salon_des_parties.sql")),
+    (5, include_str!("../migrations/0005_changements_personnage.sql")),
+];
 const READERS: usize = 4;
 
 #[derive(Clone)]
@@ -66,6 +71,7 @@ impl Db {
             tracing::info!("schéma créé dans {}", path.display());
         }
         migrate(&mut writer)?;
+        ensure_secrets(&writer)?;
 
         let ro = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let readers = (0..READERS)
@@ -150,7 +156,24 @@ fn migrate(conn: &mut Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Secrets générés une fois, au premier démarrage après la migration 3.
+fn ensure_secrets(conn: &Connection) -> AppResult<()> {
+    use rand::RngExt;
+    let mut key = [0u8; 32];
+    rand::rng().fill(&mut key);
+    conn.execute("INSERT OR IGNORE INTO app_secrets (name, value) VALUES ('profile_token', ?1)", [hex::encode(key)])?;
+    Ok(())
+}
+
 impl Db {
+    /// Clé de signature des jetons de profil (32 octets).
+    pub fn profile_secret(&self) -> AppResult<Vec<u8>> {
+        self.with_writer(|c| {
+            let v: String = c.query_row("SELECT value FROM app_secrets WHERE name = 'profile_token'", [], |r| r.get(0))?;
+            hex::decode(v).map_err(|e| AppError::Internal(format!("secret de profil illisible : {e}")))
+        })
+    }
+
     /// Contrôle d'intégrité (pages, index, clés étrangères) et volumes par table.
     /// L'outil `sqlite3` standard ne connaît pas la collation BINOME_CI : ce contrôle
     /// passe donc par le binaire.
@@ -265,9 +288,15 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 2);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 5);
+            // Migration 5 : compteur de changements de personnage, vide pour l'existant
+            assert_eq!(c.one::<Option<String>>("SELECT character_changes FROM games WHERE id = 41", [])?, None);
+            // Migration 4 : le code du salon est copié dans la partie
+            assert_eq!(c.one::<Option<String>>("SELECT room_code FROM games WHERE id = 41", [])?.as_deref(), Some("ABCDEF"));
             c.run("DELETE FROM rooms WHERE id = 7", [])?;
             assert_eq!(c.one::<Option<i64>>("SELECT room_id FROM games WHERE id = 41", [])?, None);
+            // … sans perdre le code du salon (migration 4)
+            assert_eq!(c.one::<Option<String>>("SELECT room_code FROM games WHERE id = 41", [])?.as_deref(), Some("ABCDEF"));
             assert_eq!(c.one::<i64>("SELECT score FROM game_stats WHERE game_id = 41", [])?, 9);
             // Séquence conservée : pas de réutilisation de l'id 50
             let next = c.insert("INSERT INTO games (status) VALUES ('waiting')", [])?;
@@ -275,7 +304,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 2"));
+        assert!(db.check().unwrap().contains("version du schéma : 5"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

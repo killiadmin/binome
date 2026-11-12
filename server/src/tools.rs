@@ -3,6 +3,8 @@
 //! - `import-characters` : import de personnages en masse (propositions à valider) ;
 //! - `list-characters`   : tout le catalogue, refusés compris (avant de générer un lot) ;
 //! - `count-pending`     : nombre de binômes en attente de validation.
+//!
+//! Et `prune-rooms` : nettoyage des adhésions de salon mortes.
 
 use std::fs;
 use std::path::Path;
@@ -192,5 +194,105 @@ pub fn count_pending(db: &Db) -> AppResult<String> {
             [],
         )?;
         Ok(n.to_string())
+    })
+}
+
+// ─── Nettoyage des adhésions mortes ─────────────────────────────────────────
+
+/// `prune-rooms [--apply]` : adhésions mortes (salon d'une partie terminée, hall
+/// abandonné — règle `profile::LIVE_MEMBERSHIP`) et salons vides sans partie en
+/// cours. Sans `--apply`, simple liste. Avec : suppression en une transaction,
+/// comme des départs (salon vidé supprimé — ses parties restent dans
+/// l'historique avec leur code de salon, migration 4 ; sinon l'hôte passe au plus
+/// ancien restant).
+pub fn prune_rooms(db: &Db, apply: bool) -> AppResult<String> {
+    use crate::services::profile::{lobby_cutoff, LIVE_MEMBERSHIP, LOBBY_TTL_HOURS};
+    db.with_writer(|conn| {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let dead: Vec<(i64, i64, String, String)> = tx.all(
+            &format!(
+                "SELECT rp.id, r.id, r.code, p.pseudo FROM room_player rp
+                 JOIN rooms r ON r.id = rp.room_id JOIN players p ON p.id = rp.player_id
+                 WHERE NOT {LIVE_MEMBERSHIP} ORDER BY r.id, rp.id"
+            ),
+            rusqlite::named_params! { ":since": lobby_cutoff() },
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+        let empty: Vec<(i64, String)> = tx.all(
+            "SELECT r.id, r.code FROM rooms r
+             WHERE NOT EXISTS (SELECT 1 FROM room_player rp WHERE rp.room_id = r.id)
+               AND NOT EXISTS (SELECT 1 FROM games g WHERE g.room_id = r.id AND g.status = 'in_progress')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+
+        // Regroupement par salon, dans l'ordre
+        let mut rooms: Vec<(i64, String, Vec<String>)> = vec![];
+        for (_, room_id, code, pseudo) in &dead {
+            match rooms.last_mut() {
+                Some((id, _, names)) if id == room_id => names.push(pseudo.clone()),
+                _ => rooms.push((*room_id, code.clone(), vec![pseudo.clone()])),
+            }
+        }
+        let mut lines = vec![format!(
+            "Adhésions mortes : {} dans {} salon(s) (partie terminée depuis l'arrivée, ou hall inactif depuis plus de {LOBBY_TTL_HOURS} h)",
+            dead.len(),
+            rooms.len()
+        )];
+        let mut deleted_rooms = 0;
+        let mut orphaned_games = 0;
+        for (room_id, code, names) in &rooms {
+            let total: i64 = tx.one("SELECT COUNT(*) FROM room_player WHERE room_id = ?1", [room_id])?;
+            let games: i64 = tx.one("SELECT COUNT(*) FROM games WHERE room_id = ?1", [room_id])?;
+            let emptied = total as usize == names.len();
+            let fate = if emptied {
+                deleted_rooms += 1;
+                orphaned_games += games;
+                format!("salon supprimé ({games} partie(s) gardée(s) dans l'historique)")
+            } else {
+                format!("{} joueur(s) restent", total as usize - names.len())
+            };
+            lines.push(format!("  {code} (#{room_id}) : {} → {fate}", names.join(", ")));
+        }
+        for (room_id, code) in &empty {
+            let games: i64 = tx.one("SELECT COUNT(*) FROM games WHERE room_id = ?1", [room_id])?;
+            deleted_rooms += 1;
+            orphaned_games += games;
+            lines.push(format!("  {code} (#{room_id}) : déjà vide → salon supprimé ({games} partie(s) gardée(s) dans l'historique)"));
+        }
+
+        if !apply {
+            lines.push(format!(
+                "Essai à blanc : rien n'est modifié. Relancer avec --apply pour supprimer ({deleted_rooms} salon(s) ; {orphaned_games} partie(s) gardée(s) avec leur code)."
+            ));
+            return Ok(lines.join("\n"));
+        }
+        let now = now_db();
+        for (rp_id, ..) in &dead {
+            tx.run("DELETE FROM room_player WHERE id = ?1", [rp_id])?;
+        }
+        for room_id in rooms.iter().map(|r| r.0).chain(empty.iter().map(|r| r.0)) {
+            let left: Option<i64> = tx.opt("SELECT player_id FROM room_player WHERE room_id = ?1 ORDER BY id LIMIT 1", [room_id], |r| r.get(0))?;
+            match left {
+                None => {
+                    tx.run("DELETE FROM rooms WHERE id = ?1", [room_id])?;
+                }
+                Some(oldest) => {
+                    // L'hôte faisait partie des adhésions mortes : il passe au plus ancien restant
+                    tx.run(
+                        "UPDATE rooms SET created_by = ?1, updated_at = ?2 WHERE id = ?3
+                         AND created_by NOT IN (SELECT player_id FROM room_player WHERE room_id = ?3)",
+                        rusqlite::params![oldest, now, room_id],
+                    )?;
+                }
+            }
+        }
+        let broken: i64 = tx.one("SELECT COUNT(*) FROM pragma_foreign_key_check", [])?;
+        if broken > 0 {
+            return Err(AppError::Internal(format!("{broken} référence(s) cassée(s) : nettoyage annulé")));
+        }
+        tx.commit()?;
+        lines.push(format!("Supprimé : {} adhésion(s), {deleted_rooms} salon(s).", dead.len()));
+        Ok(lines.join("\n"))
     })
 }

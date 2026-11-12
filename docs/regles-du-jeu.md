@@ -61,6 +61,14 @@ tous n'ont pas voté** (`binome_player.character_vote` : `null` | `accepted` | `
   suffit plus sans eux, auquel cas on tire sur tous les personnages.
 - **Tous ont accepté** → `games.characters_confirmed_at` est renseigné et le round 1 est créé.
 - Un vote est définitif pour le tirage en cours.
+- Chaque joueur dispose d'au plus **2 demandes de changement par partie**
+  (`MAX_CHARACTER_CHANGES`, `server/src/services/common.rs`). Une demande n'est consommée
+  qu'au retirage qu'elle déclenche (compteur `games.character_changes`, JSON
+  `{"<player_id>": n}`, migration 5). Au-delà, le serveur refuse la demande (`409`) et le
+  front n'affiche plus que « Je le connais » : le joueur garde son personnage… sauf si un
+  autre joueur demande à changer, auquel cas il est retiré comme tout le monde. Le compteur
+  restant est public : `players[].character_changes_left` (+ `max_character_changes`) dans
+  `GET /games/{game}`, `character_changes_left[]` dans `characters.redrawn`.
 - Tant que le vote dure, il n'existe aucun round : personne ne peut jouer, et l'hôte ne peut
   ni passer un tour ni exclure (`409`). Un joueur déconnecté bloque donc le vote jusqu'à son retour.
 
@@ -194,9 +202,50 @@ classement). L'agrégation porte sur `game_stats.player_pseudo`, dénormalisé, 
 suppression du joueur. Les ex æquo partagent leur rang (1, 2, 2, 4).
 
 **Les parties survivent à leur salon** : quand le dernier joueur quitte un salon, le salon est
-supprimé mais ses parties restent dans l'historique et le classement (le code du salon y
-apparaît vide). Seul un administrateur peut supprimer une partie, avec un mot de passe dédié
+supprimé mais ses parties restent dans l'historique et le classement, avec le code de leur
+salon (mémorisé par la partie à son lancement). Seul un administrateur peut supprimer une partie, avec un mot de passe dédié
 (voir ci-dessous).
+
+### Profils et connexion
+
+Chaque pseudo est un **profil** : photo, parties jouées, statistiques. On s'y connecte par
+l'onglet **Connexion** avec son pseudo (un pseudo inconnu crée le profil), plus son mot de passe
+s'il est protégé. L'onglet **Profil** n'apparaît qu'une fois connecté.
+
+- **Public ou protégé** : un profil est public par défaut (n'importe qui peut s'y connecter
+  avec le pseudo seul). Son propriétaire peut le protéger par un mot de passe (6 caractères
+  minimum) depuis l'onglet Profil, le changer ou le retirer (l'actuel est alors exigé). Poser ou
+  changer le mot de passe déconnecte les autres appareils connectés à ce profil.
+- **Connexion automatique** : créer ou rejoindre un salon en tapant un pseudo connecte à ce
+  profil. Si le profil n'est pas protégé et que la question n'a jamais été posée, on propose
+  **une seule fois** de le protéger (le refus est mémorisé en base).
+- **Connecté** : le pseudo des modales Créer / Rejoindre est celui du profil, non modifiable ;
+  « Créer une partie » crée directement le salon, et un lien d'invitation (`?code=`) fait entrer
+  directement dans le salon.
+- **Pseudo protégé** : créer ou rejoindre un salon sous le pseudo d'un profil protégé exige
+  d'être connecté à ce profil (sinon refus, avec un lien vers la connexion). Sa photo aussi.
+- **Reprise sur un autre appareil** : se connecter à son profil ramène dans son salon, ou
+  directement dans sa partie en cours. La page Profil propose aussi « Rejoindre la partie ».
+  Un salon ne compte comme « en cours » que s'il a une partie en cours, ou s'il attend une
+  partie : aucune partie terminée depuis l'arrivée du joueur et de l'activité (création,
+  arrivée, « prêt ») depuis moins de 12 h. En fin de partie on revient à l'accueil sans quitter
+  le salon : sans cette règle, le profil renverrait vers le salon d'une partie finie.
+  Un profil **public** déjà connecté sur un autre appareil est refusé (pas de prise de contrôle
+  d'un joueur en pleine partie) ; un profil protégé, ouvert avec son mot de passe, est accepté.
+- **Changer de pseudo** : depuis l'onglet Profil, hors de tout salon. Photo, statistiques,
+  classement et emojis créés suivent le profil. Refusé si le pseudo est pris ou a déjà un
+  historique de parties.
+- **Profil conservé** : quitter un salon ne supprime plus le joueur, même sans avoir joué
+  (seul un administrateur peut supprimer un joueur).
+- **Profil administrateur** : le pseudo `BINOME_ADMIN_PSEUDO` est réservé ; son profil ne s'ouvre
+  qu'avec le mot de passe d'administration (2 essais par minute), et seul ce profil voit le
+  cadenas d'administration de la barre de navigation. Son pseudo et son mot de passe se changent
+  dans la configuration du serveur.
+- **Limites** : 5 mots de passe faux par minute et par profil, 30 tous profils confondus.
+
+Le mot de passe protège le **profil**, pas les actions de jeu : celles-ci restent identifiées
+par le numéro de joueur, comme avant (identité non signée, voir la checklist de mise en
+production, point 5).
 
 ### Suppression de parties (administration)
 

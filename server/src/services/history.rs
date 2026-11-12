@@ -24,11 +24,11 @@ pub fn list_games(c: &impl Q, finished_only: bool) -> AppResult<Out> {
     let filter = if finished_only { "WHERE g.status = 'finished'" } else { "" };
     let games = c.all(
         &format!(
-            "SELECT g.id, g.room_id, r.code, g.status, g.created_at, g.updated_at,
+            "SELECT g.id, g.room_id, g.room_code, g.status, g.created_at, g.updated_at,
                     (SELECT COUNT(*) FROM binomes b WHERE b.game_id = g.id),
                     (SELECT COUNT(*) FROM rounds rd WHERE rd.game_id = g.id),
                     (SELECT COUNT(*) FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id WHERE b.game_id = g.id)
-             FROM games g LEFT JOIN rooms r ON r.id = g.room_id {filter}
+             FROM games g {filter}
              ORDER BY g.created_at DESC, g.id DESC"
         ),
         [],
@@ -102,7 +102,7 @@ pub fn detail(c: &impl Q, env: &Env, game_id: i64, finished_only: bool) -> AppRe
     if finished_only && !g.finished() {
         return Err(AppError::Status(axum::http::StatusCode::NOT_FOUND, "Cette partie n'est pas terminée.".into()));
     }
-    let code: Option<String> = c.opt("SELECT code FROM rooms WHERE id = ?1", [g.room_id], |r| r.get(0))?;
+    let code: Option<String> = c.one("SELECT room_code FROM games WHERE id = ?1", [g.id])?;
     let seated = seats(c, g.id)?;
     let stats = game_stats(c, g.id)?;
     let actions = game_actions(c, g.id)?;
@@ -238,9 +238,9 @@ pub fn player_breakdown(c: &impl Q, input: &Input) -> AppResult<Out> {
     let pseudo = v.req_str("pseudo", None, Some(20));
     v.finish()?;
     let rows = c.all(
-        "SELECT s.game_id, r.code, g.created_at, s.character_name, s.score, s.eliminations, s.rounds_survived, s.is_winner,
+        "SELECT s.game_id, g.room_code, g.created_at, s.character_name, s.score, s.eliminations, s.rounds_survived, s.is_winner,
                 s.is_eliminated, s.player_pseudo
-         FROM game_stats s JOIN games g ON g.id = s.game_id LEFT JOIN rooms r ON r.id = g.room_id
+         FROM game_stats s JOIN games g ON g.id = s.game_id
          WHERE s.player_pseudo = ?1 AND g.status = 'finished'
          ORDER BY g.created_at DESC, s.id DESC",
         [pseudo.expect("validé")],

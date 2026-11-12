@@ -24,6 +24,12 @@ export const charactersAccess = {
         localStorage.setItem(CHARACTERS_ACCESS_KEY, data.token)
     },
 
+    /** Jeton reçu à la connexion au profil administrateur. */
+    setToken(token) {
+        state.token = token
+        localStorage.setItem(CHARACTERS_ACCESS_KEY, token)
+    },
+
     /** Reverrouille l'accès (oublie le token). */
     lock() {
         state.token = null

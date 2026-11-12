@@ -22,8 +22,8 @@ export async function lobby(ctx) {
     ctx.check(left.data.new_host_id === g.id, 'départ de l\'hôte : l\'hôte passe au joueur suivant')
     const view = (await api.get('/rooms/:room', { params: { room: room.id }, expect: 200 })).data.room
     ctx.check(view.created_by === g.id && view.players.length === 1, 'GET /rooms : created_by mis à jour')
-    // L'ancien hôte n'avait jamais joué : il a été supprimé en partant
-    await ctx.refused(422, 'PATCH', '/rooms/:room/ready', { params: { room: room.id }, body: { player_id: h.id } }, 'ready d\'un joueur supprimé à son départ')
+    // L'ancien hôte garde son profil (plus supprimé au départ) mais n'est plus dans le salon
+    await ctx.refused(403, 'PATCH', '/rooms/:room/ready', { params: { room: room.id }, body: { player_id: h.id } }, 'ready d\'un joueur parti du salon')
     const last = await api.delete('/rooms/:room/leave', { params: { room: room.id }, body: { player_id: g.id }, expect: 200 })
     ctx.check(/supprimé/.test(last.data.message), 'dernier départ : salon supprimé')
     g.rt.close()

@@ -18,7 +18,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::error::{AppError, AppResult};
 use crate::realtime::ws;
 use crate::services::common::Env;
-use crate::services::{admin, catalog, game, history, play, rooms, score, social, Followup, Out};
+use crate::services::{admin, catalog, game, history, play, profile, rooms, score, social, Followup, Out};
 use crate::state::AppState;
 use crate::timers;
 use input::Input;
@@ -32,7 +32,12 @@ fn id(p: &HashMap<String, String>, name: &str) -> AppResult<i64> {
 
 impl AppState {
     fn env(&self) -> Env {
-        Env { prefix: self.prefix(), hub: self.hub.clone() }
+        Env {
+            prefix: self.prefix(),
+            hub: self.hub.clone(),
+            profile_secret: self.profile_secret.clone(),
+            admin_pseudo: self.cfg.admin_pseudo.clone(),
+        }
     }
 
     /// Réponse d'une opération : publication des events et suites, puis JSON.
@@ -74,6 +79,11 @@ impl AppState {
     }
 }
 
+/// Jeton de profil (`X-Profile-Token`), posé par le front quand le joueur est connecté.
+fn profile_token(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers.get("x-profile-token").and_then(|v| v.to_str().ok()).map(str::to_string)
+}
+
 fn raw_player_key(input: &Input) -> String {
     format!("p:{}", input.get("player_id").map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).unwrap_or_default())
 }
@@ -100,11 +110,13 @@ async fn require_admin(State(st): State<AppState>, req: Request, next: Next) -> 
 
 // ─── Salons ─────────────────────────────────────────────────────────────────
 
-async fn rooms_store(State(st): State<AppState>, input: Input) -> Response {
-    st.write(move |tx, env| rooms::store(tx, env, &input)).await
+async fn rooms_store(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let token = profile_token(&headers);
+    st.write(move |tx, env| rooms::store(tx, env, &input, token.as_deref())).await
 }
-async fn rooms_join(State(st): State<AppState>, input: Input) -> Response {
-    st.write(move |tx, env| rooms::join(tx, env, &input)).await
+async fn rooms_join(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let token = profile_token(&headers);
+    st.write(move |tx, env| rooms::join(tx, env, &input, token.as_deref())).await
 }
 async fn rooms_show(State(st): State<AppState>, Path(p): Params) -> Response {
     st.read(move |c, env| rooms::show(c, env, id(&p, "room")?)).await
@@ -207,17 +219,19 @@ async fn avatar_show(State(st): State<AppState>, Path(p): Params) -> Response {
         Err(e) => e.into_response(),
     }
 }
-async fn avatar_update(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+async fn avatar_update(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
     if let Some(r) = st.throttle("avatars", &format!("p:{}", p.get("player").cloned().unwrap_or_default()), 10) {
         return r;
     }
-    st.write(move |tx, env| social::avatar_update(tx, env, id(&p, "player")?, &input)).await
+    let token = profile_token(&headers);
+    st.write(move |tx, env| social::avatar_update(tx, env, id(&p, "player")?, &input, token.as_deref())).await
 }
-async fn avatar_destroy(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+async fn avatar_destroy(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
     if let Some(r) = st.throttle("avatars", &format!("p:{}", p.get("player").cloned().unwrap_or_default()), 10) {
         return r;
     }
-    st.write(move |tx, _| social::avatar_destroy(tx, id(&p, "player")?, &input)).await
+    let token = profile_token(&headers);
+    st.write(move |tx, env| social::avatar_destroy(tx, env, id(&p, "player")?, &input, token.as_deref())).await
 }
 async fn character_image(State(st): State<AppState>, Path(p): Params) -> Response {
     match st.db.read(move |c| catalog::character_image(c, id(&p, "character")?)).await {
@@ -240,6 +254,148 @@ async fn reactions_image(State(st): State<AppState>, Path(p): Params) -> Respons
         Ok(bytes) => image_response("image/jpeg", bytes),
         Err(e) => e.into_response(),
     }
+}
+
+// ─── Profils ─────────────────────────────────────────────────────────────────
+
+/// Vérifie un mot de passe (PBKDF2, hors des threads réseau) sous limite de
+/// débit : la tentative est réservée avant la vérification, rendue si elle
+/// réussit (seuls les échecs comptent, requêtes parallèles comprises). Deux
+/// seaux : celui du profil (`key`) et un plafond global, qui borne aussi le
+/// temps de calcul qu'un attaquant peut imposer au serveur.
+async fn check_password(st: &AppState, key: &str, per_minute: usize, field: &str, given: Option<String>, stored: String) -> Result<(), Response> {
+    const GLOBAL: (&str, &str, usize) = ("profile-login", "global", 30);
+    let Some(given) = given else {
+        return Err(AppError::field(field, "Ce profil est protégé : entre son mot de passe.").into_response());
+    };
+    let bucket = if key == "admin" { ("admin-login", "tentatives") } else { ("profile-login", key) };
+    if !st.limiter.hit(bucket.0, bucket.1, per_minute) {
+        tracing::warn!("connexion au profil refusée : trop de tentatives ({key})");
+        return Err(AppError::TooManyRequests.into_response());
+    }
+    if !st.limiter.hit(GLOBAL.0, GLOBAL.1, GLOBAL.2) {
+        st.limiter.release(bucket.0, bucket.1);
+        tracing::warn!("connexion au profil refusée : trop de tentatives (tous profils)");
+        return Err(AppError::TooManyRequests.into_response());
+    }
+    let ok = tokio::task::spawn_blocking(move || crate::support::password::verify(&given, &stored)).await.unwrap_or(false);
+    if ok {
+        st.limiter.release(bucket.0, bucket.1);
+        st.limiter.release(GLOBAL.0, GLOBAL.1);
+        Ok(())
+    } else {
+        tracing::warn!("connexion au profil refusée : mot de passe incorrect ({key})");
+        Err(AppError::field(field, "Mot de passe incorrect.").into_response())
+    }
+}
+
+/// POST /profile/login — pseudo + mot de passe s'il est protégé ; un pseudo
+/// inconnu crée le profil. Le profil admin s'ouvre avec le mot de passe
+/// d'administration (même limite que le cadenas : 2 essais par minute) et
+/// renvoie aussi le jeton d'administration.
+async fn profile_login(State(st): State<AppState>, input: Input) -> Response {
+    let (pseudo, password) = match profile::login_input(&input) {
+        Ok(x) => x,
+        Err(e) => return e.into_response(),
+    };
+    let env = st.env();
+    let probe = pseudo.clone();
+    let gate = match st.db.read(move |c| profile::gate(c, &env, &probe)).await {
+        Ok(g) => g,
+        Err(e) => return e.into_response(),
+    };
+    let (verified, admin_token) = match gate {
+        profile::Gate::Open => (None, None),
+        profile::Gate::Admin => {
+            let Some(hash) = st.cfg.admin_password_hash.clone() else {
+                return AppError::forbidden("Ce pseudo est réservé.").into_response();
+            };
+            if let Err(r) = check_password(&st, "admin", 2, "password", password, hash.clone()).await {
+                return r;
+            }
+            (None, Some(catalog::access_token(&hash)))
+        }
+        profile::Gate::Password(id, hash) => {
+            if let Err(r) = check_password(&st, &format!("p:{id}"), 5, "password", password, hash.clone()).await {
+                return r;
+            }
+            (Some(hash), None)
+        }
+    };
+    st.write(move |tx, env| {
+        let mut out = profile::login(tx, env, &pseudo, verified.as_deref(), admin_token.is_some())?;
+        if let Some(t) = admin_token {
+            out.body["admin_token"] = serde_json::Value::String(t);
+        }
+        Ok(out)
+    })
+    .await
+}
+async fn profile_show(State(st): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    let token = profile_token(&headers);
+    st.read(move |c, env| profile::show(c, env, token.as_deref())).await
+}
+async fn profile_rename(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let token = profile_token(&headers);
+    st.write(move |tx, env| profile::rename(tx, env, token.as_deref(), &input)).await
+}
+async fn profile_prompt(State(st): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    let token = profile_token(&headers);
+    st.write(move |tx, env| profile::dismiss_prompt(tx, env, token.as_deref())).await
+}
+
+/// Profil connecté (lecture), pour une opération sur son mot de passe.
+async fn password_owner(st: &AppState, headers: &axum::http::HeaderMap) -> Result<profile::Profile, Response> {
+    let token = profile_token(headers);
+    let env = st.env();
+    let p = st.db.read(move |c| profile::require(c, &env, token.as_deref())).await.map_err(IntoResponse::into_response)?;
+    if p.is_admin(&st.env()) {
+        return Err(AppError::forbidden("Le mot de passe du profil administrateur est celui de l'administration (configuration du serveur).").into_response());
+    }
+    Ok(p)
+}
+
+/// PUT /profile/password — pose ou change le mot de passe (l'actuel est exigé
+/// s'il y en a un). Les autres appareils connectés au profil sont déconnectés.
+async fn profile_password_set(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let seen = match password_owner(&st, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let (new, current) = match profile::password_input(&input, true, seen.password_hash.is_some()) {
+        Ok(x) => x,
+        Err(e) => return e.into_response(),
+    };
+    if let Some(stored) = seen.password_hash.clone() {
+        if let Err(r) = check_password(&st, &format!("p:{}", seen.id), 5, "current_password", current, stored).await {
+            return r;
+        }
+    }
+    let new = new.expect("validé");
+    let hash = match tokio::task::spawn_blocking(move || crate::support::password::hash(&new, crate::support::password::DEFAULT_ITERATIONS)).await {
+        Ok(h) => h,
+        Err(e) => return AppError::Internal(format!("empreinte du mot de passe : {e}")).into_response(),
+    };
+    st.write(move |tx, env| profile::set_password(tx, env, &seen, Some(&hash))).await
+}
+
+/// DELETE /profile/password — retire le mot de passe (l'actuel est exigé).
+async fn profile_password_remove(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let seen = match password_owner(&st, &headers).await {
+        Ok(p) => p,
+        Err(r) => return r,
+    };
+    let Some(stored) = seen.password_hash.clone() else {
+        return AppError::rule("Ton profil n'a pas de mot de passe.").into_response();
+    };
+    let (_, current) = match profile::password_input(&input, false, true) {
+        Ok(x) => x,
+        Err(e) => return e.into_response(),
+    };
+    if let Err(r) = check_password(&st, &format!("p:{}", seen.id), 5, "current_password", current, stored).await {
+        return r;
+    }
+    st.write(move |tx, env| profile::set_password(tx, env, &seen, None)).await
 }
 
 // ─── Catalogue et administration ────────────────────────────────────────────
@@ -480,6 +636,10 @@ pub fn router(state: AppState) -> Router {
 
     let api = Router::new()
         .route("/access/characters", post(access_login))
+        .route("/profile", get(profile_show).patch(profile_rename))
+        .route("/profile/login", post(profile_login))
+        .route("/profile/password", axum::routing::put(profile_password_set).delete(profile_password_remove))
+        .route("/profile/password-prompt", post(profile_prompt))
         .route("/cosmos", get(cosmos_index))
         .route("/reactions", get(reactions_index).post(reactions_store))
         .route("/reactions/{reaction}/image", get(reactions_image))

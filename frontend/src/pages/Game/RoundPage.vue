@@ -130,6 +130,9 @@ const acceptedPlayerIds = ref(new Set())
 const changePlayerIds   = ref(new Set())
 const submittingVote    = ref(false)
 const confirmingReject  = ref(false)
+// Chaque joueur a un nombre limité de demandes de changement par partie
+// (serveur : MAX_CHARACTER_CHANGES) ; players[].character_changes_left.
+const maxCharacterChanges = ref(2)
 
 // Bloc-notes privé (localStorage uniquement, voir composables/useGameNotes.js)
 const notes = useGameNotes(gameId, myPlayerId.value)
@@ -355,6 +358,9 @@ const afkBlocker = computed(() => {
 
 const amAccepted = computed(() => acceptedPlayerIds.value.has(myPlayerId.value))
 const amAskingChange = computed(() => changePlayerIds.value.has(myPlayerId.value))
+const myChangesLeft = computed(() =>
+    players.value.find(p => p.id === myPlayerId.value)?.character_changes_left ?? maxCharacterChanges.value
+)
 
 const amExcluded = computed(() =>
     !!players.value.find(p => p.id === myPlayerId.value)?.is_excluded
@@ -520,6 +526,7 @@ async function loadGameState() {
 
   votingCharacters.value = game.characters_confirmed === false
   drawNumber.value = game.draw_number ?? 1
+  maxCharacterChanges.value = game.max_character_changes ?? 2
   acceptedPlayerIds.value = new Set(game.accepted_player_ids ?? [])
   changePlayerIds.value = new Set(game.change_player_ids ?? [])
 
@@ -887,6 +894,8 @@ async function handleCharactersRedrawn(data) {
   changePlayerIds.value = new Set()
   confirmingReject.value = false
   isBlurred.value = true
+  const left = new Map((data.character_changes_left ?? []).map(c => [c.player_id, c.left]))
+  players.value = players.value.map(p => left.has(p.id) ? {...p, character_changes_left: left.get(p.id)} : p)
   const n = data.change_count ?? 1
   showNotice(`${n} joueur${n > 1 ? 's ont' : ' a'} demandé à changer : nouveau tirage pour tout le monde !`)
 
@@ -1582,6 +1591,9 @@ function backToHome() {
             <p class="info-banner__sub">
               Ton vote est définitif. Une fois que tous auront voté, s'il y a au moins une
               demande de changement, tous les joueurs recevront un nouveau personnage.
+              {{ myChangesLeft - 1 > 0
+                ? `Il te restera ${myChangesLeft - 1} changement${myChangesLeft - 1 > 1 ? 's' : ''}.`
+                : "C'est ton dernier changement : tu devras garder le prochain personnage." }}
             </p>
             <div class="afk-actions">
               <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
@@ -1598,10 +1610,18 @@ function backToHome() {
           </template>
 
           <template v-else>
-            <p class="info-banner__sub">
+            <p v-if="myChangesLeft > 0" class="info-banner__sub">
               Révèle ton personnage : le connais-tu assez pour répondre aux questions ?
               Quand tout le monde a voté, une seule demande de changement suffit
               pour que chacun reçoive un nouveau personnage.
+              <span class="vote-changes-left">
+                <i class="fa-solid fa-shuffle"></i>
+                {{ myChangesLeft }} changement{{ myChangesLeft > 1 ? 's' : '' }} restant{{ myChangesLeft > 1 ? 's' : '' }}
+              </span>
+            </p>
+            <p v-else class="info-banner__sub">
+              Tu as utilisé tes {{ maxCharacterChanges }} changements : tu joues avec ce
+              personnage, sauf si un autre joueur demande à changer.
             </p>
             <div class="afk-actions">
               <button type="button" class="cabinet-btn cabinet-btn--sm"
@@ -1610,7 +1630,7 @@ function backToHome() {
                 <i v-else class="fa-solid fa-check"></i>
                 Je le connais
               </button>
-              <button type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
+              <button v-if="myChangesLeft > 0" type="button" class="cabinet-btn cabinet-btn--sm cabinet-btn--danger"
                       :disabled="submittingVote || !myCharacter" @click="confirmingReject = true">
                 <i class="fa-solid fa-shuffle"></i>
                 Changer
@@ -3149,6 +3169,7 @@ function backToHome() {
 .info-banner--vote .info-banner__title { color: #ffe4a3; }
 .info-banner--vote .vote-counter--change { color: #f3c2bf; }
 .vote-count { white-space: nowrap; }
+.vote-changes-left { display: block; margin-top: 4px; font-weight: 600; }
 
 .info-banner--afk .info-banner__icon { color: #ffd876; }
 .info-banner--afk .info-banner__title { color: #ffe4a3; }

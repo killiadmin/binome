@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Banc E2E de la migration Rust.
 //
-//   node tests/e2e/run.mjs [--only lobby,catalog,game8,game7] [--save] [--verbose]
+//   node tests/e2e/run.mjs [--only lobby,catalog,game8,game7,profile] [--save] [--verbose]
 //
 // --save : écrit le contrat observé (formes JSON des réponses et des events)
 //          dans tests/e2e/contracts/<cible>.json et les latences dans results/.
@@ -12,6 +12,7 @@ import { Context, TARGETS } from './lib/context.mjs'
 import { fullGame } from './scenarios/full-game.mjs'
 import { lobby } from './scenarios/lobby.mjs'
 import { catalog } from './scenarios/catalog.mjs'
+import { profile } from './scenarios/profile.mjs'
 
 const args = process.argv.slice(2)
 const opt = (name, fallback = null) => {
@@ -31,6 +32,7 @@ const SCENARIOS = {
     catalog: (ctx) => catalog(ctx),
     game8: (ctx) => fullGame(ctx, { size: 8, rich: true }),
     game7: (ctx) => fullGame(ctx, { size: 7, rich: false, redraw: true }),
+    profile: (ctx) => profile(ctx),
 }
 const selected = (opt('only') ?? Object.keys(SCENARIOS).join(',')).split(',')
 

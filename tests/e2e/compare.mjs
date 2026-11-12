@@ -29,6 +29,19 @@ const ACCEPTED = [
     /^TYPE +GET \/api\/(history|admin)\/games(\/:game)? 200 +\$(\.games\[\])?\.room_(id|code):/,
     /^TYPE +GET \/api\/history\/players 200 +\$\.games\[\]\.room_code:/,
     /^NOUVEAU +DELETE \/api\/admin\/(games\/:game|players\/:player) 403$/,
+    // Profils joueurs (2026-11-12) : routes /profile*, connexion automatique en créant /
+    // rejoignant un salon (profile + profile_token), pseudo protégé refusé sans jeton (403).
+    // Les joueurs ne sont plus supprimés en quittant un salon : un joueur hors salon
+    // peut apparaître dans l'admin (room_code null) et recevoir 403 sur /ready.
+    /^NOUVEAU +(GET|POST|PATCH|PUT|DELETE) \/api\/profile(\/[\w-]+)? \d{3}$/,
+    /^CHAMP EN TROP +POST \/api\/rooms(\/join)? 20[01] +\$\.profile(_token|\.\w+)? /,
+    /^NOUVEAU +POST \/api\/rooms(\/join)? 403$/,
+    /^NOUVEAU +PATCH \/api\/rooms\/:room\/ready 403$/,
+    /^TYPE +GET \/api\/admin\/players 200 +\$\.players\[\]\.room_code:/,
+    // Changements de personnage plafonnés à 2 par joueur et par partie (2026-11-12) :
+    // compteur restant par joueur dans l'état public et dans characters.redrawn.
+    /^CHAMP EN TROP +GET \/api\/games\/:game 200 +\$\.(max_character_changes|players\[\]\.character_changes_left) /,
+    /^CHAMP EN TROP +event characters\.redrawn @game +\$\.(change_player_ids|character_changes_left)(\[\](\.(left|player_id))?)? /,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

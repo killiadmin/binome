@@ -48,6 +48,22 @@
     "$": "object",
     "$.message": "string"
   },
+  "DELETE /api/profile/password 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.avatar_url": "string",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string",
+    "$.token": "string"
+  },
+  "DELETE /api/profile/password 409": {
+    "$": "object",
+    "$.message": "string"
+  },
   "DELETE /api/rooms/:room/leave 200": {
     "$": "object",
     "$.message": "string"
@@ -128,7 +144,7 @@
     "$.players[].id": "int",
     "$.players[].in_game": "bool",
     "$.players[].pseudo": "string",
-    "$.players[].room_code": "string",
+    "$.players[].room_code": "null | string",
     "$.players[].score": "int",
     "$.players[].updated_at": "date:iso8601",
     "$.players[].wins": "int"
@@ -259,9 +275,11 @@
     "$.game_id": "int",
     "$.has_orphan": "bool",
     "$.host_id": "int",
+    "$.max_character_changes": "int",
     "$.players": "array",
     "$.players[]": "object",
     "$.players[].avatar_url": "null | string",
+    "$.players[].character_changes_left": "int",
     "$.players[].id": "int",
     "$.players[].is_eliminated": "bool",
     "$.players[].is_excluded": "bool",
@@ -519,6 +537,31 @@
     "$.errors.pseudo[]": "string",
     "$.message": "string"
   },
+  "GET /api/profile 200": {
+    "$": "object",
+    "$.current": "null | object",
+    "$.current.game_id": "null",
+    "$.current.host_id": "int",
+    "$.current.room_code": "string",
+    "$.current.room_game_id": "null",
+    "$.current.room_id": "int",
+    "$.games": "array",
+    "$.player": "object",
+    "$.player.avatar_url": "null | string",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string",
+    "$.totals": "object",
+    "$.totals.games_played": "int",
+    "$.totals.total_score": "int",
+    "$.totals.wins": "int"
+  },
+  "GET /api/profile 401": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/reactions 200": {
     "$": "object",
     "$.reactions": "array",
@@ -596,6 +639,33 @@
     "$.errors.forbidden_words[]": "string",
     "$.message": "string"
   },
+  "PATCH /api/profile 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.avatar_url": "string",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string",
+    "$.token": "string"
+  },
+  "PATCH /api/profile 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/profile 409": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/profile 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.pseudo": "array",
+    "$.errors.pseudo[]": "string",
+    "$.message": "string"
+  },
   "PATCH /api/rooms/:room/ready 200": {
     "$": "object",
     "$.all_ready": "bool",
@@ -608,6 +678,10 @@
     "$.players[].id": "int",
     "$.players[].is_ready": "int",
     "$.players[].pseudo": "string"
+  },
+  "PATCH /api/rooms/:room/ready 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "PATCH /api/rooms/:room/ready 422": {
     "$": "object",
@@ -1037,6 +1111,48 @@
     "$.errors.image[]": "string",
     "$.message": "string"
   },
+  "POST /api/profile/login 200": {
+    "$": "object",
+    "$.admin_token": "string",
+    "$.current": "null | object",
+    "$.current.game_id": "null",
+    "$.current.host_id": "int",
+    "$.current.room_code": "string",
+    "$.current.room_game_id": "null",
+    "$.current.room_id": "int",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.avatar_url": "null | string",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string",
+    "$.token": "string"
+  },
+  "POST /api/profile/login 409": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/profile/login 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.password": "array",
+    "$.errors.password[]": "string",
+    "$.errors.pseudo": "array",
+    "$.errors.pseudo[]": "string",
+    "$.message": "string"
+  },
+  "POST /api/profile/password-prompt 200": {
+    "$": "object",
+    "$.player": "object",
+    "$.player.avatar_url": "null",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string"
+  },
   "POST /api/reactions 201": {
     "$": "object",
     "$.message": "string",
@@ -1061,11 +1177,23 @@
     "$.player.avatar_url": "null",
     "$.player.id": "int",
     "$.player.pseudo": "string",
+    "$.profile": "object",
+    "$.profile.avatar_url": "null",
+    "$.profile.has_password": "bool",
+    "$.profile.id": "int",
+    "$.profile.is_admin": "bool",
+    "$.profile.password_prompted": "bool",
+    "$.profile.pseudo": "string",
+    "$.profile_token": "string",
     "$.room": "object",
     "$.room.code": "string",
     "$.room.id": "int",
     "$.room.is_private": "bool",
     "$.room.max_players": "int"
+  },
+  "POST /api/rooms 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "POST /api/rooms 409": {
     "$": "object",
@@ -1103,6 +1231,14 @@
     "$.player.avatar_url": "null",
     "$.player.id": "int",
     "$.player.pseudo": "string",
+    "$.profile": "object",
+    "$.profile.avatar_url": "null",
+    "$.profile.has_password": "bool",
+    "$.profile.id": "int",
+    "$.profile.is_admin": "bool",
+    "$.profile.password_prompted": "bool",
+    "$.profile.pseudo": "string",
+    "$.profile_token": "string",
     "$.room": "object",
     "$.room.best_question_vote": "bool",
     "$.room.code": "string",
@@ -1118,6 +1254,10 @@
     "$.room.players[].is_ready": "int",
     "$.room.players[].pseudo": "string",
     "$.room.reveal_to_eliminated": "bool"
+  },
+  "POST /api/rooms/join 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "POST /api/rooms/join 409": {
     "$": "object",
@@ -1174,6 +1314,31 @@
     "$.character.name": "string",
     "$.character.universe_id": "int",
     "$.character.verif_manual": "bool",
+    "$.message": "string"
+  },
+  "PUT /api/profile/password 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.avatar_url": "null",
+    "$.player.has_password": "bool",
+    "$.player.id": "int",
+    "$.player.is_admin": "bool",
+    "$.player.password_prompted": "bool",
+    "$.player.pseudo": "string",
+    "$.token": "string"
+  },
+  "PUT /api/profile/password 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PUT /api/profile/password 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.current_password": "array",
+    "$.errors.current_password[]": "string",
+    "$.errors.password": "array",
+    "$.errors.password[]": "string",
     "$.message": "string"
   },
   "event accusation.confirmed @game": {
@@ -1279,6 +1444,12 @@
   "event characters.redrawn @game": {
     "$": "object",
     "$.change_count": "int",
+    "$.change_player_ids": "array",
+    "$.change_player_ids[]": "int",
+    "$.character_changes_left": "array",
+    "$.character_changes_left[]": "object",
+    "$.character_changes_left[].left": "int",
+    "$.character_changes_left[].player_id": "int",
     "$.draw_number": "int",
     "$.game_id": "int"
   },
