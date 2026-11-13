@@ -85,6 +85,37 @@ docker save binome:latest | gzip | ssh vps 'gunzip | docker load'
 # puis, sur le VPS : docker compose ... up -d   (sans --build)
 ```
 
+## Railway (en essai, branche `railway`)
+
+Railway construit l'image depuis le dépôt GitHub et fournit le HTTPS : pas de Caddy, pas de
+pare-feu, pas de serveur à administrer. Fichiers : `railway.toml` (choisit `Dockerfile.railway`,
+sonde `/up`) et `Dockerfile.railway`. Ce dernier reprend les étapes de build du `Dockerfile`
+(**à garder synchronisées**), mais en diffère à l'exécution :
+
+| | `Dockerfile` (Mac, VPS) | `Dockerfile.railway` |
+|---|---|---|
+| Base | `scratch` | `alpine` (shell pour `railway ssh`) |
+| `VOLUME /data` | oui | non (refusé par Railway) |
+| Utilisateur | 10001 | root (volumes Railway montés en root) |
+| Préfixe par défaut | `/binome` | `/` (racine du domaine) |
+
+**Réglages dans l'interface Railway** (non exprimables dans `railway.toml`) :
+- volume monté sur `/data` ;
+- **1 seule réplique** : SQLite n'a qu'un écrivain et le hub WebSocket est en mémoire ;
+- « App Sleeping » **désactivé** : la mise en veille coupe les WebSockets et les minuteries ;
+- région Europe ; port cible du domaine : **8080** (le serveur lit `BINOME_BIND`, pas `PORT`) ;
+- variables : `BINOME_ADMIN_PASSWORD_HASH`, `BINOME_ADMIN_PSEUDO`, `BINOME_DELETE_PASSWORD_HASH`
+  (pas de `.env`). `BINOME_PUBLIC_PREFIX`, si on la définit, sert au build et à l'exécution ;
+  adapter alors `healthcheckPath` (`<préfixe>/up`).
+
+**Administration** : `railway ssh`, puis `binome check`, `binome backup /data/x.sqlite`,
+`binome prune-rooms`… (le binaire est dans le `PATH`).
+
+**À valider au premier déploiement** : la méthode de transfert de la base vers le volume, et
+de récupération depuis le volume (sortie de Railway), **avant** toute mise en service.
+Chaque redéploiement coupe le service quelques secondes (volume attaché : pas de recouvrement).
+Les sauvegardes de volume Railway restent chez Railway : une copie externe reste à prévoir.
+
 ## Mots de passe (administration, suppression de parties)
 
 Le serveur ne stocke que des empreintes (PBKDF2-SHA256), jamais les mots de passe :

@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+#
+# Image de Binome pour Railway (choisie par railway.toml). Mêmes étapes de build que
+# `Dockerfile` — À GARDER SYNCHRONISÉES — mais l'exécution diffère :
+#   - base alpine au lieu de scratch : un shell pour `railway ssh` (binome check, backup,
+#     import-characters, transfert de la base…), Railway n'ayant pas de `docker exec` ;
+#   - pas d'instruction VOLUME (refusée par Railway) : le volume Railway est monté sur /data ;
+#   - pas d'utilisateur 10001 : Railway monte ses volumes en root ;
+#   - pas de HEALTHCHECK (ignoré) : sonde HTTP `healthcheckPath` dans railway.toml ;
+#   - application à la racine du domaine par défaut. La variable Railway BINOME_PUBLIC_PREFIX,
+#     si on la définit, sert à la fois au build (ARG) et à l'exécution ; changer aussi
+#     healthcheckPath dans railway.toml (<préfixe>/up).
+
+ARG BINOME_PUBLIC_PREFIX=/
+
+# ─── 1. Front (Vue) → fichiers statiques, précompressés en gzip ──────────────
+FROM node:22-alpine AS front
+WORKDIR /front
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+ARG BINOME_PUBLIC_PREFIX
+RUN rm -f public/lan-url.json \
+ && VITE_BASE="$BINOME_PUBLIC_PREFIX" npm run build \
+ && find dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.svg' -o -name '*.json' -o -name '*.webmanifest' \) \
+      -size +1k -exec gzip -9 -k {} \;
+
+# ─── 2. Serveur (Rust) → binaire statique (musl) ─────────────────────────────
+FROM rust:1-alpine AS server
+RUN apk add --no-cache musl-dev gcc
+WORKDIR /src
+COPY server/Cargo.toml server/Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked && rm -rf src
+COPY server/src ./src
+COPY server/migrations ./migrations
+RUN touch src/main.rs && cargo build --release --locked && cp target/release/binome /binome
+
+# ─── 3. Exécution : alpine (shell pour l'administration) ─────────────────────
+FROM alpine:3
+COPY --from=server /binome /binome
+COPY --from=front /front/dist /static
+ARG BINOME_PUBLIC_PREFIX
+ENV BINOME_BIND=0.0.0.0:8080 \
+    BINOME_DATABASE=/data/binome.sqlite \
+    BINOME_STATIC_DIR=/static \
+    BINOME_PUBLIC_PREFIX=${BINOME_PUBLIC_PREFIX} \
+    PATH=/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN mkdir -p /data
+EXPOSE 8080
+ENTRYPOINT ["/binome"]
+CMD ["serve"]
