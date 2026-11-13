@@ -85,11 +85,12 @@ docker save binome:latest | gzip | ssh vps 'gunzip | docker load'
 # puis, sur le VPS : docker compose ... up -d   (sans --build)
 ```
 
-## Railway (en essai, branche `railway`)
+## Railway (en service depuis le 2026-11-13)
 
-Railway construit l'image depuis le dépôt GitHub et fournit le HTTPS : pas de Caddy, pas de
-pare-feu, pas de serveur à administrer. Fichiers : `railway.toml` (choisit `Dockerfile.railway`,
-sonde `/up`) et `Dockerfile.railway`. Ce dernier reprend les étapes de build du `Dockerfile`
+Projet `eloquent-illumination`, service `binome`, https://binome-production.up.railway.app/.
+Railway construit l'image depuis la branche `main` du dépôt GitHub (**chaque push redéploie**) et
+fournit le HTTPS : pas de Caddy, pas de pare-feu, pas de serveur à administrer. L'image vient de
+`Dockerfile.railway`, qui reprend les étapes de build du `Dockerfile`
 (**à garder synchronisées**), mais en diffère à l'exécution :
 
 | | `Dockerfile` (Mac, VPS) | `Dockerfile.railway` |
@@ -99,20 +100,48 @@ sonde `/up`) et `Dockerfile.railway`. Ce dernier reprend les étapes de build du
 | Utilisateur | 10001 | root (volumes Railway montés en root) |
 | Préfixe par défaut | `/binome` | `/` (racine du domaine) |
 
-**Réglages dans l'interface Railway** (non exprimables dans `railway.toml`) :
+**Réglages du service** — tous dans Railway, aucun fichier de config dans le dépôt (le Config as
+Code `railway.toml` est abandonné par Railway au 2026-12-01 ; son remplaçant, l'IaC
+`.railway/railway.ts`, demande un paquet npm et une reprise en main du projet : écarté) :
+- variable `RAILWAY_DOCKERFILE_PATH=Dockerfile.railway` (sans elle, Railway prendrait le
+  `Dockerfile` scratch, dont l'instruction `VOLUME` fait échouer le build) ;
+- *Settings → Deploy* : *Healthcheck Path* `/up`, *Restart Policy* « On Failure » ;
 - volume monté sur `/data` ;
 - **1 seule réplique** : SQLite n'a qu'un écrivain et le hub WebSocket est en mémoire ;
 - « App Sleeping » **désactivé** : la mise en veille coupe les WebSockets et les minuteries ;
 - région Europe ; port cible du domaine : **8080** (le serveur lit `BINOME_BIND`, pas `PORT`) ;
 - variables : `BINOME_ADMIN_PASSWORD_HASH`, `BINOME_ADMIN_PSEUDO`, `BINOME_DELETE_PASSWORD_HASH`
   (pas de `.env`). `BINOME_PUBLIC_PREFIX`, si on la définit, sert au build et à l'exécution ;
-  adapter alors `healthcheckPath` (`<préfixe>/up`).
+  adapter alors le *Healthcheck Path* (`<préfixe>/up`).
 
 **Administration** : `railway ssh`, puis `binome check`, `binome backup /data/x.sqlite`,
 `binome prune-rooms`… (le binaire est dans le `PATH`).
 
-**À valider au premier déploiement** : la méthode de transfert de la base vers le volume, et
-de récupération depuis le volume (sortie de Railway), **avant** toute mise en service.
+`railway ssh` exige une clé SSH enregistrée (`railway ssh keys add`) et une première connexion
+interactive pour accepter l'empreinte du serveur ; ensuite il transmet l'entrée standard, ce qui
+sert aux transferts ci-dessous (testés le 2026-11-13).
+
+**Envoyer une base vers Railway** (remplace la base en service) :
+
+```bash
+# 1. Sauvegarde cohérente sur la machine source (procédure « Transférer les données actuelles »)
+# 2. Envoi sous un nom temporaire, contrôle d'empreinte et d'intégrité
+shasum -a 256 binome.sqlite
+railway ssh -- sh -c 'cat > /data/import.sqlite && sha256sum /data/import.sqlite && BINOME_DATABASE=/data/import.sqlite binome check' < binome.sqlite
+# 3. Échange puis redémarrage immédiat (le serveur en marche garde l'ancien fichier ouvert)
+railway ssh -- sh -c 'cd /data && rm -f import.sqlite-* binome.sqlite-wal binome.sqlite-shm && mv import.sqlite binome.sqlite' < /dev/null
+railway restart -y
+railway ssh -- binome check < /dev/null
+```
+
+**Récupérer la base depuis Railway** (sauvegarde, ou sortie de Railway) :
+
+```bash
+# le message de `binome backup` et ceux de la CLI ne doivent pas se mêler au fichier
+railway ssh -- sh -c 'binome backup /data/sortie.sqlite >/dev/null && cat /data/sortie.sqlite && rm /data/sortie.sqlite' < /dev/null > binome-railway.sqlite 2>/dev/null
+docker run --rm -v "$PWD":/b -e BINOME_DATABASE=/b/binome-railway.sqlite binome:latest check
+```
+
 Chaque redéploiement coupe le service quelques secondes (volume attaché : pas de recouvrement).
 Les sauvegardes de volume Railway restent chez Railway : une copie externe reste à prévoir.
 

@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 #
-# Image de Binome pour Railway (choisie par railway.toml). Mêmes étapes de build que
+# Image de Binome pour Railway (choisie par la variable de service RAILWAY_DOCKERFILE_PATH). Mêmes étapes de build que
 # `Dockerfile` — À GARDER SYNCHRONISÉES — mais l'exécution diffère :
 #   - base alpine au lieu de scratch : un shell pour `railway ssh` (binome check, backup,
 #     import-characters, transfert de la base…), Railway n'ayant pas de `docker exec` ;
 #   - pas d'instruction VOLUME (refusée par Railway) : le volume Railway est monté sur /data ;
 #   - pas d'utilisateur 10001 : Railway monte ses volumes en root ;
-#   - pas de HEALTHCHECK (ignoré) : sonde HTTP `healthcheckPath` dans railway.toml ;
+#   - pas de HEALTHCHECK (ignoré) : sonde HTTP « Healthcheck Path » réglée dans Railway ;
 #   - application à la racine du domaine par défaut. La variable Railway BINOME_PUBLIC_PREFIX,
 #     si on la définit, sert à la fois au build (ARG) et à l'exécution ; changer aussi
-#     healthcheckPath dans railway.toml (<préfixe>/up).
+#     le Healthcheck Path dans Railway (<préfixe>/up).
 
 ARG BINOME_PUBLIC_PREFIX=/
 
