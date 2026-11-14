@@ -230,8 +230,8 @@ pub fn set_validation(tx: &Transaction, env: &Env, player_id: i64, input: &Input
     let mut v = V::new(input);
     let validated = v.req_bool("validated");
     v.finish()?;
-    if p.is_admin(env) {
-        return Err(AppError::rule("Le profil administrateur est toujours validé."));
+    if p.admin_role(env).is_some() {
+        return Err(AppError::rule("Un administrateur est toujours validé."));
     }
     let validated = validated.expect("validé");
     let stamp = validated.then(now_db);

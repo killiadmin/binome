@@ -46,6 +46,14 @@ export const adminService = {
     },
 
     /**
+     * Désigne ou retire un administrateur (propriétaire seulement ; profil avec
+     * mot de passe). PATCH /api/admin/players/{id}/admin — { admin }
+     */
+    setPlayerAdmin(id, admin) {
+        return api.patch(`/admin/players/${id}/admin`, { admin })
+    },
+
+    /**
      * Modes de jeu, cosmos et binômes proposés aux joueurs, avec leur état
      * GET /api/admin/settings → { game_modes, cosmos, binomes }
      */

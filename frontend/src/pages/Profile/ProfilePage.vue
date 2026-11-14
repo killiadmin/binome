@@ -184,9 +184,12 @@ function gameStatus(g) {
               </div>
               <div class="identity__chips">
                 <span v-if="player.is_admin" class="pixel-chip pixel-chip--gold">Admin</span>
-                <span v-else-if="player.has_password" class="pixel-chip">🔒 Protégé</span>
-                <span v-else class="pixel-chip pixel-chip--danger">🔓 Public</span>
-                <template v-if="!player.is_admin">
+                <template v-else>
+                  <span v-if="player.admin_role === 'admin'" class="pixel-chip pixel-chip--gold" title="Administrateur désigné">Admin</span>
+                  <span v-if="player.has_password" class="pixel-chip">🔒 Protégé</span>
+                  <span v-else class="pixel-chip pixel-chip--danger">🔓 Public</span>
+                </template>
+                <template v-if="!player.admin_role">
                   <span v-if="player.is_validated" class="pixel-chip" title="Historique et emojis personnalisés ouverts">✔ Validé</span>
                   <span v-else class="pixel-chip" title="L'administrateur doit valider ton profil pour ouvrir l'historique et les emojis personnalisés">⏳ En attente de validation</span>
                 </template>
@@ -208,7 +211,7 @@ function gameStatus(g) {
         </div>
 
         <div class="identity__links">
-          <router-link v-if="player.is_admin" to="/admin" class="cabinet-btn cabinet-btn--sm">
+          <router-link v-if="player.admin_role" to="/admin" class="cabinet-btn cabinet-btn--sm">
             <i class="fa-solid fa-lock-open"></i> Administration
           </router-link>
           <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="handleLogout">
@@ -251,8 +254,9 @@ function gameStatus(g) {
             <button type="button" class="cabinet-btn cabinet-btn--sm" @click="openPwd('set')">
               <i class="fa-solid fa-lock"></i> {{ player.has_password ? 'Changer' : 'Protéger mon profil' }}
             </button>
+            <!-- Un administrateur désigné garde son mot de passe (refusé par le serveur) -->
             <button
-                v-if="player.has_password"
+                v-if="player.has_password && player.admin_role !== 'admin'"
                 type="button"
                 class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm"
                 @click="openPwd('remove')"

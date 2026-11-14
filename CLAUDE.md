@@ -92,6 +92,12 @@ remains. Details in `docs/regles-du-jeu.md`.
   HMAC(hash, constant). The owner's profile pseudo is `BINOME_ADMIN_PSEUDO`: it opens only with
   the admin password, returns the admin token, and only that profile sees the navbar lock. `POST /access/characters` allows 2 attempts/minute, global bucket
   (successes refunded). The E2E test server uses throwaway passwords (`rust-stack.sh`).
+- Designated admins (migration 7, `players.admin_granted_at`): only the owner (`AdminRole::Owner`,
+  via `X-Characters-Access`) grants/revokes them (`PATCH /admin/players/{id}/admin`), and only
+  password-protected profiles. A designated admin reaches every admin route with its profile
+  token (`require_admin` → `AdminRole::Delegate`, rechecked per request) but cannot grant admins
+  or delete an admin, and cannot remove its own password. JSON: `admin_role` = owner/admin/null
+  (`is_admin` still means the owner).
 - Admin controls (migration 6, `services/controls.rs`, tab /admin/games): enabled game modes
   (`app_settings.game_modes`), `cosmos.is_enabled` (new cosmos are born disabled), disabled
   binomes (`disabled_binomes`, universe + level) — the draw uses `controls::PLAYABLE_CHARACTER`.

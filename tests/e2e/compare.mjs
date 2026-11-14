@@ -55,6 +55,14 @@ const ACCEPTED = [
     /^CHAMP EN TROP +PATCH \/api\/rooms\/:room\/settings 422 +\$\.errors\.game_mode(\[\])? /,
     /^NOUVEAU +GET \/api\/history\/(games|leaderboard) 40[13]$/,
     /^NOUVEAU +POST \/api\/reactions 403$/,
+    // Administrateurs désignés (migration 7, 2026-11-14) : rôle dans les profils et la
+    // liste des joueurs ; un administrateur garde son mot de passe (409).
+    /^NOUVEAU +PATCH \/api\/admin\/players\/:player\/admin \d{3}$/,
+    /^NOUVEAU +GET \/api\/admin\/players 403$/,
+    /^CHAMP EN TROP +GET \/api\/admin\/players 200 +\$\.players\[\]\.admin_role /,
+    /^CHAMP EN TROP +(GET|PATCH|POST|PUT|DELETE) \/api\/profile[\w/-]* 200 +\$\.player\.admin_role /,
+    /^CHAMP EN TROP +POST \/api\/rooms(\/join)? 20[01] +\$\.profile\.admin_role /,
+    /^NOUVEAU +DELETE \/api\/profile\/password 409$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

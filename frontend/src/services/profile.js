@@ -3,7 +3,8 @@ import { charactersAccess } from './charactersAccess'
 import { api } from './api'
 
 // Profil connecté, persisté dans localStorage sous la clé `profile` :
-// { token, player: { id, pseudo, avatar_url, has_password, password_prompted, is_admin, is_validated } }.
+// { token, player: { id, pseudo, avatar_url, has_password, password_prompted, is_admin, is_validated, admin_role } }.
+// is_admin = profil propriétaire ; admin_role = 'owner' | 'admin' (désigné par le propriétaire) | null.
 // api.js lit cette clé directement (sans import, pour éviter une dépendance
 // circulaire) et envoie le jeton dans l'en-tête X-Profile-Token.
 export const PROFILE_KEY = 'profile'
@@ -27,6 +28,8 @@ function persist() {
 export const profilePlayer = computed(() => state.player)
 export const isLoggedIn = computed(() => !!state.token)
 export const isAdminProfile = computed(() => !!state.token && !!state.player?.is_admin)
+// Administrateur désigné par le propriétaire : accès à l'administration par son jeton de profil.
+export const isDelegateAdmin = computed(() => !!state.token && state.player?.admin_role === 'admin')
 // Profil validé à la main par l'administrateur : historique et emojis personnalisés.
 export const isValidatedProfile = computed(() => !!state.token && !!state.player?.is_validated)
 

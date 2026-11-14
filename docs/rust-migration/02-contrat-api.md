@@ -10,8 +10,9 @@
 - Corps JSON ; `multipart/form-data` pour les fichiers de personnages. **Method spoofing** :
   `POST` + champ `_method=PUT` doit être traité comme `PUT` (forme utilisée par le front).
 - Identité : `player_id` dans le corps / la query, **non signé** (modèle de confiance actuel, reproduit tel quel).
-- Admin : en-tête `X-Characters-Access` = HMAC-SHA256(mot de passe, `binome-characters-access`) en hex ;
-  absent ou faux → `403 {message}`.
+- Admin : en-tête `X-Characters-Access` = HMAC-SHA256(mot de passe, `binome-characters-access`) en hex
+  (propriétaire), ou `X-Profile-Token` d'un administrateur désigné (`admin_role = "admin"`, profil avec mot
+  de passe) ; absent ou faux → `403 {message}`.
 - Erreurs :
   - `422` validation → `{ message, errors: { champ: [messages] } }` (messages Laravel, en anglais pour les règles génériques, en français pour les messages personnalisés) ;
   - `409` règle du jeu → `{ message }` ;
@@ -27,7 +28,7 @@
 
 ## Couverture
 
-74 routes ; 74 observées par le banc.
+75 routes ; 75 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -435,9 +436,9 @@ $.message                                        string
 
 ### `GET /api/admin/players`
 
-Joueurs + stats + salon + `in_game` + `has_password` / `is_validated` — accès : admin
+Joueurs + stats + salon + `in_game` + `has_password` / `is_validated` / `admin_role` — accès : admin
 
-Statuts observés : `200`
+Statuts observés : `200`, `403`
 
 Réponse `200` :
 
@@ -445,6 +446,7 @@ Réponse `200` :
 $                                                object
 $.players                                        array
 $.players[]                                      object
+$.players[].admin_role                           null | string
 $.players[].avatar_url                           null | string
 $.players[].created_at                           date:iso8601
 $.players[].games_count                          int
@@ -461,11 +463,28 @@ $.players[].validated_at                         date:iso8601 | null
 $.players[].wins                                 int
 ```
 
+### `PATCH /api/admin/players/:player/admin`
+
+`{ admin }` : désigner / retirer un administrateur (propriétaire seulement, profil avec mot de passe) — accès : admin
+
+Statuts observés : `200`, `403`, `404`, `409`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.player                                         object
+$.player.admin_role                              null | string
+$.player.id                                      int
+$.player.is_validated                            bool
+```
+
 ### `PATCH /api/admin/players/:player/validation`
 
 `{ validated }` : valider un profil (historique, emojis image) — accès : admin
 
-Statuts observés : `200`, `403`, `404`
+Statuts observés : `200`, `403`, `404`, `409`
 
 Réponse `200` :
 
@@ -988,6 +1007,7 @@ $.player.avatar_url                              null
 $.player.id                                      int
 $.player.pseudo                                  string
 $.profile                                        object
+$.profile.admin_role                             null | string
 $.profile.avatar_url                             null
 $.profile.has_password                           bool
 $.profile.id                                     int
@@ -1019,6 +1039,7 @@ $.player.avatar_url                              null
 $.player.id                                      int
 $.player.pseudo                                  string
 $.profile                                        object
+$.profile.admin_role                             null
 $.profile.avatar_url                             null
 $.profile.has_password                           bool
 $.profile.id                                     int
@@ -1633,7 +1654,8 @@ Réponse `200` :
 $                                                object
 $.message                                        string
 $.player                                         object
-$.player.avatar_url                              string
+$.player.admin_role                              null
+$.player.avatar_url                              null | string
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
@@ -1661,6 +1683,7 @@ $.current.room_game_id                           null
 $.current.room_id                                int
 $.games                                          array
 $.player                                         object
+$.player.admin_role                              null | string
 $.player.avatar_url                              null | string
 $.player.has_password                            bool
 $.player.id                                      int
@@ -1686,6 +1709,7 @@ Réponse `200` :
 $                                                object
 $.message                                        string
 $.player                                         object
+$.player.admin_role                              null
 $.player.avatar_url                              string
 $.player.has_password                            bool
 $.player.id                                      int
@@ -1715,6 +1739,7 @@ $.current.room_game_id                           null
 $.current.room_id                                int
 $.message                                        string
 $.player                                         object
+$.player.admin_role                              null | string
 $.player.avatar_url                              null | string
 $.player.has_password                            bool
 $.player.id                                      int
@@ -1736,6 +1761,7 @@ Réponse `200` :
 ```
 $                                                object
 $.player                                         object
+$.player.admin_role                              null
 $.player.avatar_url                              null
 $.player.has_password                            bool
 $.player.id                                      int
@@ -1757,6 +1783,7 @@ Réponse `200` :
 $                                                object
 $.message                                        string
 $.player                                         object
+$.player.admin_role                              null
 $.player.avatar_url                              null
 $.player.has_password                            bool
 $.player.id                                      int

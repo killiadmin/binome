@@ -1,4 +1,9 @@
 //! Administration des joueurs et des parties.
+//!
+//! Deux sortes d'administrateurs (migration 7) : le propriétaire (jeton
+//! `X-Characters-Access`, obtenu avec le mot de passe d'administration) et les
+//! administrateurs qu'il désigne (jeton de profil). Seul le propriétaire désigne
+//! ou retire un administrateur ; un désigné ne peut pas supprimer un administrateur.
 
 use std::collections::{HashMap, HashSet};
 
@@ -9,10 +14,21 @@ use crate::clock;
 use crate::db::Q;
 use crate::error::{AppError, AppResult};
 use crate::http::input::Input;
+use crate::http::input::V;
 use crate::services::common::*;
+use crate::services::profile;
 use crate::services::rooms::remove_player;
 use crate::services::Out;
 use crate::support::text::ci_key;
+
+/// Qui accède à l'administration (posé par le middleware `require_admin`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdminRole {
+    /// Propriétaire : mot de passe d'administration.
+    Owner,
+    /// Administrateur désigné par le propriétaire (identifiant du joueur).
+    Delegate(i64),
+}
 
 fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
     Ok(c
@@ -29,7 +45,7 @@ fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
 /// GET /admin/players
 pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let players = c.all(
-        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at FROM players ORDER BY pseudo, id",
+        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at, admin_granted_at IS NOT NULL FROM players ORDER BY pseudo, id",
         [],
         |r| {
             Ok((
@@ -39,6 +55,7 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
                 r.get::<_, Option<String>>(3)?,
                 r.get::<_, bool>(4)?,
                 r.get::<_, Option<String>>(5)?,
+                r.get::<_, bool>(6)?,
             ))
         },
     )?;
@@ -59,8 +76,15 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let avatars = avatar_urls(c, env, players.iter().map(|p| p.1.as_str()))?;
     let list: Vec<_> = players
         .iter()
-        .map(|(id, pseudo, created, updated, has_password, validated_at)| {
-            let is_admin = crate::services::profile::is_admin_pseudo(env, pseudo);
+        .map(|(id, pseudo, created, updated, has_password, validated_at, granted)| {
+            let is_admin = profile::is_admin_pseudo(env, pseudo);
+            let role = if is_admin {
+                Some("owner")
+            } else if *granted && *has_password {
+                Some("admin")
+            } else {
+                None
+            };
             let (wins, score) = stats.get(&ci_key(pseudo)).copied().unwrap_or_default();
             json!({
                 "id": id,
@@ -73,7 +97,8 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
                 "in_game": in_game.contains(id),
                 "has_password": *has_password || is_admin,
                 "is_admin": is_admin,
-                "is_validated": validated_at.is_some() || is_admin,
+                "is_validated": validated_at.is_some() || role.is_some(),
+                "admin_role": role,
                 "validated_at": clock::iso(validated_at.as_deref()),
                 "created_at": clock::iso(created.as_deref()),
                 "updated_at": clock::iso(updated.as_deref()),
@@ -116,8 +141,11 @@ pub fn with_games(input: &Input) -> bool {
 }
 
 /// DELETE /admin/players/{player}[?with_games=1]
-pub fn destroy_player(tx: &Transaction, env: &Env, player_id: i64, input: &Input) -> AppResult<Out> {
+pub fn destroy_player(tx: &Transaction, env: &Env, role: AdminRole, player_id: i64, input: &Input) -> AppResult<Out> {
     let p = player_or_404(tx, player_id)?;
+    if matches!(role, AdminRole::Delegate(_)) && profile::by_id(tx, p.id)?.is_some_and(|t| t.admin_role(env).is_some()) {
+        return Err(AppError::forbidden("Seul le propriétaire peut supprimer un administrateur."));
+    }
     blocked_by_game(tx, &p)?;
     let with_games = with_games(input);
     let game_ids: Vec<i64> = tx.all(
@@ -150,6 +178,33 @@ pub fn destroy_player(tx: &Transaction, env: &Env, player_id: i64, input: &Input
         format!("{} et ses {} partie(s) ont été supprimés.", p.pseudo, game_ids.len())
     };
     Ok(Out::message(&msg).with(events))
+}
+
+/// PATCH /admin/players/{player}/admin — désigne ou retire un administrateur
+/// (propriétaire seulement). Le profil désigné doit avoir un mot de passe.
+pub fn set_admin(tx: &Transaction, env: &Env, role: AdminRole, player_id: i64, input: &Input) -> AppResult<Out> {
+    if role != AdminRole::Owner {
+        return Err(AppError::forbidden("Seul le propriétaire peut désigner ou retirer un administrateur."));
+    }
+    let p = profile::by_id(tx, player_id)?.ok_or(AppError::NotFound)?;
+    let mut v = V::new(input);
+    let admin = v.req_bool("admin");
+    v.finish()?;
+    let admin = admin.expect("validé");
+    if p.is_admin(env) {
+        return Err(AppError::rule("Le profil propriétaire est toujours administrateur."));
+    }
+    if admin && p.password_hash.is_none() {
+        return Err(AppError::rule(format!(
+            "Le profil de {} est public : il doit d'abord poser un mot de passe (page Profil) pour devenir administrateur.",
+            p.pseudo
+        )));
+    }
+    let stamp = admin.then(clock::now_db);
+    tx.run("UPDATE players SET admin_granted_at = ?1 WHERE id = ?2", (&stamp, p.id))?;
+    let p = profile::by_id(tx, p.id)?.expect("profil");
+    let msg = format!("{} {}.", p.pseudo, if admin { "est administrateur" } else { "n'est plus administrateur" });
+    Ok(Out::ok(json!({ "message": msg, "player": { "id": p.id, "admin_role": p.admin_role(env), "is_validated": p.is_validated(env) } })))
 }
 
 /// DELETE /admin/games/{game} — cascade : binômes, rounds, actions, stats.

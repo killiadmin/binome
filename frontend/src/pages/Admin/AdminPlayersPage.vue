@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { BContainer, BModal } from 'bootstrap-vue-next'
 import { adminService } from '../../services/adminService'
+import { isAdminProfile } from '../../services/profile'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ async function removeFromRoom(player) {
 
 // Validation manuelle : sans elle, pas d'historique ni d'emojis personnalisés.
 async function toggleValidation(player) {
-  if (busy[player.id] || player.is_admin) return
+  if (busy[player.id] || player.admin_role) return
   busy[player.id] = true
   error.value = null
   try {
@@ -103,6 +104,27 @@ async function toggleValidation(player) {
     busy[player.id] = false
   }
 }
+
+// Administrateurs désignés : le propriétaire seul les nomme ou les retire
+// (le serveur refuse les autres). Le profil doit avoir un mot de passe.
+async function toggleAdmin(player) {
+  if (busy[player.id] || !isAdminProfile.value || player.is_admin) return
+  busy[player.id] = true
+  error.value = null
+  try {
+    const { data } = await adminService.setPlayerAdmin(player.id, player.admin_role !== 'admin')
+    player.admin_role = data.player.admin_role
+    player.is_validated = data.player.is_validated
+    flash(data.message)
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Impossible de modifier le rôle d\'administrateur.'
+  } finally {
+    busy[player.id] = false
+  }
+}
+
+// Un administrateur désigné ne supprime pas un autre administrateur
+const canDelete = (p) => isAdminProfile.value || !p.admin_role
 
 function askDelete(player) {
   confirmTarget.value = player
@@ -147,6 +169,8 @@ onMounted(loadPlayers)
       Pseudos inscrits sur l'application : ceux qui ont joué au moins une partie
       et ceux présents dans un salon. Valide un profil pour lui ouvrir l'historique
       et les emojis personnalisés, retire un joueur de son salon ou supprime-le.
+      <template v-if="isAdminProfile">Tu peux aussi désigner un administrateur parmi les profils sécurisés ;
+      il ne pourra pas en désigner d'autres.</template>
     </p>
 
     <div class="toolbar">
@@ -196,6 +220,8 @@ onMounted(loadPlayers)
               <span v-if="p.in_game" class="tag tag--game">en partie</span>
             </div>
             <div class="player-status">
+              <span v-if="p.admin_role === 'owner'" class="tag tag--admin"><i class="fa-solid fa-crown"></i> propriétaire</span>
+              <span v-else-if="p.admin_role === 'admin'" class="tag tag--admin"><i class="fa-solid fa-user-shield"></i> admin</span>
               <span v-if="p.has_password" class="tag tag--secure"><i class="fa-solid fa-lock"></i> sécurisé</span>
               <span v-else class="tag tag--public"><i class="fa-solid fa-lock-open"></i> public</span>
               <span v-if="p.is_validated" class="tag tag--validated"><i class="fa-solid fa-circle-check"></i> validé</span>
@@ -211,7 +237,16 @@ onMounted(loadPlayers)
           <!-- Un joueur en pleine partie n'est ni retirable ni supprimable :
                supprimer ou terminer d'abord la partie (onglet Parties). -->
           <div class="player-actions">
-            <button v-if="!p.is_admin" type="button" class="icon-btn"
+            <button v-if="isAdminProfile && !p.is_admin" type="button" class="icon-btn"
+                    :class="{ 'icon-btn--admin': p.admin_role === 'admin' }"
+                    :disabled="busy[p.id]"
+                    :title="p.admin_role === 'admin' ? 'Retirer le rôle d\'administrateur' : 'Désigner administrateur'"
+                    :aria-label="p.admin_role === 'admin' ? 'Retirer le rôle d\'administrateur' : 'Désigner administrateur'"
+                    :aria-pressed="p.admin_role === 'admin'"
+                    @click="toggleAdmin(p)">
+              <i class="fa-solid fa-user-shield"></i>
+            </button>
+            <button v-if="!p.admin_role" type="button" class="icon-btn"
                     :class="p.is_validated ? 'icon-btn--validated' : 'icon-btn--validate'"
                     :disabled="busy[p.id]"
                     :title="p.is_validated ? 'Retirer la validation' : 'Valider le profil'"
@@ -226,7 +261,7 @@ onMounted(loadPlayers)
                     aria-label="Retirer du salon" @click="removeFromRoom(p)">
               <i class="fa-solid fa-right-from-bracket"></i>
             </button>
-            <button type="button" class="icon-btn icon-btn--danger"
+            <button v-if="canDelete(p)" type="button" class="icon-btn icon-btn--danger"
                     :disabled="busy[p.id] || p.in_game"
                     :title="p.in_game ? 'En pleine partie' : 'Supprimer le joueur'"
                     aria-label="Supprimer le joueur" @click="askDelete(p)">
@@ -484,9 +519,11 @@ onMounted(loadPlayers)
 .tag--public { background: transparent; color: var(--arcade-taupe); border: 1px solid var(--arcade-blue-grey); }
 .tag--validated { background: var(--arcade-success); color: #fff; }
 .tag--pending { background: var(--arcade-gold); color: var(--arcade-dark); }
+.tag--admin { background: var(--arcade-dark); color: var(--arcade-gold); border: 1px solid var(--arcade-gold); }
 
 .icon-btn--validate { color: var(--arcade-gold); }
 .icon-btn--validated { color: var(--arcade-success); }
+.icon-btn--admin { color: var(--arcade-gold); border-color: var(--arcade-gold); }
 
 .filter-chip--pending.active {
   background: var(--arcade-gold);

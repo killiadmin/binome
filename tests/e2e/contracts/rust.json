@@ -52,7 +52,8 @@
     "$": "object",
     "$.message": "string",
     "$.player": "object",
-    "$.player.avatar_url": "string",
+    "$.player.admin_role": "null",
+    "$.player.avatar_url": "null | string",
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
@@ -139,6 +140,7 @@
     "$": "object",
     "$.players": "array",
     "$.players[]": "object",
+    "$.players[].admin_role": "null | string",
     "$.players[].avatar_url": "null | string",
     "$.players[].created_at": "date:iso8601",
     "$.players[].games_count": "int",
@@ -153,6 +155,10 @@
     "$.players[].updated_at": "date:iso8601",
     "$.players[].validated_at": "date:iso8601 | null",
     "$.players[].wins": "int"
+  },
+  "GET /api/admin/players 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "GET /api/admin/reactions 200": {
     "$": "object",
@@ -607,6 +613,7 @@
     "$.current.room_id": "int",
     "$.games": "array",
     "$.player": "object",
+    "$.player.admin_role": "null | string",
     "$.player.avatar_url": "null | string",
     "$.player.has_password": "bool",
     "$.player.id": "int",
@@ -696,6 +703,33 @@
     "$.cosmos.name": "string",
     "$.message": "string"
   },
+  "PATCH /api/admin/players/:player/admin 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.admin_role": "null | string",
+    "$.player.id": "int",
+    "$.player.is_validated": "bool"
+  },
+  "PATCH /api/admin/players/:player/admin 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/admin 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/admin 409": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/admin 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.admin": "array",
+    "$.errors.admin[]": "string",
+    "$.message": "string"
+  },
   "PATCH /api/admin/players/:player/validation 200": {
     "$": "object",
     "$.message": "string",
@@ -709,6 +743,10 @@
     "$.message": "string"
   },
   "PATCH /api/admin/players/:player/validation 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/validation 409": {
     "$": "object",
     "$.message": "string"
   },
@@ -757,6 +795,7 @@
     "$": "object",
     "$.message": "string",
     "$.player": "object",
+    "$.player.admin_role": "null",
     "$.player.avatar_url": "string",
     "$.player.has_password": "bool",
     "$.player.id": "int",
@@ -1247,6 +1286,7 @@
     "$.current.room_id": "int",
     "$.message": "string",
     "$.player": "object",
+    "$.player.admin_role": "null | string",
     "$.player.avatar_url": "null | string",
     "$.player.has_password": "bool",
     "$.player.id": "int",
@@ -1272,6 +1312,7 @@
   "POST /api/profile/password-prompt 200": {
     "$": "object",
     "$.player": "object",
+    "$.player.admin_role": "null",
     "$.player.avatar_url": "null",
     "$.player.has_password": "bool",
     "$.player.id": "int",
@@ -1309,6 +1350,7 @@
     "$.player.id": "int",
     "$.player.pseudo": "string",
     "$.profile": "object",
+    "$.profile.admin_role": "null | string",
     "$.profile.avatar_url": "null",
     "$.profile.has_password": "bool",
     "$.profile.id": "int",
@@ -1364,6 +1406,7 @@
     "$.player.id": "int",
     "$.player.pseudo": "string",
     "$.profile": "object",
+    "$.profile.admin_role": "null",
     "$.profile.avatar_url": "null",
     "$.profile.has_password": "bool",
     "$.profile.id": "int",
@@ -1453,6 +1496,7 @@
     "$": "object",
     "$.message": "string",
     "$.player": "object",
+    "$.player.admin_role": "null",
     "$.player.avatar_url": "null",
     "$.player.has_password": "bool",
     "$.player.id": "int",

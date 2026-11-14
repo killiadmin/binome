@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getCharactersAccessToken } from "./services/charactersAccess";
-import { getProfileToken, isAdminProfile } from "./services/profile";
+import { getProfileToken, isAdminProfile, isDelegateAdmin } from "./services/profile";
 
 import HomePage from "./pages/Home/HomePage.vue";
 import RoomPage from "./pages/Rooms/RoomPage.vue";
@@ -98,11 +98,12 @@ const router = createRouter({
     routes,
 });
 
-// Administration : réservée au profil administrateur connecté (et à son token
-// d'accès) ; accès direct par URL sinon -> retour à l'accueil. Le serveur
-// exige de toute façon le token sur chaque requête d'administration.
+// Administration : réservée au profil propriétaire connecté (et à son token
+// d'accès) ou à un administrateur désigné (son jeton de profil suffit) ; accès
+// direct par URL sinon -> retour à l'accueil. Le serveur vérifie de toute façon
+// chaque requête d'administration.
 router.beforeEach((to) => {
-    if (to.meta.requiresCharactersAccess && !(getCharactersAccessToken() && isAdminProfile.value)) {
+    if (to.meta.requiresCharactersAccess && !((getCharactersAccessToken() && isAdminProfile.value) || isDelegateAdmin.value)) {
         return { name: 'Home' };
     }
     if (to.meta.requiresProfile && !getProfileToken()) {

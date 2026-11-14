@@ -3,7 +3,7 @@ import {ref, watch, nextTick, onMounted, onBeforeUnmount} from 'vue';
 import {useRoute, useRouter} from 'vue-router';
 import {BNav, BNavItem, BModal, BFormInput} from 'bootstrap-vue-next';
 import {charactersAccess, isCharactersUnlocked} from '../../services/charactersAccess';
-import {isLoggedIn, isAdminProfile, profilePlayer} from '../../services/profile';
+import {isLoggedIn, isAdminProfile, isDelegateAdmin, profilePlayer} from '../../services/profile';
 import PlayerAvatar from '../player/PlayerAvatar.vue';
 import {copyToClipboard} from '../../services/copyToClipboard';
 import {resolveJoinUrl} from '../../services/joinUrl';
@@ -216,10 +216,11 @@ async function shareJoinUrl() {
           }}</span>
         </button>
       </li>
-      <!-- Administration : visible uniquement pour le profil administrateur -->
-      <li v-if="isAdminProfile" class="arcade-nav-link nav-item">
+      <!-- Administration : profil propriétaire (cadenas, mot de passe d'administration)
+           ou administrateur désigné (accès direct par son profil) -->
+      <li v-if="isAdminProfile || isDelegateAdmin" class="arcade-nav-link nav-item">
         <button
-          v-if="!isCharactersUnlocked"
+          v-if="isAdminProfile && !isCharactersUnlocked"
           type="button"
           class="nav-link arcade-lock-btn"
           title="Accéder à l'administration"

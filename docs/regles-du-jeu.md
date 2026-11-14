@@ -208,8 +208,8 @@ un visiteur qui n'a ni créé ni rejoint de salon.
 
 **Réservé aux profils validés** (migration 6) : l'administrateur valide chaque profil à la main
 (onglet Joueurs, `players.validated_at`), qu'il soit sécurisé par un mot de passe ou public.
-Sans profil connecté → `401` ; profil non validé → `403`. Le profil administrateur est toujours
-validé. La page Profil (ses propres parties) reste ouverte à tous.
+Sans profil connecté → `401` ; profil non validé → `403`. Les administrateurs (propriétaire et
+désignés) sont toujours validés. La page Profil (ses propres parties) reste ouverte à tous.
 
 **Invariant de sécurité** : l'historique public n'expose que les parties **terminées** (liste,
 détail en `404` sinon, classement et fiches joueurs filtrés sur le statut). Publier une partie en
@@ -261,6 +261,17 @@ s'il est protégé. L'onglet **Profil** n'apparaît qu'une fois connecté.
   qu'avec le mot de passe d'administration (2 essais par minute), et seul ce profil voit le
   cadenas d'administration de la barre de navigation. Son pseudo et son mot de passe se changent
   dans la configuration du serveur.
+- **Administrateurs désignés** (migration 7) : depuis l'onglet Joueurs, le propriétaire (profil
+  administrateur ci-dessus) peut désigner d'autres administrateurs, et lui seul :
+  - seul un profil **sécurisé par un mot de passe** peut être désigné, et un administrateur ne peut
+    pas retirer son mot de passe (sinon son profil, et l'administration, s'ouvriraient avec le seul
+    pseudo) ;
+  - le désigné accède à toute l'administration par son profil, sans le mot de passe
+    d'administration (lien direct dans la barre de navigation et la page Profil) ; il est validé
+    d'office ;
+  - il ne peut ni désigner ou retirer un administrateur, ni supprimer un administrateur ;
+    supprimer des parties exige toujours le mot de passe de suppression ;
+  - le retrait par le propriétaire coupe l'accès dès la requête suivante.
 - **Limites** : 5 mots de passe faux par minute et par profil, 30 tous profils confondus.
 
 Le jeton du profil (reçu en créant ou en rejoignant un salon, ou en se connectant) prouve aussi

@@ -4,7 +4,7 @@
 // prêt, choix du cosmos (base migrée : seul « Cosmos imposé » est proposé), lancement,
 // vote des personnages jusqu'au round 1, puis redémarrage du serveur en pleine
 // partie : chaque page doit se reconnecter et se resynchroniser. Enfin, les pages
-// d'administration (réglages du jeu, joueurs) à 320 px.
+// d'administration (réglages du jeu, joueurs) à 320 px, et un administrateur désigné.
 //
 //   STATIC_DIR=…/dist tests/e2e/rust-stack.sh up
 //   node tests/e2e/browser.mjs [--base http://127.0.0.1:18101/binome] [--headed]
@@ -169,7 +169,37 @@ try {
     await admin.locator('.player-status').first().waitFor({ timeout: 8000 })
     const playersWidth = await admin.evaluate(() => document.documentElement.scrollWidth)
     ok(gamesWidth <= 320 && playersWidth <= 320, `admin : pas de défilement horizontal en 320 px (parties ${gamesWidth}, joueurs ${playersWidth})`)
+
+    // ── Administrateur désigné : nommé depuis l'onglet Joueurs, accès par son profil ─
+    const delegatePseudo = ctx.pseudo('Adj')
+    const first = await ctx.api.post('/profile/login', { body: { pseudo: delegatePseudo }, expect: 200 })
+    ctx.created.players.add(first.data.player.id)
+    const secured = await ctx.api.put('/profile/password', { body: { password: 'secret-e2e' }, headers: { 'X-Profile-Token': first.data.token }, expect: 200 })
+    await admin.reload()
+    await admin.locator('.toolbar input[type=search]').fill(delegatePseudo)
+    const card = admin.locator('.player-card', { hasText: delegatePseudo })
+    await card.getByRole('button', { name: 'Désigner administrateur' }).click()
+    await card.locator('.tag--admin').waitFor({ timeout: 8000 })
+    ok(true, 'propriétaire : un profil sécurisé désigné administrateur depuis l\'onglet Joueurs')
     await adminCtx.close()
+
+    const delegateCtx = await browser.newContext({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true })
+    const delegate = await delegateCtx.newPage()
+    delegate.on('pageerror', (e) => problems.push(`admin désigné : ${e.message}`))
+    await delegate.goto(`${base}/`)
+    // Profil enregistré avant la désignation : le front relit le profil au chargement
+    await delegate.evaluate(({ token, player }) => localStorage.setItem('profile', JSON.stringify({ token, player })),
+        { token: secured.data.token, player: secured.data.player })
+    await delegate.goto(`${base}/`)
+    await delegate.locator('.navbar-toggler, .arcade-burger, [aria-label*="menu" i]').first().click().catch(() => {})
+    await delegate.locator('a[href$="/admin"]').first().click({ timeout: 8000 })
+    await delegate.waitForURL(/\/admin/, { timeout: 8000 })
+    await delegate.goto(`${base}/admin/players`)
+    await delegate.locator('.player-status').first().waitFor({ timeout: 8000 })
+    const shields = await delegate.getByRole('button', { name: /administrateur/ }).count()
+    const delegateWidth = await delegate.evaluate(() => document.documentElement.scrollWidth)
+    ok(shields === 0 && delegateWidth <= 320, `admin désigné : administration ouverte sans mot de passe d'administration, sans bouton de désignation (${shields}), ${delegateWidth} px`)
+    await delegateCtx.close()
 } catch (e) {
     ok(false, `scénario interrompu : ${e.message.split('\n')[0]}`)
     await host.screenshot({ path: new URL('./results/browser-failure.png', import.meta.url).pathname }).catch(() => {})

@@ -28,6 +28,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (4, include_str!("../migrations/0004_code_salon_des_parties.sql")),
     (5, include_str!("../migrations/0005_changements_personnage.sql")),
     (6, include_str!("../migrations/0006_controles_admin.sql")),
+    (7, include_str!("../migrations/0007_administrateurs.sql")),
 ];
 const READERS: usize = 4;
 
@@ -290,7 +291,9 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 6);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 7);
+            // Migration 7 : aucun administrateur désigné
+            assert_eq!(c.one::<Option<String>>("SELECT admin_granted_at FROM players WHERE id = 1", [])?, None);
             // Migration 6 : seul « Cosmos imposé », seuls Disney et Films saga, profils non validés
             assert_eq!(c.one::<String>("SELECT value FROM app_settings WHERE name = 'game_modes'", [])?, r#"["cosmos"]"#);
             assert_eq!(c.one::<String>("SELECT group_concat(slug) FROM cosmos WHERE is_enabled = 1", [])?, "disney");
@@ -310,7 +313,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 6"));
+        assert!(db.check().unwrap().contains("version du schéma : 7"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -11,7 +11,7 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, patch, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use rusqlite::{Connection, Transaction};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -120,12 +120,28 @@ async fn identify(State(st): State<AppState>, mut req: Request, next: Next) -> R
 
 // ─── Middleware admin ───────────────────────────────────────────────────────
 
-async fn require_admin(State(st): State<AppState>, req: Request, next: Next) -> Response {
+/// Propriétaire : jeton `X-Characters-Access` (mot de passe d'administration).
+/// Sinon administrateur désigné : jeton de profil d'un joueur désigné par le
+/// propriétaire et dont le profil a un mot de passe, relu à chaque requête (un
+/// retrait prend effet aussitôt). Le rôle est posé en extension (`AdminRole`).
+async fn require_admin(State(st): State<AppState>, mut req: Request, next: Next) -> Response {
     let provided = req.headers().get("x-characters-access").and_then(|v| v.to_str().ok());
-    match catalog::check_access(st.cfg.admin_password_hash.as_deref(), provided) {
-        Ok(()) => next.run(req).await,
-        Err(e) => e.into_response(),
-    }
+    let role = match catalog::check_access(st.cfg.admin_password_hash.as_deref(), provided) {
+        Ok(()) => admin::AdminRole::Owner,
+        Err(refused) => {
+            let Some(Caller::Player(id)) = req.extensions().get::<Caller>().copied() else {
+                return refused.into_response();
+            };
+            let env = st.env();
+            match st.db.read(move |c| Ok(profile::by_id(c, id)?.is_some_and(|p| p.is_delegate_admin(&env)))).await {
+                Ok(true) => admin::AdminRole::Delegate(id),
+                Ok(false) => return refused.into_response(),
+                Err(e) => return e.into_response(),
+            }
+        }
+    };
+    req.extensions_mut().insert(role);
+    next.run(req).await
 }
 
 // ─── Salons ─────────────────────────────────────────────────────────────────
@@ -589,14 +605,17 @@ async fn admin_players(State(st): State<AppState>) -> Response {
 async fn admin_player_room(State(st): State<AppState>, Path(p): Params) -> Response {
     st.write(move |tx, env| admin::remove_from_room(tx, env, id(&p, "player")?)).await
 }
-async fn admin_player_destroy(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
+async fn admin_player_destroy(State(st): State<AppState>, Extension(role): Extension<admin::AdminRole>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
     // Supprimer un joueur « avec ses parties » supprime des parties : même protection
     if admin::with_games(&input) {
         if let Err(r) = require_delete_password(&st, &headers).await {
             return r;
         }
     }
-    st.write(move |tx, env| admin::destroy_player(tx, env, id(&p, "player")?, &input)).await
+    st.write(move |tx, env| admin::destroy_player(tx, env, role, id(&p, "player")?, &input)).await
+}
+async fn admin_player_admin(State(st): State<AppState>, Extension(role): Extension<admin::AdminRole>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, env| admin::set_admin(tx, env, role, id(&p, "player")?, &input)).await
 }
 async fn admin_settings(State(st): State<AppState>) -> Response {
     st.read(|c, _| controls::settings_index(c)).await
@@ -683,6 +702,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/players/{player}/room", axum::routing::delete(admin_player_room))
         .route("/admin/players/{player}", axum::routing::delete(admin_player_destroy))
         .route("/admin/players/{player}/validation", patch(admin_player_validation))
+        .route("/admin/players/{player}/admin", patch(admin_player_admin))
         .route("/admin/settings", get(admin_settings))
         .route("/admin/settings/game-modes/{mode}", patch(admin_game_mode))
         .route("/admin/cosmos/{cosmos}", patch(admin_cosmos))

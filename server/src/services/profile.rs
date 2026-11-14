@@ -13,8 +13,11 @@
 //! pour toutes les actions de jeu (`player_id` vérifié par `input::Caller`) et pour
 //! le WebSocket (`?token=`). Il est émis à la création / l'arrivée dans un salon.
 //!
-//! Profil administrateur : pseudo `BINOME_ADMIN_PSEUDO`, ouvert uniquement par le
-//! mot de passe d'administration (jamais par un mot de passe de profil).
+//! Profil administrateur (le « propriétaire ») : pseudo `BINOME_ADMIN_PSEUDO`, ouvert
+//! uniquement par le mot de passe d'administration (jamais par un mot de passe de profil).
+//! Il peut désigner d'autres administrateurs (`admin_granted_at`, migration 7) : ceux-ci
+//! accèdent à l'administration avec leur jeton de profil, tant que leur profil a un mot
+//! de passe, mais ne peuvent pas désigner d'administrateur à leur tour.
 
 use axum::http::StatusCode;
 use hmac::{Hmac, KeyInit, Mac};
@@ -73,12 +76,22 @@ pub struct Profile {
     pub token_version: i64,
     /// Validé à la main par l'administrateur (`validated_at`, migration 6).
     pub validated: bool,
+    /// Désigné administrateur par le propriétaire (`admin_granted_at`, migration 7).
+    pub admin_granted: bool,
 }
 
-const COLS: &str = "id, pseudo, password_hash, password_prompted, token_version, validated_at IS NOT NULL";
+const COLS: &str = "id, pseudo, password_hash, password_prompted, token_version, validated_at IS NOT NULL, admin_granted_at IS NOT NULL";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Profile> {
-    Ok(Profile { id: r.get(0)?, pseudo: r.get(1)?, password_hash: r.get(2)?, password_prompted: r.get(3)?, token_version: r.get(4)?, validated: r.get(5)? })
+    Ok(Profile {
+        id: r.get(0)?,
+        pseudo: r.get(1)?,
+        password_hash: r.get(2)?,
+        password_prompted: r.get(3)?,
+        token_version: r.get(4)?,
+        validated: r.get(5)?,
+        admin_granted: r.get(6)?,
+    })
 }
 
 pub fn by_pseudo(c: &impl Q, pseudo: &str) -> AppResult<Option<Profile>> {
@@ -95,16 +108,32 @@ pub fn is_admin_pseudo(env: &Env, pseudo: &str) -> bool {
 }
 
 impl Profile {
+    /// Profil propriétaire (`BINOME_ADMIN_PSEUDO`).
     pub fn is_admin(&self, env: &Env) -> bool {
         is_admin_pseudo(env, &self.pseudo)
+    }
+    /// Administrateur désigné, avec accès effectif : il faut un mot de passe au profil
+    /// (un profil public s'ouvre avec le seul pseudo).
+    pub fn is_delegate_admin(&self, env: &Env) -> bool {
+        self.admin_granted && self.password_hash.is_some() && !self.is_admin(env)
+    }
+    /// `"owner"` (propriétaire), `"admin"` (désigné) ou `None`.
+    pub fn admin_role(&self, env: &Env) -> Option<&'static str> {
+        if self.is_admin(env) {
+            Some("owner")
+        } else if self.is_delegate_admin(env) {
+            Some("admin")
+        } else {
+            None
+        }
     }
     /// Profil fermé : il faut son mot de passe (ou le mot de passe admin) pour s'y connecter.
     pub fn is_protected(&self, env: &Env) -> bool {
         self.password_hash.is_some() || self.is_admin(env)
     }
-    /// Accès à l'historique et aux emojis personnalisés (l'admin l'a toujours).
+    /// Accès à l'historique et aux emojis personnalisés (les administrateurs l'ont toujours).
     pub fn is_validated(&self, env: &Env) -> bool {
-        self.validated || self.is_admin(env)
+        self.validated || self.admin_role(env).is_some()
     }
 }
 
@@ -170,6 +199,7 @@ pub fn profile_json(c: &impl Q, env: &Env, p: &Profile) -> AppResult<Value> {
         "password_prompted": p.password_prompted,
         "is_admin": p.is_admin(env),
         "is_validated": p.is_validated(env),
+        "admin_role": p.admin_role(env),
     }))
 }
 
@@ -398,6 +428,11 @@ pub fn set_password(tx: &Transaction, env: &Env, seen: &Profile, new_hash: Optio
              WHERE id = ?3 AND token_version = ?4 AND password_hash IS ?5",
             rusqlite::params![h, now_db(), seen.id, seen.token_version, seen.password_hash],
         )?,
+        // Un administrateur désigné garde un mot de passe : sans lui, son profil (et
+        // l'administration) s'ouvrirait avec le seul pseudo
+        None if seen.admin_granted || tx.exists("SELECT 1 FROM players WHERE id = ?1 AND admin_granted_at IS NOT NULL", [seen.id])? => {
+            return Err(AppError::rule("Tu es administrateur : ton profil doit garder un mot de passe."));
+        }
         None => tx.run(
             "UPDATE players SET password_hash = NULL, updated_at = ?1 WHERE id = ?2 AND token_version = ?3 AND password_hash IS ?4",
             rusqlite::params![now_db(), seen.id, seen.token_version, seen.password_hash],
@@ -422,6 +457,7 @@ pub fn dismiss_prompt(tx: &Transaction, env: &Env, token: Option<&str>) -> AppRe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     /// Salon d'une partie terminée (le joueur n'a jamais cliqué « quitter ») :
     /// pas « en cours ». Partie en cours, ou arrivée après la fin : en cours.
@@ -458,6 +494,33 @@ mod tests {
         })
         .unwrap();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Rôles : le propriétaire l'est par son pseudo ; un désigné n'a l'accès
+    /// qu'avec un mot de passe ; tous deux sont toujours validés.
+    #[test]
+    fn admin_roles() {
+        let env = Env {
+            prefix: String::new(),
+            hub: Arc::new(crate::realtime::hub::Hub::default()),
+            profile_secret: Arc::new(vec![]),
+            admin_pseudo: Some("Patron".into()),
+        };
+        let p = |pseudo: &str, password: bool, granted: bool| Profile {
+            id: 1,
+            pseudo: pseudo.into(),
+            password_hash: password.then(|| "h".to_string()),
+            password_prompted: false,
+            token_version: 0,
+            validated: false,
+            admin_granted: granted,
+        };
+        assert_eq!(p("pAtrón", false, false).admin_role(&env), Some("owner"));
+        assert_eq!(p("Ami", true, true).admin_role(&env), Some("admin"));
+        assert_eq!(p("Ami", false, true).admin_role(&env), None, "désigné sans mot de passe");
+        assert_eq!(p("Ami", true, false).admin_role(&env), None);
+        assert!(p("Ami", true, true).is_validated(&env));
+        assert!(!p("Ami", true, false).is_validated(&env));
     }
 
     #[test]

@@ -33,7 +33,8 @@ const ROUTES = {
     'GET /api/admin/games': ['Toutes les parties', 'admin'],
     'GET /api/admin/games/:game': ['Détail complet, personnages révélés', 'admin'],
     'DELETE /api/admin/games/:game': ['Supprimer une partie (cascade)', 'admin'],
-    'GET /api/admin/players': ['Joueurs + stats + salon + `in_game` + `has_password` / `is_validated`', 'admin'],
+    'GET /api/admin/players': ['Joueurs + stats + salon + `in_game` + `has_password` / `is_validated` / `admin_role`', 'admin'],
+    'PATCH /api/admin/players/:player/admin': ['`{ admin }` : désigner / retirer un administrateur (propriétaire seulement, profil avec mot de passe)', 'admin'],
     'PATCH /api/admin/players/:player/validation': ['`{ validated }` : valider un profil (historique, emojis image)', 'admin'],
     'GET /api/admin/settings': ['Modes de jeu, cosmos et binômes complets, avec leur état', 'admin'],
     'PATCH /api/admin/settings/game-modes/:mode': ['`{ enabled }` (`409` pour le dernier mode actif)', 'admin'],
@@ -135,8 +136,9 @@ let api = `# Migration Rust — 02. Contrat de l'API REST
 - Corps JSON ; \`multipart/form-data\` pour les fichiers de personnages. **Method spoofing** :
   \`POST\` + champ \`_method=PUT\` doit être traité comme \`PUT\` (forme utilisée par le front).
 - Identité : \`player_id\` dans le corps / la query, **non signé** (modèle de confiance actuel, reproduit tel quel).
-- Admin : en-tête \`X-Characters-Access\` = HMAC-SHA256(mot de passe, \`binome-characters-access\`) en hex ;
-  absent ou faux → \`403 {message}\`.
+- Admin : en-tête \`X-Characters-Access\` = HMAC-SHA256(mot de passe, \`binome-characters-access\`) en hex
+  (propriétaire), ou \`X-Profile-Token\` d'un administrateur désigné (\`admin_role = "admin"\`, profil avec mot
+  de passe) ; absent ou faux → \`403 {message}\`.
 - Erreurs :
   - \`422\` validation → \`{ message, errors: { champ: [messages] } }\` (messages Laravel, en anglais pour les règles génériques, en français pour les messages personnalisés) ;
   - \`409\` règle du jeu → \`{ message }\` ;
