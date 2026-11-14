@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { BContainer } from 'bootstrap-vue-next'
 import { historyService } from '../../services/historyService'
+import { isLoggedIn, isValidatedProfile, refreshProfile } from '../../services/profile'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 
 // ─── ONGLETS ──────────────────────────────────────────────────────────────────
@@ -152,7 +153,13 @@ async function openLinkedGame() {
   document.getElementById(`partie-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
+// Réservé aux profils validés par l'administrateur (le serveur le vérifie aussi).
+const checking = ref(true)
+
 onMounted(async () => {
+  await refreshProfile()
+  checking.value = false
+  if (!isValidatedProfile.value) return
   loadLeaderboard()
   await loadGames()
   openLinkedGame()
@@ -167,6 +174,20 @@ onMounted(async () => {
       Les points d'un même pseudo s'additionnent d'une partie à l'autre.
     </p>
 
+    <p v-if="checking" class="muted">Chargement…</p>
+    <div v-else-if="!isValidatedProfile" class="locked">
+      <i class="fa-solid fa-lock locked__icon"></i>
+      <p v-if="!isLoggedIn">
+        L'historique est réservé aux profils validés.
+        <router-link to="/connexion">Connecte-toi</router-link> à ton profil.
+      </p>
+      <p v-else>
+        Ton profil n'est pas encore validé par l'administrateur : l'historique
+        s'ouvrira dès qu'il l'aura fait.
+      </p>
+    </div>
+
+    <template v-else>
     <!-- Onglets -->
     <div class="tabs" role="tablist">
       <button
@@ -356,6 +377,7 @@ onMounted(async () => {
         </li>
       </ul>
     </section>
+    </template>
   </BContainer>
 </template>
 
@@ -379,6 +401,17 @@ onMounted(async () => {
   font-size: 0.85rem;
   margin-bottom: 1.1rem;
 }
+
+.locked {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border: 2px dashed var(--arcade-blue-grey);
+  border-radius: 12px;
+  color: var(--arcade-beige);
+}
+.locked__icon { font-size: 1.6rem; color: var(--arcade-gold); margin-bottom: 0.5rem; }
+.locked p { margin: 0; }
+.locked a { color: var(--arcade-gold); font-weight: 700; }
 
 /* ── Onglets ──────────────────────────────────────────────────── */
 .tabs {

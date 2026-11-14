@@ -79,7 +79,9 @@ function setAvatar(id, url) {
 // ─── MODE DE JEU ──────────────────────────────────────────────────────────────
 const gameMode = ref('random')          // 'random' | 'cosmos'
 const cosmosId = ref(null)
-const cosmosOptions = ref([])            // [{ id, name, playable_universe_count }]
+const cosmosOptions = ref([])            // cosmos activés par l'admin : [{ id, name, playable_universe_count }]
+// Modes proposés par l'administrateur (GET /cosmos → game_modes)
+const enabledModes = ref(['random', 'cosmos'])
 // Options pour les joueurs éliminés (actives par défaut côté serveur)
 const revealToEliminated = ref(true)     // vue omnisciente
 const bestQuestionVote = ref(true)       // vote « meilleure question du round »
@@ -115,11 +117,18 @@ const startBlockedReason = computed(() => {
 async function loadCosmosOptions() {
   try {
     const res = await characterService.listCosmos()
-    cosmosOptions.value = res.data.cosmos ?? []
+    cosmosOptions.value = (res.data.cosmos ?? []).filter(c => c.is_enabled !== false)
+    if (res.data.game_modes?.length) enabledModes.value = res.data.game_modes
   } catch {
     cosmosOptions.value = []
   }
 }
+
+// Mode du salon désactivé depuis par l'admin (ou salon créé avant) : on affiche
+// le premier mode proposé ; le serveur l'enregistre au choix du cosmos.
+watch([gameMode, enabledModes], () => {
+  if (!enabledModes.value.includes(gameMode.value)) gameMode.value = enabledModes.value[0]
+})
 
 async function handleUpdateSettings() {
   if (!isHost.value || !roomId.value) return
@@ -378,7 +387,7 @@ const handleCreateGame = async () => {
     playerId.value = res.data.player.id
     hostId.value = res.data.player.id
     isHost.value = true
-    gameMode.value = 'random'
+    gameMode.value = enabledModes.value.includes('random') ? 'random' : enabledModes.value[0]
     cosmosId.value = null
     revealToEliminated.value = true
     bestQuestionVote.value = true
@@ -678,7 +687,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
               <h5 class="roster__title">Mode de jeu</h5>
 
               <template v-if="isHost">
-                <div class="mode-toggle">
+                <div v-if="enabledModes.length > 1" class="mode-toggle">
                   <button
                       type="button"
                       class="mode-toggle__btn"
@@ -696,6 +705,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                     <i class="fa-solid fa-globe"></i> Cosmos imposé
                   </button>
                 </div>
+                <p v-else class="mode-readonly">
+                  <i :class="gameMode === 'cosmos' ? 'fa-solid fa-globe' : 'fa-solid fa-shuffle'"></i>
+                  {{ gameMode === 'cosmos' ? 'Cosmos imposé' : 'Univers aléatoires' }}
+                </p>
 
                 <div v-if="gameMode === 'cosmos'" class="mode-cosmos">
                   <select

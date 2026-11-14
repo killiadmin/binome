@@ -27,6 +27,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (3, include_str!("../migrations/0003_profils.sql")),
     (4, include_str!("../migrations/0004_code_salon_des_parties.sql")),
     (5, include_str!("../migrations/0005_changements_personnage.sql")),
+    (6, include_str!("../migrations/0006_controles_admin.sql")),
 ];
 const READERS: usize = 4;
 
@@ -274,6 +275,7 @@ mod tests {
             conn.execute_batch(SCHEMA).unwrap();
             conn.execute_batch(
                 "INSERT INTO players (id, pseudo) VALUES (1, 'Hote');
+                 INSERT INTO cosmos (id, name, slug) VALUES (1, 'Disney', 'disney'), (2, 'Pixar', 'pixar');
                  INSERT INTO rooms (id, code, created_by) VALUES (7, 'ABCDEF', 1);
                  INSERT INTO games (id, room_id, status) VALUES (41, 7, 'finished');
                  INSERT INTO game_stats (game_id, player_pseudo, character_name, score) VALUES (41, 'Hote', 'X', 9);
@@ -288,7 +290,11 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 5);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 6);
+            // Migration 6 : seul « Cosmos imposé », seuls Disney et Films saga, profils non validés
+            assert_eq!(c.one::<String>("SELECT value FROM app_settings WHERE name = 'game_modes'", [])?, r#"["cosmos"]"#);
+            assert_eq!(c.one::<String>("SELECT group_concat(slug) FROM cosmos WHERE is_enabled = 1", [])?, "disney");
+            assert_eq!(c.one::<Option<String>>("SELECT validated_at FROM players WHERE id = 1", [])?, None);
             // Migration 5 : compteur de changements de personnage, vide pour l'existant
             assert_eq!(c.one::<Option<String>>("SELECT character_changes FROM games WHERE id = 41", [])?, None);
             // Migration 4 : le code du salon est copié dans la partie
@@ -304,7 +310,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 5"));
+        assert!(db.check().unwrap().contains("version du schéma : 6"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

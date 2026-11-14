@@ -92,6 +92,11 @@ remains. Details in `docs/regles-du-jeu.md`.
   HMAC(hash, constant). The owner's profile pseudo is `BINOME_ADMIN_PSEUDO`: it opens only with
   the admin password, returns the admin token, and only that profile sees the navbar lock. `POST /access/characters` allows 2 attempts/minute, global bucket
   (successes refunded). The E2E test server uses throwaway passwords (`rust-stack.sh`).
+- Admin controls (migration 6, `services/controls.rs`, tab /admin/games): enabled game modes
+  (`app_settings.game_modes`), `cosmos.is_enabled` (new cosmos are born disabled), disabled
+  binomes (`disabled_binomes`, universe + level) — the draw uses `controls::PLAYABLE_CHARACTER`.
+  Profiles are validated by hand (`players.validated_at`, tab /admin/players): history routes and
+  image emojis require a validated profile (`controls::require_validated`); admin always is.
 - Deleting games (`DELETE /admin/games/{id}`, or a player `?with_games=1`) also requires the
   `X-Delete-Password` header, checked against `BINOME_DELETE_PASSWORD_HASH` (PBKDF2; unset =
   disabled). Only the owner knows these passwords (admin and delete) — never generate or store them yourself.

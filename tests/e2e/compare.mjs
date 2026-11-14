@@ -42,6 +42,19 @@ const ACCEPTED = [
     // compteur restant par joueur dans l'état public et dans characters.redrawn.
     /^CHAMP EN TROP +GET \/api\/games\/:game 200 +\$\.(max_character_changes|players\[\]\.character_changes_left) /,
     /^CHAMP EN TROP +event characters\.redrawn @game +\$\.(change_player_ids|character_changes_left)(\[\](\.(left|player_id))?)? /,
+    // Identité signée (checklist point 5, 2026-11-14) : agir au nom d'un autre joueur
+    // ou sans jeton valide → 401 / 403.
+    /^NOUVEAU +GET \/api\/games\/:game\/me 40[13]$/,
+    /^NOUVEAU +POST \/api\/games\/:game\/reactions 403$/,
+    /^NOUVEAU +POST \/api\/players\/:player\/avatar 401$/,
+    // Contrôles de l'administrateur (migration 6, 2026-11-14) : modes de jeu, cosmos et
+    // binômes activables, validation manuelle des profils (historique, emojis image).
+    /^NOUVEAU +(GET|PATCH) \/api\/admin\/(settings(\/game-modes\/:mode)?|cosmos\/:cosmos|binomes|players\/:player\/validation) \d{3}$/,
+    /^CHAMP EN TROP +GET \/api\/admin\/players 200 +\$\.players\[\]\.(has_password|is_admin|is_validated|validated_at) /,
+    /^CHAMP EN TROP +GET \/api\/cosmos 200 +\$\.(cosmos\[\]\.is_enabled|game_modes(\[\])?) /,
+    /^CHAMP EN TROP +PATCH \/api\/rooms\/:room\/settings 422 +\$\.errors\.game_mode(\[\])? /,
+    /^NOUVEAU +GET \/api\/history\/(games|leaderboard) 40[13]$/,
+    /^NOUVEAU +POST \/api\/reactions 403$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

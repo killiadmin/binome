@@ -18,7 +18,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::error::{AppError, AppResult};
 use crate::realtime::ws;
 use crate::services::common::Env;
-use crate::services::{admin, catalog, game, history, play, profile, rooms, score, social, Followup, Out};
+use crate::services::{admin, catalog, controls, game, history, play, profile, rooms, score, social, Followup, Out};
 use crate::state::AppState;
 use crate::timers;
 use input::{Caller, Input};
@@ -210,17 +210,36 @@ async fn actions_decide(State(st): State<AppState>, Path(p): Params, input: Inpu
 
 // ─── Historique, chat, images, réactions ────────────────────────────────────
 
-async fn history_games(State(st): State<AppState>) -> Response {
-    st.read(|c, _| history::list_games(c, true)).await
+// Historique : réservé aux profils validés par l'administrateur (migration 6).
+const HISTORY: &str = "L'historique";
+
+async fn history_games(State(st): State<AppState>, input: Input) -> Response {
+    st.read(move |c, env| {
+        controls::require_validated(c, env, input.1, HISTORY)?;
+        history::list_games(c, true)
+    })
+    .await
 }
-async fn history_game(State(st): State<AppState>, Path(p): Params) -> Response {
-    st.read(move |c, env| history::detail(c, env, id(&p, "game")?, true)).await
+async fn history_game(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.read(move |c, env| {
+        controls::require_validated(c, env, input.1, HISTORY)?;
+        history::detail(c, env, id(&p, "game")?, true)
+    })
+    .await
 }
-async fn history_leaderboard(State(st): State<AppState>) -> Response {
-    st.read(|c, env| history::leaderboard(c, env)).await
+async fn history_leaderboard(State(st): State<AppState>, input: Input) -> Response {
+    st.read(move |c, env| {
+        controls::require_validated(c, env, input.1, HISTORY)?;
+        history::leaderboard(c, env)
+    })
+    .await
 }
 async fn history_player(State(st): State<AppState>, input: Input) -> Response {
-    st.read(move |c, _| history::player_breakdown(c, &input)).await
+    st.read(move |c, env| {
+        controls::require_validated(c, env, input.1, HISTORY)?;
+        history::player_breakdown(c, &input)
+    })
+    .await
 }
 
 async fn chat_index(State(st): State<AppState>) -> Response {
@@ -258,8 +277,8 @@ async fn character_image(State(st): State<AppState>, Path(p): Params) -> Respons
     }
 }
 
-async fn reactions_index(State(st): State<AppState>) -> Response {
-    st.read(|c, env| social::reactions_index(c, env)).await
+async fn reactions_index(State(st): State<AppState>, input: Input) -> Response {
+    st.read(move |c, env| social::reactions_index(c, env, input.1)).await
 }
 async fn reactions_store(State(st): State<AppState>, input: Input) -> Response {
     if let Some(r) = st.throttle("custom-reactions", &raw_player_key(&input), 5) {
@@ -579,6 +598,21 @@ async fn admin_player_destroy(State(st): State<AppState>, Path(p): Params, heade
     }
     st.write(move |tx, env| admin::destroy_player(tx, env, id(&p, "player")?, &input)).await
 }
+async fn admin_settings(State(st): State<AppState>) -> Response {
+    st.read(|c, _| controls::settings_index(c)).await
+}
+async fn admin_game_mode(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, _| controls::set_game_mode(tx, p.get("mode").map(String::as_str).unwrap_or_default(), &input)).await
+}
+async fn admin_cosmos(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, _| controls::set_cosmos(tx, id(&p, "cosmos")?, &input)).await
+}
+async fn admin_binome(State(st): State<AppState>, input: Input) -> Response {
+    st.write(move |tx, _| controls::set_binome(tx, &input)).await
+}
+async fn admin_player_validation(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, env| controls::set_validation(tx, env, id(&p, "player")?, &input)).await
+}
 async fn admin_reactions(State(st): State<AppState>) -> Response {
     st.read(|c, env| social::admin_reactions_index(c, env)).await
 }
@@ -648,6 +682,11 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/players", get(admin_players))
         .route("/admin/players/{player}/room", axum::routing::delete(admin_player_room))
         .route("/admin/players/{player}", axum::routing::delete(admin_player_destroy))
+        .route("/admin/players/{player}/validation", patch(admin_player_validation))
+        .route("/admin/settings", get(admin_settings))
+        .route("/admin/settings/game-modes/{mode}", patch(admin_game_mode))
+        .route("/admin/cosmos/{cosmos}", patch(admin_cosmos))
+        .route("/admin/binomes", patch(admin_binome))
         .route("/admin/reactions", get(admin_reactions).post(admin_reaction_store))
         .route("/admin/reactions/{reaction}", patch(admin_reaction_update).delete(admin_reaction_destroy))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));

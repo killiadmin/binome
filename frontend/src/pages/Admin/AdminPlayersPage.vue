@@ -22,6 +22,8 @@ const deleting = ref(false)
 
 const search = ref('')
 const sort = ref('pseudo')
+// Seulement les profils en attente de validation
+const onlyPending = ref(false)
 
 const SORTS = {
   pseudo: 'Pseudo',
@@ -34,7 +36,7 @@ const filteredPlayers = computed(() => {
   // Même tolérance que la base : casse et accents ignorés.
   const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   const q = norm(search.value.trim())
-  const list = q ? players.value.filter((p) => norm(p.pseudo).includes(q)) : [...players.value]
+  const list = players.value.filter((p) => (!q || norm(p.pseudo).includes(q)) && (!onlyPending.value || !p.is_validated))
 
   const by = {
     pseudo: (a, b) => a.pseudo.localeCompare(b.pseudo, 'fr'),
@@ -46,6 +48,7 @@ const filteredPlayers = computed(() => {
 })
 
 const inRoomCount = computed(() => players.value.filter((p) => p.room_code).length)
+const pendingCount = computed(() => players.value.filter((p) => !p.is_validated).length)
 
 // ─── CHARGEMENT ───────────────────────────────────────────────────────────────
 
@@ -79,6 +82,23 @@ async function removeFromRoom(player) {
     flash(data.message)
   } catch (e) {
     error.value = e.response?.data?.message || 'Impossible de retirer le joueur du salon.'
+  } finally {
+    busy[player.id] = false
+  }
+}
+
+// Validation manuelle : sans elle, pas d'historique ni d'emojis personnalisés.
+async function toggleValidation(player) {
+  if (busy[player.id] || player.is_admin) return
+  busy[player.id] = true
+  error.value = null
+  try {
+    const { data } = await adminService.setPlayerValidation(player.id, !player.is_validated)
+    player.is_validated = data.player.is_validated
+    player.validated_at = data.player.validated_at
+    flash(data.message)
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Impossible de modifier la validation.'
   } finally {
     busy[player.id] = false
   }
@@ -125,7 +145,8 @@ onMounted(loadPlayers)
     <h1 class="page-title">Joueurs</h1>
     <p class="page-subtitle">
       Pseudos inscrits sur l'application : ceux qui ont joué au moins une partie
-      et ceux présents dans un salon. Retire un joueur de son salon ou supprime-le.
+      et ceux présents dans un salon. Valide un profil pour lui ouvrir l'historique
+      et les emojis personnalisés, retire un joueur de son salon ou supprime-le.
     </p>
 
     <div class="toolbar">
@@ -145,6 +166,9 @@ onMounted(loadPlayers)
         @click="sort = key"
       >
         {{ label }}
+      </button>
+      <button type="button" class="filter-chip filter-chip--pending" :class="{ active: onlyPending }" @click="onlyPending = !onlyPending">
+        À valider ({{ pendingCount }})
       </button>
     </div>
 
@@ -171,6 +195,12 @@ onMounted(loadPlayers)
               <span v-if="p.room_code" class="tag tag--room">salon {{ p.room_code }}</span>
               <span v-if="p.in_game" class="tag tag--game">en partie</span>
             </div>
+            <div class="player-status">
+              <span v-if="p.has_password" class="tag tag--secure"><i class="fa-solid fa-lock"></i> sécurisé</span>
+              <span v-else class="tag tag--public"><i class="fa-solid fa-lock-open"></i> public</span>
+              <span v-if="p.is_validated" class="tag tag--validated"><i class="fa-solid fa-circle-check"></i> validé</span>
+              <span v-else class="tag tag--pending">à valider</span>
+            </div>
             <div class="player-meta">
               <span><i class="fa-solid fa-gamepad"></i> {{ p.games_count }} partie{{ p.games_count > 1 ? 's' : '' }}</span>
               <span><i class="fa-solid fa-trophy"></i> {{ p.wins }}</span>
@@ -181,6 +211,15 @@ onMounted(loadPlayers)
           <!-- Un joueur en pleine partie n'est ni retirable ni supprimable :
                supprimer ou terminer d'abord la partie (onglet Parties). -->
           <div class="player-actions">
+            <button v-if="!p.is_admin" type="button" class="icon-btn"
+                    :class="p.is_validated ? 'icon-btn--validated' : 'icon-btn--validate'"
+                    :disabled="busy[p.id]"
+                    :title="p.is_validated ? 'Retirer la validation' : 'Valider le profil'"
+                    :aria-label="p.is_validated ? 'Retirer la validation' : 'Valider le profil'"
+                    :aria-pressed="p.is_validated"
+                    @click="toggleValidation(p)">
+              <i class="fa-solid" :class="p.is_validated ? 'fa-user-check' : 'fa-user-clock'"></i>
+            </button>
             <button v-if="p.room_code" type="button" class="icon-btn"
                     :disabled="busy[p.id] || p.in_game"
                     :title="p.in_game ? 'En pleine partie' : 'Retirer du salon'"
@@ -432,4 +471,26 @@ onMounted(loadPlayers)
 
 .tag--room { background: var(--arcade-gold); color: var(--arcade-dark); }
 .tag--game { background: var(--arcade-success); color: #fff; }
+
+/* Statut du profil : sécurisé / public, validé / à valider */
+.player-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.1rem 0 0.15rem;
+}
+.player-status .tag { margin-left: 0; }
+.tag--secure { background: var(--arcade-blue-grey); color: var(--arcade-beige); }
+.tag--public { background: transparent; color: var(--arcade-taupe); border: 1px solid var(--arcade-blue-grey); }
+.tag--validated { background: var(--arcade-success); color: #fff; }
+.tag--pending { background: var(--arcade-gold); color: var(--arcade-dark); }
+
+.icon-btn--validate { color: var(--arcade-gold); }
+.icon-btn--validated { color: var(--arcade-success); }
+
+.filter-chip--pending.active {
+  background: var(--arcade-gold);
+  border-color: var(--arcade-gold);
+  color: var(--arcade-dark);
+}
 </style>

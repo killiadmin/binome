@@ -186,6 +186,10 @@ function gameStatus(g) {
                 <span v-if="player.is_admin" class="pixel-chip pixel-chip--gold">Admin</span>
                 <span v-else-if="player.has_password" class="pixel-chip">🔒 Protégé</span>
                 <span v-else class="pixel-chip pixel-chip--danger">🔓 Public</span>
+                <template v-if="!player.is_admin">
+                  <span v-if="player.is_validated" class="pixel-chip" title="Historique et emojis personnalisés ouverts">✔ Validé</span>
+                  <span v-else class="pixel-chip" title="L'administrateur doit valider ton profil pour ouvrir l'historique et les emojis personnalisés">⏳ En attente de validation</span>
+                </template>
               </div>
             </template>
             <form v-else class="rename" @submit.prevent="saveRename">

@@ -1,7 +1,12 @@
 <script setup>
 import Navbar from './components/navigation/Navbar.vue';
 import Footer from './components/footer/Footer.vue';
+import {onMounted} from 'vue';
 import {isImmersive} from './composables/useImmersiveMode';
+import {refreshProfile} from './services/profile';
+
+// Validation du profil par l'admin, mot de passe posé ailleurs… : état à jour au chargement.
+onMounted(refreshProfile);
 </script>
 
 <template>

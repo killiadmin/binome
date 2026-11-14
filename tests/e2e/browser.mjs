@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Test navigateur du VRAI front (Vue compilé, servi par le serveur Rust) :
 // 4 joueurs dans 4 navigateurs (format mobile), création / arrivée par l'interface,
-// prêt, lancement, vote des personnages jusqu'au round 1, puis redémarrage du
-// serveur en pleine partie : chaque page doit se reconnecter et se resynchroniser.
+// prêt, choix du cosmos (base migrée : seul « Cosmos imposé » est proposé), lancement,
+// vote des personnages jusqu'au round 1, puis redémarrage du serveur en pleine
+// partie : chaque page doit se reconnecter et se resynchroniser. Enfin, les pages
+// d'administration (réglages du jeu, joueurs) à 320 px.
 //
 //   STATIC_DIR=…/dist tests/e2e/rust-stack.sh up
 //   node tests/e2e/browser.mjs [--base http://127.0.0.1:18101/binome] [--headed]
@@ -85,6 +87,19 @@ try {
 
     // ── Prêts puis lancement ───────────────────────────────────────────────
     for (const page of pages) await page.locator('button[title="Je suis prêt !"]').click()
+
+    // ── Mode de jeu : seuls les modes et cosmos activés par l'admin ─────────
+    const enabled = (await ctx.api.get('/cosmos', { expect: 200 })).data
+    const select = host.locator('.mode-cosmos__select')
+    if (enabled.game_modes.join() === 'cosmos') {
+        await select.waitFor({ timeout: 8000 })
+        ok(await host.locator('.mode-toggle__btn', { hasText: 'Aléatoire' }).count() === 0, 'mode Aléatoire désactivé : absent du salon')
+        const offered = await select.locator('option:not([disabled])').allTextContents()
+        const allowed = enabled.cosmos.filter((c) => c.is_enabled).map((c) => c.name)
+        ok(offered.length > 0 && offered.every((t) => allowed.some((n) => t.startsWith(`${n} —`))), `seuls les cosmos activés sont proposés (${offered.map((t) => t.split(' —')[0]).join(', ')})`)
+        await select.selectOption({ index: await select.evaluate((el) => [...el.options].findIndex((o) => !o.disabled)) })
+        await host.waitForFunction(() => !document.querySelector('.start-blocked'), null, { timeout: 8000 })
+    }
     const start = host.getByRole('button', { name: /démarrer la partie/i })
     await start.waitFor({ timeout: 8000 })
     await host.waitForFunction(() => !document.querySelector('button.play-btn')?.disabled, null, { timeout: 8000 })
@@ -127,6 +142,34 @@ try {
     // Largeur mobile (exigence 320–390 px sans défilement horizontal)
     const widths = await Promise.all(pages.map((p) => p.evaluate(() => document.documentElement.scrollWidth)))
     ok(widths.every((w) => w <= 390), `pas de défilement horizontal en 390 px (${widths.join(', ')})`)
+
+    // ── Administration à 320 px : réglages du jeu et validation des profils ─
+    const adminLogin = await ctx.api.post('/profile/login', { body: { pseudo: ctx.target.adminPseudo, password: ctx.target.adminPassword }, expect: 200 })
+    const adminCtx = await browser.newContext({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true })
+    const admin = await adminCtx.newPage()
+    admin.on('pageerror', (e) => problems.push(`admin : ${e.message}`))
+    await admin.goto(`${base}/`)
+    await admin.evaluate(({ token, player, adminToken }) => {
+        localStorage.setItem('profile', JSON.stringify({ token, player }))
+        localStorage.setItem('charactersAccess', adminToken)
+    }, { token: adminLogin.data.token, player: adminLogin.data.player, adminToken: adminLogin.data.admin_token })
+    await admin.goto(`${base}/admin/games`)
+    await admin.getByText('Réglages du jeu').waitFor({ timeout: 8000 })
+    await admin.locator('.cosmos-expand:not([disabled])').first().click()
+    const binomeSwitch = admin.locator('.binome-row .switch').first()
+    await binomeSwitch.waitFor({ timeout: 8000 })
+    const before = await binomeSwitch.getAttribute('aria-checked')
+    await binomeSwitch.click()
+    await admin.waitForFunction((b) => document.querySelector('.binome-row .switch')?.getAttribute('aria-checked') !== b, before, { timeout: 8000 })
+    await binomeSwitch.click()
+    await admin.waitForFunction((b) => document.querySelector('.binome-row .switch')?.getAttribute('aria-checked') === b, before, { timeout: 8000 })
+    ok(true, 'admin : un binôme se désactive puis se réactive depuis l\'onglet Parties')
+    const gamesWidth = await admin.evaluate(() => document.documentElement.scrollWidth)
+    await admin.goto(`${base}/admin/players`)
+    await admin.locator('.player-status').first().waitFor({ timeout: 8000 })
+    const playersWidth = await admin.evaluate(() => document.documentElement.scrollWidth)
+    ok(gamesWidth <= 320 && playersWidth <= 320, `admin : pas de défilement horizontal en 320 px (parties ${gamesWidth}, joueurs ${playersWidth})`)
+    await adminCtx.close()
 } catch (e) {
     ok(false, `scénario interrompu : ${e.message.split('\n')[0]}`)
     await host.screenshot({ path: new URL('./results/browser-failure.png', import.meta.url).pathname }).catch(() => {})

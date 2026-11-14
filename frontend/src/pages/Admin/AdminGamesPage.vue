@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { BContainer, BModal } from 'bootstrap-vue-next'
 import { adminService } from '../../services/adminService'
+import AdminGameControls from './AdminGameControls.vue'
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 
@@ -132,9 +133,13 @@ onMounted(loadGames)
   <BContainer class="admin-games py-4">
     <h1 class="page-title">Parties</h1>
     <p class="page-subtitle">
-      Consulter et supprimer les parties enregistrées. Supprimer une partie libère
-      les personnages qu'elle utilisait.
+      Régler ce que les hôtes peuvent choisir, puis consulter et supprimer les
+      parties enregistrées. Supprimer une partie libère les personnages qu'elle utilisait.
     </p>
+
+    <AdminGameControls />
+
+    <h2 class="section-title">Parties enregistrées</h2>
 
     <div class="filters">
       <button
@@ -288,6 +293,12 @@ onMounted(loadGames)
   font-family: 'Press Start 2P', cursive;
   font-size: 1rem;
   margin-bottom: 0.5rem;
+}
+
+.section-title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
 }
 
 .page-subtitle {

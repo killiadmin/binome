@@ -27,7 +27,7 @@
 
 ## Couverture
 
-69 routes ; 69 observées par le banc.
+74 routes ; 74 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -47,7 +47,7 @@ $.token                                          string
 
 ### `GET /api/cosmos`
 
-Cosmos + `universes_count` + `playable_universe_count` — accès : public
+Cosmos + `is_enabled` + `universes_count` + `playable_universe_count` ; `game_modes` proposés — accès : public
 
 Statuts observés : `200`
 
@@ -58,9 +58,12 @@ $                                                object
 $.cosmos                                         array
 $.cosmos[]                                       object
 $.cosmos[].id                                    int
+$.cosmos[].is_enabled                            bool
 $.cosmos[].name                                  string
 $.cosmos[].playable_universe_count               int
 $.cosmos[].universes_count                       int
+$.game_modes                                     array
+$.game_modes[]                                   string
 ```
 
 ### `POST /api/cosmos`
@@ -432,7 +435,7 @@ $.message                                        string
 
 ### `GET /api/admin/players`
 
-Joueurs + stats + salon + `in_game` — accès : admin
+Joueurs + stats + salon + `in_game` + `has_password` / `is_validated` — accès : admin
 
 Statuts observés : `200`
 
@@ -445,13 +448,116 @@ $.players[]                                      object
 $.players[].avatar_url                           null | string
 $.players[].created_at                           date:iso8601
 $.players[].games_count                          int
+$.players[].has_password                         bool
 $.players[].id                                   int
 $.players[].in_game                              bool
+$.players[].is_admin                             bool
+$.players[].is_validated                         bool
 $.players[].pseudo                               string
 $.players[].room_code                            null | string
 $.players[].score                                int
 $.players[].updated_at                           date:iso8601
+$.players[].validated_at                         date:iso8601 | null
 $.players[].wins                                 int
+```
+
+### `PATCH /api/admin/players/:player/validation`
+
+`{ validated }` : valider un profil (historique, emojis image) — accès : admin
+
+Statuts observés : `200`, `403`, `404`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.player                                         object
+$.player.id                                      int
+$.player.is_validated                            bool
+$.player.validated_at                            date:iso8601 | null
+```
+
+### `GET /api/admin/settings`
+
+Modes de jeu, cosmos et binômes complets, avec leur état — accès : admin
+
+Statuts observés : `200`, `403`
+
+Réponse `200` :
+
+```
+$                                                object
+$.binomes                                        array
+$.binomes[]                                      object
+$.binomes[].characters                           array
+$.binomes[].characters[]                         string
+$.binomes[].cosmos_id                            int
+$.binomes[].is_enabled                           bool
+$.binomes[].level_affectation                    int
+$.binomes[].universe_id                          int
+$.binomes[].universe_name                        string
+$.cosmos                                         array
+$.cosmos[]                                       object
+$.cosmos[].id                                    int
+$.cosmos[].is_enabled                            bool
+$.cosmos[].name                                  string
+$.cosmos[].playable_universe_count               int
+$.cosmos[].universes_count                       int
+$.game_modes                                     array
+$.game_modes[]                                   object
+$.game_modes[].enabled                           bool
+$.game_modes[].key                               string
+$.game_modes[].label                             string
+```
+
+### `PATCH /api/admin/settings/game-modes/:mode`
+
+`{ enabled }` (`409` pour le dernier mode actif) — accès : admin
+
+Statuts observés : `200`, `404`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.game_modes                                     array
+$.game_modes[]                                   string
+$.message                                        string
+```
+
+### `PATCH /api/admin/cosmos/:cosmos`
+
+`{ is_enabled }` : cosmos proposé aux hôtes — accès : admin
+
+Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.cosmos                                         object
+$.cosmos.id                                      int
+$.cosmos.is_enabled                              bool
+$.cosmos.name                                    string
+$.message                                        string
+```
+
+### `PATCH /api/admin/binomes`
+
+`{ universe_id, level_affectation, is_enabled }` : binôme tirable — accès : admin
+
+Statuts observés : `200`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.binome                                         object
+$.binome.is_enabled                              bool
+$.binome.level_affectation                       int
+$.binome.universe_id                             int
+$.message                                        string
 ```
 
 ### `DELETE /api/admin/players/:player/room`
@@ -558,7 +664,7 @@ $.message                                        string
 
 ### `GET /api/reactions`
 
-Réactions actives (Unicode puis images) — accès : public
+Réactions actives (Unicode puis images ; images pour un profil validé seulement) — accès : public
 
 Statuts observés : `200`
 
@@ -577,9 +683,9 @@ $.reactions[].url                                null | string
 
 ### `POST /api/reactions`
 
-Un joueur crée un emoji image (JPEG carré 64–256 px ≤ 60 ko, 10/pseudo) — accès : player_id · 5/min
+Un joueur crée un emoji image (JPEG carré 64–256 px ≤ 60 ko, 10/pseudo) — accès : player_id validé · 5/min
 
-Statuts observés : `201`, `422`
+Statuts observés : `201`, `403`, `422`
 
 Réponse `201` :
 
@@ -610,9 +716,9 @@ $.content_type                                   string
 
 ### `GET /api/history/games`
 
-Parties **terminées** — accès : public
+Parties **terminées** — accès : profil validé
 
-Statuts observés : `200`
+Statuts observés : `200`, `401`, `403`
 
 Réponse `200` :
 
@@ -636,7 +742,7 @@ $.games[].winners[]                              string
 
 ### `GET /api/history/games/:game`
 
-Détail d'une partie terminée (`404` sinon) — accès : public
+Détail d'une partie terminée (`404` sinon) — accès : profil validé
 
 Statuts observés : `200`, `404`
 
@@ -715,9 +821,9 @@ $.updated_at                                     date:iso8601
 
 ### `GET /api/history/leaderboard`
 
-Classement cumulé par pseudo (rangs ex æquo) — accès : public
+Classement cumulé par pseudo (rangs ex æquo) — accès : profil validé
 
-Statuts observés : `200`
+Statuts observés : `200`, `401`, `403`
 
 Réponse `200` :
 
@@ -738,7 +844,7 @@ $.leaderboard[].wins                             int
 
 ### `GET /api/history/players`
 
-`?pseudo=` totaux + parties (insensible casse/accents) — accès : public
+`?pseudo=` totaux + parties (insensible casse/accents) — accès : profil validé
 
 Statuts observés : `200`, `404`, `422`
 
@@ -842,7 +948,7 @@ $.content_type                                   string
 
 Enregistrer sa photo (JPEG carré 64–512 px ≤ 200 ko) — accès : player_id = :player · 10/min
 
-Statuts observés : `200`, `403`, `422`
+Statuts observés : `200`, `401`, `403`, `422`
 
 Réponse `200` :
 
@@ -886,6 +992,7 @@ $.profile.avatar_url                             null
 $.profile.has_password                           bool
 $.profile.id                                     int
 $.profile.is_admin                               bool
+$.profile.is_validated                           bool
 $.profile.password_prompted                      bool
 $.profile.pseudo                                 string
 $.profile_token                                  string
@@ -916,6 +1023,7 @@ $.profile.avatar_url                             null
 $.profile.has_password                           bool
 $.profile.id                                     int
 $.profile.is_admin                               bool
+$.profile.is_validated                           bool
 $.profile.password_prompted                      bool
 $.profile.pseudo                                 string
 $.profile_token                                  string
@@ -1106,7 +1214,7 @@ $.status                                         string
 
 Mon personnage + mots interdits — accès : player_id
 
-Statuts observés : `200`, `404`
+Statuts observés : `200`, `401`, `403`, `404`
 
 Réponse `200` :
 
@@ -1248,7 +1356,7 @@ $.message                                        string
 
 Réaction rapide → `reaction.sent` — accès : joueur ou spectateur · 30/min
 
-Statuts observés : `200`, `404`
+Statuts observés : `200`, `403`, `404`
 
 Réponse `200` :
 
@@ -1529,6 +1637,7 @@ $.player.avatar_url                              string
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 $.token                                          string
@@ -1556,6 +1665,7 @@ $.player.avatar_url                              null | string
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 $.totals                                         object
@@ -1580,6 +1690,7 @@ $.player.avatar_url                              string
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 $.token                                          string
@@ -1608,6 +1719,7 @@ $.player.avatar_url                              null | string
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 $.token                                          string
@@ -1628,6 +1740,7 @@ $.player.avatar_url                              null
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 ```
@@ -1648,6 +1761,7 @@ $.player.avatar_url                              null
 $.player.has_password                            bool
 $.player.id                                      int
 $.player.is_admin                                bool
+$.player.is_validated                            bool
 $.player.password_prompted                       bool
 $.player.pseudo                                  string
 $.token                                          string

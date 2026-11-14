@@ -84,13 +84,18 @@ export async function lobby(ctx) {
 
     // ── Emojis créés par un joueur ──────────────────────────────────────────
     const author = trio[0]
+    // Emojis personnalisés réservés aux profils validés par l'admin (migration 6)
+    await ctx.refused(403, 'POST', '/reactions', { body: { player_id: author.id, name: 'Refusé', image: jpegDataUri('square-64.jpg') } }, 'emoji créé par un profil non validé')
+    await api.patch('/admin/players/:player/validation', { params: { player: author.id }, body: { validated: true }, admin: true, expect: 200 })
     const r = await api.post('/reactions', { body: { player_id: author.id, name: 'Carré', image: jpegDataUri('square-64.jpg') }, expect: 201 })
     ctx.created.reactions.add(r.data.reaction.id)
     ctx.check(r.data.reaction.created_by === author.pseudo && r.data.reaction.emoji === null && r.data.reaction.url.startsWith('/binome/api/reactions/'), 'emoji joueur : URL d\'image versionnée')
     await ctx.refused(422, 'POST', '/reactions', { body: { player_id: author.id, name: 'Trop grand', image: jpegDataUri('square-512.jpg') } }, 'emoji > 256 px')
     await ctx.refused(422, 'POST', '/reactions', { body: { player_id: author.id, name: 'Rectangle', image: jpegDataUri('rect-80x40.jpg') } }, 'emoji non carré')
-    const list = (await api.get('/reactions', { expect: 200 })).data.reactions
-    ctx.check(list.some((x) => x.id === r.data.reaction.id), 'GET /reactions : l\'emoji est disponible pour tous')
+    const list = (await api.get('/reactions', { headers: { 'X-Profile-Token': api.tokens.get(author.id) }, expect: 200 })).data.reactions
+    ctx.check(list.some((x) => x.id === r.data.reaction.id), 'GET /reactions : l\'emoji est disponible pour les profils validés')
+    const anonymous = (await api.get('/reactions', { expect: 200 })).data.reactions
+    ctx.check(anonymous.every((x) => x.emoji !== null), 'GET /reactions sans profil validé : pas d\'emojis personnalisés')
     const firstImage = list.findIndex((x) => x.emoji === null)
     ctx.check(firstImage === -1 || list.slice(firstImage).every((x) => x.emoji === null), 'GET /reactions : Unicode d\'abord, puis images')
     const image = await api.get('/reactions/:reaction/image', { params: { reaction: r.data.reaction.id }, raw: true, expect: 200 })

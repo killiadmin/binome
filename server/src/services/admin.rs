@@ -28,9 +28,20 @@ fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
 
 /// GET /admin/players
 pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
-    let players = c.all("SELECT id, pseudo, created_at, updated_at FROM players ORDER BY pseudo, id", [], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?))
-    })?;
+    let players = c.all(
+        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at FROM players ORDER BY pseudo, id",
+        [],
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, bool>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        },
+    )?;
     let games: HashMap<i64, i64> = c.all("SELECT player_id, COUNT(*) FROM binome_player GROUP BY player_id", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
     let rooms: HashMap<i64, String> = c
         .all("SELECT rp.player_id, r.code FROM room_player rp JOIN rooms r ON r.id = rp.room_id ORDER BY rp.id", [], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -48,7 +59,8 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let avatars = avatar_urls(c, env, players.iter().map(|p| p.1.as_str()))?;
     let list: Vec<_> = players
         .iter()
-        .map(|(id, pseudo, created, updated)| {
+        .map(|(id, pseudo, created, updated, has_password, validated_at)| {
+            let is_admin = crate::services::profile::is_admin_pseudo(env, pseudo);
             let (wins, score) = stats.get(&ci_key(pseudo)).copied().unwrap_or_default();
             json!({
                 "id": id,
@@ -59,6 +71,10 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
                 "score": score,
                 "room_code": rooms.get(id),
                 "in_game": in_game.contains(id),
+                "has_password": *has_password || is_admin,
+                "is_admin": is_admin,
+                "is_validated": validated_at.is_some() || is_admin,
+                "validated_at": clock::iso(validated_at.as_deref()),
                 "created_at": clock::iso(created.as_deref()),
                 "updated_at": clock::iso(updated.as_deref()),
             })

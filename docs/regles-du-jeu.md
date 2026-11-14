@@ -37,8 +37,20 @@ L'hôte choisit le mode dans le lobby (`PATCH /rooms/{room}/settings`) :
 
 | Mode (`rooms.game_mode`) | Comportement |
 |---|---|
-| `random` (défaut) | Chaque binome reçoit un **univers tiré au hasard** parmi les univers jouables. |
-| `cosmos` | L'hôte fixe un **cosmos** (`rooms.cosmos_id`) : tous les binomes reçoivent un univers **de ce cosmos**. |
+| `random` (Aléatoire) | Chaque binome reçoit un **univers tiré au hasard** parmi les univers jouables des cosmos activés (ou sans cosmos). |
+| `cosmos` (Cosmos imposé) | L'hôte fixe un **cosmos** (`rooms.cosmos_id`) : tous les binomes reçoivent un univers **de ce cosmos**. |
+
+**Contrôles de l'administrateur** (onglet Parties de l'admin, migration 6) :
+
+- **Modes proposés** (`app_settings.game_modes`, au moins un) : un salon naît dans le mode
+  Aléatoire s'il est proposé, sinon dans le premier proposé. Choisir un mode désactivé est refusé
+  (`422`) ; le garder tel quel reste permis (pour régler les autres options) mais le lancement
+  le refuse.
+- **Cosmos activés** (`cosmos.is_enabled`) : même règle pour le choix du cosmos. Un cosmos créé
+  ensuite (admin ou import) **naît désactivé**, le temps de préparer ses données.
+- **Binômes désactivés** (`disabled_binomes`, univers + niveau) : écartés du tirage et des
+  compteurs `playable_universe_count`.
+- Une partie déjà lancée n'est pas affectée (un retirage garde le cosmos du salon).
 
 Dans les deux modes : **un univers distinct par binome**, et binome = 2 persos du même univers au
 même `level_affectation`. Un univers est « jouable » s'il a ≥ 2 personnages `playable()` partageant
@@ -170,6 +182,9 @@ aux réactions. Les spectateurs reçoivent aussi les mots montrés après un tir
 
 Les réactions sont toutes en base (`custom_reactions`) : les emojis Unicode d'origine y ont été
 repris, l'admin peut en ajouter ou en supprimer. Un emoji Unicode doit être **un seul graphème**.
+Les **emojis personnalisés** (images créées par les joueurs) sont réservés aux profils
+**validés** par l'administrateur : ni visibles dans la barre, ni envoyables, ni créables sans
+validation (`403`). Les emojis Unicode restent ouverts à tous.
 
 ### Chat commun du hall (`lobby`)
 
@@ -189,7 +204,12 @@ un visiteur qui n'a ni créé ni rejoint de salon.
 - **Anti-spam indexé sur l'auteur, pas sur l'IP** (20 messages par minute) : derrière un proxy,
   tous les joueurs du réseau local arrivent avec la même adresse.
 
-### Historique public et classement
+### Historique et classement
+
+**Réservé aux profils validés** (migration 6) : l'administrateur valide chaque profil à la main
+(onglet Joueurs, `players.validated_at`), qu'il soit sécurisé par un mot de passe ou public.
+Sans profil connecté → `401` ; profil non validé → `403`. Le profil administrateur est toujours
+validé. La page Profil (ses propres parties) reste ouverte à tous.
 
 **Invariant de sécurité** : l'historique public n'expose que les parties **terminées** (liste,
 détail en `404` sinon, classement et fiches joueurs filtrés sur le statut). Publier une partie en

@@ -56,6 +56,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string",
     "$.token": "string"
@@ -141,12 +142,16 @@
     "$.players[].avatar_url": "null | string",
     "$.players[].created_at": "date:iso8601",
     "$.players[].games_count": "int",
+    "$.players[].has_password": "bool",
     "$.players[].id": "int",
     "$.players[].in_game": "bool",
+    "$.players[].is_admin": "bool",
+    "$.players[].is_validated": "bool",
     "$.players[].pseudo": "string",
     "$.players[].room_code": "null | string",
     "$.players[].score": "int",
     "$.players[].updated_at": "date:iso8601",
+    "$.players[].validated_at": "date:iso8601 | null",
     "$.players[].wins": "int"
   },
   "GET /api/admin/reactions 200": {
@@ -160,6 +165,34 @@
     "$.reactions[].is_enabled": "bool",
     "$.reactions[].name": "string",
     "$.reactions[].url": "null | string"
+  },
+  "GET /api/admin/settings 200": {
+    "$": "object",
+    "$.binomes": "array",
+    "$.binomes[]": "object",
+    "$.binomes[].characters": "array",
+    "$.binomes[].characters[]": "string",
+    "$.binomes[].cosmos_id": "int",
+    "$.binomes[].is_enabled": "bool",
+    "$.binomes[].level_affectation": "int",
+    "$.binomes[].universe_id": "int",
+    "$.binomes[].universe_name": "string",
+    "$.cosmos": "array",
+    "$.cosmos[]": "object",
+    "$.cosmos[].id": "int",
+    "$.cosmos[].is_enabled": "bool",
+    "$.cosmos[].name": "string",
+    "$.cosmos[].playable_universe_count": "int",
+    "$.cosmos[].universes_count": "int",
+    "$.game_modes": "array",
+    "$.game_modes[]": "object",
+    "$.game_modes[].enabled": "bool",
+    "$.game_modes[].key": "string",
+    "$.game_modes[].label": "string"
+  },
+  "GET /api/admin/settings 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "GET /api/avatars/:avatar 200 [binaire]": {
     "$": "object",
@@ -231,9 +264,12 @@
     "$.cosmos": "array",
     "$.cosmos[]": "object",
     "$.cosmos[].id": "int",
+    "$.cosmos[].is_enabled": "bool",
     "$.cosmos[].name": "string",
     "$.cosmos[].playable_universe_count": "int",
-    "$.cosmos[].universes_count": "int"
+    "$.cosmos[].universes_count": "int",
+    "$.game_modes": "array",
+    "$.game_modes[]": "string"
   },
   "GET /api/games/:game 200": {
     "$": "object",
@@ -424,6 +460,14 @@
     "$.games[].winners": "array",
     "$.games[].winners[]": "string"
   },
+  "GET /api/history/games 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "GET /api/history/games 403": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/history/games/:game 200": {
     "$": "object",
     "$.binomes": "array",
@@ -512,6 +556,14 @@
     "$.leaderboard[].total_score": "int",
     "$.leaderboard[].wins": "int"
   },
+  "GET /api/history/leaderboard 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "GET /api/history/leaderboard 403": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/history/players 200": {
     "$": "object",
     "$.games": "array",
@@ -559,6 +611,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string",
     "$.totals": "object",
@@ -620,6 +673,45 @@
     "$.universes[].id": "int",
     "$.universes[].name": "string"
   },
+  "PATCH /api/admin/binomes 200": {
+    "$": "object",
+    "$.binome": "object",
+    "$.binome.is_enabled": "bool",
+    "$.binome.level_affectation": "int",
+    "$.binome.universe_id": "int",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/binomes 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.universe_id": "array",
+    "$.errors.universe_id[]": "string",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/cosmos/:cosmos 200": {
+    "$": "object",
+    "$.cosmos": "object",
+    "$.cosmos.id": "int",
+    "$.cosmos.is_enabled": "bool",
+    "$.cosmos.name": "string",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/validation 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.player": "object",
+    "$.player.id": "int",
+    "$.player.is_validated": "bool",
+    "$.player.validated_at": "date:iso8601 | null"
+  },
+  "PATCH /api/admin/players/:player/validation 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/players/:player/validation 404": {
+    "$": "object",
+    "$.message": "string"
+  },
   "PATCH /api/admin/reactions/:reaction 200": {
     "$": "object",
     "$.message": "string",
@@ -631,6 +723,20 @@
     "$.reaction.is_enabled": "bool",
     "$.reaction.name": "string",
     "$.reaction.url": "null"
+  },
+  "PATCH /api/admin/settings/game-modes/:mode 200": {
+    "$": "object",
+    "$.game_modes": "array",
+    "$.game_modes[]": "string",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/settings/game-modes/:mode 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/settings/game-modes/:mode 409": {
+    "$": "object",
+    "$.message": "string"
   },
   "PATCH /api/characters/:character/forbidden-words 200": {
     "$": "object",
@@ -655,6 +761,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string",
     "$.token": "string"
@@ -716,6 +823,8 @@
     "$.errors": "object",
     "$.errors.cosmos_id": "array",
     "$.errors.cosmos_id[]": "string",
+    "$.errors.game_mode": "array",
+    "$.errors.game_mode[]": "string",
     "$.message": "string"
   },
   "PATCH /api/universes/:universe 200": {
@@ -1142,6 +1251,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string",
     "$.token": "string"
@@ -1166,6 +1276,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string"
   },
@@ -1178,6 +1289,10 @@
     "$.reaction.id": "int",
     "$.reaction.name": "string",
     "$.reaction.url": "string"
+  },
+  "POST /api/reactions 403": {
+    "$": "object",
+    "$.message": "string"
   },
   "POST /api/reactions 422": {
     "$": "object",
@@ -1198,6 +1313,7 @@
     "$.profile.has_password": "bool",
     "$.profile.id": "int",
     "$.profile.is_admin": "bool",
+    "$.profile.is_validated": "bool",
     "$.profile.password_prompted": "bool",
     "$.profile.pseudo": "string",
     "$.profile_token": "string",
@@ -1252,6 +1368,7 @@
     "$.profile.has_password": "bool",
     "$.profile.id": "int",
     "$.profile.is_admin": "bool",
+    "$.profile.is_validated": "bool",
     "$.profile.password_prompted": "bool",
     "$.profile.pseudo": "string",
     "$.profile_token": "string",
@@ -1340,6 +1457,7 @@
     "$.player.has_password": "bool",
     "$.player.id": "int",
     "$.player.is_admin": "bool",
+    "$.player.is_validated": "bool",
     "$.player.password_prompted": "bool",
     "$.player.pseudo": "string",
     "$.token": "string"

@@ -71,7 +71,8 @@ ENSUITE
 - Champs : `name`, `universe`, `cosmos` (facultatif), `forbidden_words` (exactement 3), `level_affectation` (entier ≥ 1).
 - `image` facultatif : nom de fichier dans `images/`, chemin absolu ou data URI (pas d'URL).
   En pratique on laisse vide et on importe les images depuis la popup de validation.
-- Univers et cosmos manquants sont créés automatiquement.
+- Univers et cosmos manquants sont créés automatiquement. Un cosmos créé ainsi **naît désactivé** :
+  l'activer dans l'admin (onglet Parties → Réglages du jeu) une fois ses binômes prêts.
 
 ## Convention de nommage des lots
 

@@ -58,6 +58,16 @@ export class Context {
         this.check(/^[0-9a-f]{64}$/.test(data.token), 'jeton admin : 64 caractères hexadécimaux')
     }
 
+    /**
+     * Base de test : les deux modes de jeu proposés (la migration 6 ne laisse que
+     * « Cosmos imposé », or les parties du banc se jouent en mode Aléatoire).
+     */
+    async openGameModes() {
+        for (const mode of ['random', 'cosmos']) {
+            await this.api.patch('/admin/settings/game-modes/:mode', { params: { mode }, body: { enabled: true }, admin: true, expect: 200 })
+        }
+    }
+
     check(condition, message, detail = undefined) {
         this.checks.push({ ok: Boolean(condition), message, detail })
         if (!condition) console.log(`   ✗ ${message}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 300)}` : ''}`)

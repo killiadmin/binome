@@ -3,6 +3,7 @@ import {ref, watch, onMounted, onUnmounted} from 'vue'
 import {isImmersive, toggleImmersive, exitImmersive} from '../../composables/useImmersiveMode'
 import {reactionService} from '../../services/reactionService'
 import ReactionEditor from './ReactionEditor.vue'
+import {isValidatedProfile} from '../../services/profile'
 
 // Réactions rapides : un bouton flottant qui déplie la barre d'emojis, et une
 // couche d'animation où montent les réactions reçues (les siennes comprises,
@@ -92,7 +93,9 @@ onUnmounted(exitImmersive)
         <template v-else>{{ r.emoji }}</template>
       </button>
       <p v-if="loadFailed" class="reaction-bar__empty">Réactions indisponibles</p>
+      <!-- Emojis personnalisés : profils validés par l'administrateur seulement -->
       <button
+          v-if="isValidatedProfile"
           type="button"
           class="reaction-bar__btn reaction-bar__btn--add"
           aria-label="Créer un emoji"

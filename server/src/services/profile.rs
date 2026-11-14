@@ -71,12 +71,14 @@ pub struct Profile {
     pub password_hash: Option<String>,
     pub password_prompted: bool,
     pub token_version: i64,
+    /// Validé à la main par l'administrateur (`validated_at`, migration 6).
+    pub validated: bool,
 }
 
-const COLS: &str = "id, pseudo, password_hash, password_prompted, token_version";
+const COLS: &str = "id, pseudo, password_hash, password_prompted, token_version, validated_at IS NOT NULL";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Profile> {
-    Ok(Profile { id: r.get(0)?, pseudo: r.get(1)?, password_hash: r.get(2)?, password_prompted: r.get(3)?, token_version: r.get(4)? })
+    Ok(Profile { id: r.get(0)?, pseudo: r.get(1)?, password_hash: r.get(2)?, password_prompted: r.get(3)?, token_version: r.get(4)?, validated: r.get(5)? })
 }
 
 pub fn by_pseudo(c: &impl Q, pseudo: &str) -> AppResult<Option<Profile>> {
@@ -99,6 +101,10 @@ impl Profile {
     /// Profil fermé : il faut son mot de passe (ou le mot de passe admin) pour s'y connecter.
     pub fn is_protected(&self, env: &Env) -> bool {
         self.password_hash.is_some() || self.is_admin(env)
+    }
+    /// Accès à l'historique et aux emojis personnalisés (l'admin l'a toujours).
+    pub fn is_validated(&self, env: &Env) -> bool {
+        self.validated || self.is_admin(env)
     }
 }
 
@@ -163,6 +169,7 @@ pub fn profile_json(c: &impl Q, env: &Env, p: &Profile) -> AppResult<Value> {
         "has_password": p.password_hash.is_some(),
         "password_prompted": p.password_prompted,
         "is_admin": p.is_admin(env),
+        "is_validated": p.is_validated(env),
     }))
 }
 

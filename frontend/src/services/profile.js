@@ -1,8 +1,9 @@
 import { reactive, computed } from 'vue'
 import { charactersAccess } from './charactersAccess'
+import { api } from './api'
 
 // Profil connecté, persisté dans localStorage sous la clé `profile` :
-// { token, player: { id, pseudo, avatar_url, has_password, password_prompted, is_admin } }.
+// { token, player: { id, pseudo, avatar_url, has_password, password_prompted, is_admin, is_validated } }.
 // api.js lit cette clé directement (sans import, pour éviter une dépendance
 // circulaire) et envoie le jeton dans l'en-tête X-Profile-Token.
 export const PROFILE_KEY = 'profile'
@@ -26,6 +27,8 @@ function persist() {
 export const profilePlayer = computed(() => state.player)
 export const isLoggedIn = computed(() => !!state.token)
 export const isAdminProfile = computed(() => !!state.token && !!state.player?.is_admin)
+// Profil validé à la main par l'administrateur : historique et emojis personnalisés.
+export const isValidatedProfile = computed(() => !!state.token && !!state.player?.is_validated)
 
 /** Connexion (onglet Connexion, ou automatique après création / arrivée dans un salon). */
 export function setProfile(token, player) {
@@ -53,6 +56,20 @@ export function logout() {
     state.token = null
     state.player = null
     persist()
+}
+
+/**
+ * Relit le profil connecté (GET /profile) : la validation par l'administrateur
+ * arrive après la connexion. Sans effet hors connexion ; erreurs ignorées.
+ */
+export async function refreshProfile() {
+    if (!state.token) return
+    try {
+        const { data } = await api.get('/profile')
+        if (state.player?.id === data.player.id) updateProfilePlayer(data.player)
+    } catch {
+        // Jeton périmé ou réseau : l'état local reste tel quel
+    }
 }
 
 export function getProfileToken() {

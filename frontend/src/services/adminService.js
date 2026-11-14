@@ -38,6 +38,37 @@ export const adminService = {
     },
 
     /**
+     * Valide (ou retire la validation) d'un profil : accès à l'historique et aux
+     * emojis personnalisés. PATCH /api/admin/players/{id}/validation — { validated }
+     */
+    setPlayerValidation(id, validated) {
+        return api.patch(`/admin/players/${id}/validation`, { validated })
+    },
+
+    /**
+     * Modes de jeu, cosmos et binômes proposés aux joueurs, avec leur état
+     * GET /api/admin/settings → { game_modes, cosmos, binomes }
+     */
+    getSettings() {
+        return api.get('/admin/settings')
+    },
+
+    /** PATCH /api/admin/settings/game-modes/{mode} — { enabled } */
+    setGameMode(mode, enabled) {
+        return api.patch(`/admin/settings/game-modes/${mode}`, { enabled })
+    },
+
+    /** PATCH /api/admin/cosmos/{id} — { is_enabled } */
+    setCosmos(id, isEnabled) {
+        return api.patch(`/admin/cosmos/${id}`, { is_enabled: isEnabled })
+    },
+
+    /** PATCH /api/admin/binomes — { universe_id, level_affectation, is_enabled } */
+    setBinome(universeId, level, isEnabled) {
+        return api.patch('/admin/binomes', { universe_id: universeId, level_affectation: level, is_enabled: isEnabled })
+    },
+
+    /**
      * Toutes les réactions (Unicode + images), masquées comprises
      * GET /api/admin/reactions
      */

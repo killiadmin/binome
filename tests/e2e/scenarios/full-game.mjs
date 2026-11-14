@@ -22,6 +22,9 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     // ── LOBBY ────────────────────────────────────────────────────────────────
     const created = await api.post('/rooms', { body: { pseudo: host.pseudo, is_private: false, max_players: 12 }, expect: 201 })
     host.setId(created.data.player.id)
+    // Historique réservé aux profils validés par l'admin (migration 6) : l'hôte le consulte
+    await api.patch('/admin/players/:player/validation', { params: { player: host.id }, body: { validated: true }, admin: true, expect: 200 })
+    const asHost = () => ({ 'X-Profile-Token': api.tokens.get(host.id) })
     const room = created.data.room
     ctx.check(/^[A-Z0-9]{6}$/.test(room.code), 'code de salon : 6 caractères A-Z0-9', room.code)
     await host.connect()
@@ -53,7 +56,7 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
 
         // Réglages : cosmos puis retour en aléatoire, diffusés à tout le salon
         const cosmos = (await api.get('/cosmos', { expect: 200 })).data.cosmos
-        const playable = cosmos.find((c) => c.playable_universe_count >= Math.ceil(size / 2))
+        const playable = cosmos.find((c) => c.is_enabled && c.playable_universe_count >= Math.ceil(size / 2))
         if (playable) {
             const m = marks(bots)
             await api.patch('/rooms/:room/settings', { params: { room: room.id }, body: { player_id: host.id, game_mode: 'cosmos', cosmos_id: playable.id }, expect: 200 })
@@ -199,7 +202,7 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     if (rich) {
         await ctx.refused(409, 'POST', '/games/:game/skip-turn', { params: { game: gameId }, body: { player_id: host.id } }, 'passer un tour pendant le vote')
         await ctx.refused(409, 'GET', '/games/:game/recap', { params: { game: gameId } }, 'récap d\'une partie en cours')
-        await ctx.refused(404, 'GET', '/history/games/:game', { params: { game: gameId } }, 'historique public d\'une partie en cours')
+        await ctx.refused(404, 'GET', '/history/games/:game', { params: { game: gameId }, headers: asHost() }, 'historique d\'une partie en cours')
         await ctx.refused(403, 'GET', '/games/:game/reveal', { params: { game: gameId }, query: { player_id: host.id } }, 'vue omnisciente d\'un joueur en jeu')
         const wrong = bots[1]
         await ctx.refused(409, 'POST', '/games/:game/character-vote', { params: { game: gameId }, body: { player_id: wrong.id, character_id: wrong.character.id + 100000, accepted: true } }, 'vote sur un personnage qui n\'est pas le sien')
@@ -693,18 +696,19 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     await ctx.refused(404, 'POST', '/games/:game/rounds/:round/question', { params: { game: gameId + 100000, round: anyRound }, body: { player_id: host.id, target_player_id: guests[0].id, question: 'Mauvaise partie ?' } }, 'round d\'une autre partie (scopeBindings)')
 
     // ── HISTORIQUE, CLASSEMENT, ADMIN ───────────────────────────────────────
-    const hist = (await api.get('/history/games', { expect: 200 })).data.games
+    await ctx.refused(401, 'GET', '/history/games', {}, 'historique sans profil connecté')
+    const hist = (await api.get('/history/games', { headers: asHost(), expect: 200 })).data.games
     ctx.check(hist.some((g) => g.id === gameId && g.status === 'finished') && hist.every((g) => g.status === 'finished'), 'historique public : parties terminées uniquement')
-    const detail = (await api.get('/history/games/:game', { params: { game: gameId }, expect: 200 })).data
+    const detail = (await api.get('/history/games/:game', { headers: asHost(), params: { game: gameId }, expect: 200 })).data
     ctx.check(detail.binomes.length === Math.ceil(size / 2) && detail.game_stats.length === size, 'historique : détail complet de la partie')
     ctx.check(Array.isArray(recap.awards) && recap.rounds_count === detail.rounds.length, 'récap : trophées + nombre de rounds')
-    const board = (await api.get('/history/leaderboard', { expect: 200 })).data.leaderboard
+    const board = (await api.get('/history/leaderboard', { headers: asHost(), expect: 200 })).data.leaderboard
     ctx.check(board.some((r) => r.pseudo === host.pseudo), 'classement : le pseudo apparaît')
     ctx.check(board.every((r, i) => i === 0 || r.rank === (r.total_score === board[i - 1].total_score ? board[i - 1].rank : i + 1)), 'classement : rangs ex æquo (1, 2, 2, 4)')
-    const mine = (await api.get('/history/players', { query: { pseudo: host.pseudo.toUpperCase() }, expect: 200 })).data
+    const mine = (await api.get('/history/players', { headers: asHost(), query: { pseudo: host.pseudo.toUpperCase() }, expect: 200 })).data
     ctx.check(mine.games.some((g) => g.game_id === gameId), 'fiche joueur : recherche insensible à la casse')
-    await ctx.refused(404, 'GET', '/history/players', { query: { pseudo: ctx.pseudo('inconnu') } }, 'fiche d\'un pseudo sans partie')
-    await ctx.refused(422, 'GET', '/history/players', {}, 'fiche sans pseudo')
+    await ctx.refused(404, 'GET', '/history/players', { headers: asHost(), query: { pseudo: ctx.pseudo('inconnu') } }, 'fiche d\'un pseudo sans partie')
+    await ctx.refused(422, 'GET', '/history/players', { headers: asHost() }, 'fiche sans pseudo')
     const adminGames = (await api.get('/admin/games', { admin: true, expect: 200 })).data.games
     ctx.check(adminGames.some((g) => g.id === gameId), 'admin : la partie est listée')
 
@@ -716,11 +720,11 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     }
     await ctx.refused(404, 'GET', '/rooms/:room', { params: { room: room.id } }, 'salon supprimé')
     // La partie survit au salon : historique et classement intacts
-    const kept = await api.get('/history/games/:game', { params: { game: gameId } })
+    const kept = await api.get('/history/games/:game', { headers: asHost(), params: { game: gameId } })
     ctx.check(kept.status === 200 && kept.data.room_code === room.code && kept.data.game_stats.length === size, 'salon supprimé : la partie reste dans l\'historique, avec le code de son salon')
-    const listed = (await api.get('/history/games', { expect: 200 })).data.games.find((g) => g.id === gameId)
+    const listed = (await api.get('/history/games', { headers: asHost(), expect: 200 })).data.games.find((g) => g.id === gameId)
     ctx.check(listed && listed.room_id === null && listed.room_code === room.code, 'historique : partie listée sans salon, code conservé')
-    const stillRanked = (await api.get('/history/leaderboard', { expect: 200 })).data.leaderboard.some((r) => r.pseudo === host.pseudo)
+    const stillRanked = (await api.get('/history/leaderboard', { headers: asHost(), expect: 200 })).data.leaderboard.some((r) => r.pseudo === host.pseudo)
     ctx.check(stillRanked, 'classement : les points de la partie sont conservés')
     for (const b of everyoneInRoom) b.rt?.close()
     return { gameId, roomId: room.id }

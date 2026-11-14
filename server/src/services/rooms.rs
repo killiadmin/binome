@@ -105,8 +105,8 @@ pub fn store(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) ->
     let is_private = is_private.unwrap_or(false);
     let max = max.unwrap_or(12);
     let room_id = tx.insert(
-        "INSERT INTO rooms (code, is_private, max_players, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        (&code, is_private, max, player.id, &now),
+        "INSERT INTO rooms (code, is_private, max_players, game_mode, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        (&code, is_private, max, crate::services::controls::default_mode(tx)?, player.id, &now),
     )?;
     tx.run("INSERT INTO room_player (room_id, player_id, is_ready, created_at, updated_at) VALUES (?1, ?2, 0, ?3, ?3)", (room_id, player.id, &now))?;
 
@@ -259,6 +259,7 @@ pub fn settings(tx: &Transaction, room_id: i64, input: &Input) -> AppResult<Out>
         return Err(AppError::forbidden("Seul le créateur du salon peut configurer la partie."));
     }
     let cosmos_id = if mode == "cosmos" { cosmos_id } else { None };
+    crate::services::controls::check_settings_choice(tx, &room, &mode, cosmos_id)?;
     let reveal = reveal.unwrap_or(room.reveal_to_eliminated);
     let best = best.unwrap_or(room.best_question_vote);
     tx.run(

@@ -7,9 +7,10 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::clock::{self, now_db};
 use crate::db::Q;
 use crate::error::{AppError, AppResult};
-use crate::http::input::{Input, V};
+use crate::http::input::{Caller, Input, V};
 use crate::realtime::hub::Event;
 use crate::services::common::*;
+use crate::services::controls;
 use crate::services::game::game_channel;
 use crate::services::Out;
 use crate::support::image::{self, JPEG_PREFIX};
@@ -237,8 +238,10 @@ fn reaction_admin(env: &Env, r: &rusqlite::Row) -> rusqlite::Result<Value> {
     Ok(v)
 }
 
-pub fn reactions_index(c: &impl Q, env: &Env) -> AppResult<Out> {
-    let list = c.all(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE is_enabled = 1 {BAR_ORDER}"), [], |r| reaction_public(env, r))?;
+/// GET /reactions — les emojis personnalisés (images) seulement pour un profil validé.
+pub fn reactions_index(c: &impl Q, env: &Env, caller: Caller) -> AppResult<Out> {
+    let images = if controls::caller_validated(c, env, caller)? { "" } else { "AND emoji IS NOT NULL" };
+    let list = c.all(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE is_enabled = 1 {images} {BAR_ORDER}"), [], |r| reaction_public(env, r))?;
     Ok(Out::ok(json!({ "reactions": list })))
 }
 
@@ -276,6 +279,7 @@ pub fn reaction_store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<O
     image_rule(&mut v, "image", data.as_ref());
     v.finish()?;
     let p = player_or_404(tx, pid.expect("validé"))?;
+    controls::require_validated(tx, env, input.1, "La création d'emojis")?;
     let count: i64 = tx.one("SELECT COUNT(*) FROM custom_reactions WHERE is_enabled = 1 AND created_by_pseudo = ?1", [&p.pseudo])?;
     if count >= 10 {
         return Err(AppError::field("name", "Tu as déjà créé 10 emojis."));
@@ -307,6 +311,9 @@ pub fn react(tx: &Transaction, env: &Env, game_id: i64, input: &Input) -> AppRes
     let reaction = tx
         .opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1 AND is_enabled = 1"), [rid.expect("validé")], |r| reaction_public(env, r))?
         .ok_or_else(|| AppError::Status(axum::http::StatusCode::NOT_FOUND, "Cet emoji n'est plus disponible.".into()))?;
+    if reaction["emoji"].is_null() {
+        controls::require_validated(tx, env, input.1, "L'envoi d'emojis personnalisés")?;
+    }
     Ok(Out::message("Réaction envoyée.").event(Event::on(game_channel(g.id), "reaction.sent", json!({ "player": brief(&p), "reaction": reaction }))))
 }
 

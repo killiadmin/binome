@@ -12,6 +12,7 @@ use crate::realtime::hub::Event;
 pub mod admin;
 pub mod catalog;
 pub mod common;
+pub mod controls;
 pub mod game;
 pub mod history;
 pub mod play;

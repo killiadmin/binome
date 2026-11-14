@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use crate::http::input::{Input, V};
 use crate::realtime::hub::Event;
 use crate::services::common::*;
+use crate::services::controls::PLAYABLE_CHARACTER;
 use crate::services::play::create_round;
 use crate::services::{Events, Out};
 
@@ -40,6 +41,8 @@ pub fn start(tx: &Transaction, _env: &Env, room_id: i64, input: &Input) -> AppRe
     if !players.iter().all(|p| p.2) {
         return Err(AppError::unprocessable("Tous les joueurs doivent être prêts."));
     }
+
+    crate::services::controls::check_room_playable(tx, &room)?;
 
     let now = now_db();
     let game_id = tx.insert(
@@ -102,7 +105,7 @@ fn draw_characters(tx: &Transaction, teams: &[Vec<i64>], room: &Room, excluded: 
     for (members, (universe_id, universe_name)) in teams.iter().zip(universes) {
         let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
         for (id, level) in tx.all(
-            "SELECT id, level_affectation FROM characters WHERE verif_manual = 1 AND hidden = 0 AND universe_id = ?1",
+            &format!("SELECT id, level_affectation FROM characters WHERE {PLAYABLE_CHARACTER} AND universe_id = ?1"),
             [universe_id],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
         )? {
@@ -126,17 +129,23 @@ fn draw_characters(tx: &Transaction, teams: &[Vec<i64>], room: &Room, excluded: 
 }
 
 /// `teams` univers distincts jouables (≥ 2 personnages jouables au même niveau),
-/// restreints au cosmos du salon en mode `cosmos`.
+/// restreints au cosmos du salon en mode `cosmos`, et aux cosmos activés (ou
+/// univers sans cosmos) en mode aléatoire. Le cosmos imposé n'est pas recontrôlé
+/// ici : le lancement l'a vérifié, un retirage en cours de partie le garde.
 fn resolve_universes(tx: &Transaction, teams: usize, room: &Room, excluded: &[i64]) -> AppResult<Vec<(i64, String)>> {
     let excluded_json = serde_json::to_string(excluded).expect("json");
     let cosmos = (room.game_mode == "cosmos").then_some(room.cosmos_id).flatten();
-    let cosmos_filter = if room.game_mode == "cosmos" { "AND u.cosmos_id IS ?2" } else { "AND ?2 IS ?2" };
+    let cosmos_filter = if room.game_mode == "cosmos" {
+        "AND u.cosmos_id IS ?2"
+    } else {
+        "AND ?2 IS ?2 AND (u.cosmos_id IS NULL OR u.cosmos_id IN (SELECT id FROM cosmos WHERE is_enabled = 1))"
+    };
     let picked = tx.all(
         &format!(
             "SELECT u.id, u.name FROM universes u
              WHERE u.id IN (
                  SELECT universe_id FROM characters
-                 WHERE verif_manual = 1 AND hidden = 0 AND id NOT IN (SELECT value FROM json_each(?1))
+                 WHERE {PLAYABLE_CHARACTER} AND id NOT IN (SELECT value FROM json_each(?1))
                  GROUP BY universe_id, level_affectation HAVING COUNT(*) >= 2
              ) {cosmos_filter}
              ORDER BY RANDOM() LIMIT ?3"

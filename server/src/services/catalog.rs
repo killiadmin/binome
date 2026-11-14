@@ -59,21 +59,29 @@ pub fn login(password_hash: Option<&str>, given: &str) -> AppResult<Out> {
 
 // ─── Cosmos / univers ───────────────────────────────────────────────────────
 
-const PLAYABLE_UNIVERSES: &str = "SELECT universe_id FROM characters WHERE verif_manual = 1 AND hidden = 0
-     GROUP BY universe_id, level_affectation HAVING COUNT(*) >= 2";
-
+/// GET /cosmos — tous les cosmos (l'admin s'en sert aussi pour ranger ses
+/// univers) ; `is_enabled` et `game_modes` disent ce que l'hôte peut choisir.
 pub fn cosmos_index(c: &impl Q) -> AppResult<Out> {
+    let playable = crate::services::controls::playable_universes_sql();
     let list = c.all(
         &format!(
-            "SELECT co.id, co.name,
+            "SELECT co.id, co.name, co.is_enabled,
                     (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id),
-                    (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id AND u.id IN ({PLAYABLE_UNIVERSES}))
+                    (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id AND u.id IN ({playable}))
              FROM cosmos co ORDER BY co.name"
         ),
         [],
-        |r| Ok(json!({ "id": r.get::<_, i64>(0)?, "name": r.get::<_, String>(1)?, "universes_count": r.get::<_, i64>(2)?, "playable_universe_count": r.get::<_, i64>(3)? })),
+        |r| {
+            Ok(json!({
+                "id": r.get::<_, i64>(0)?,
+                "name": r.get::<_, String>(1)?,
+                "is_enabled": r.get::<_, bool>(2)?,
+                "universes_count": r.get::<_, i64>(3)?,
+                "playable_universe_count": r.get::<_, i64>(4)?,
+            }))
+        },
     )?;
-    Ok(Out::ok(json!({ "cosmos": list })))
+    Ok(Out::ok(json!({ "cosmos": list, "game_modes": crate::services::controls::enabled_modes(c)? })))
 }
 
 fn unique_slug(tx: &Transaction, table: &str, base: &str, extra: &str, params: &[i64]) -> AppResult<String> {

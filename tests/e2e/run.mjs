@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Banc E2E de la migration Rust.
 //
-//   node tests/e2e/run.mjs [--only lobby,catalog,game8,game7,profile] [--save] [--verbose]
+//   node tests/e2e/run.mjs [--only lobby,catalog,game8,game7,profile,controls] [--save] [--verbose]
 //
 // --save : écrit le contrat observé (formes JSON des réponses et des events)
 //          dans tests/e2e/contracts/<cible>.json et les latences dans results/.
@@ -13,6 +13,7 @@ import { fullGame } from './scenarios/full-game.mjs'
 import { lobby } from './scenarios/lobby.mjs'
 import { catalog } from './scenarios/catalog.mjs'
 import { profile } from './scenarios/profile.mjs'
+import { controls } from './scenarios/controls.mjs'
 
 const args = process.argv.slice(2)
 const opt = (name, fallback = null) => {
@@ -33,12 +34,14 @@ const SCENARIOS = {
     game8: (ctx) => fullGame(ctx, { size: 8, rich: true }),
     game7: (ctx) => fullGame(ctx, { size: 7, rich: false, redraw: true }),
     profile: (ctx) => profile(ctx),
+    controls: (ctx) => controls(ctx),
 }
 const selected = (opt('only') ?? Object.keys(SCENARIOS).join(',')).split(',')
 
 const ctx = new Context(TARGETS[targetName](), { verbose: flag('verbose') })
 console.log(`Banc E2E → ${targetName} (${ctx.target.baseUrl}), étiquette « ${ctx.tag} »`)
 await ctx.loginAdmin()
+await ctx.openGameModes()
 
 let crashed = null
 const t0 = Date.now()
