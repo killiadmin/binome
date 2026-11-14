@@ -1169,17 +1169,24 @@ function onRoundTransitionDone() {
 async function submitAnswer(answer) {
   if (submittingAnswer.value || !pendingQuestion.value) return
   submittingAnswer.value = true
+  // Copie locale : le serveur publie les events AVANT de répondre, donc
+  // « answer.given » (handleAnswerGiven) a souvent déjà remis pendingQuestion à
+  // null quand l'await rend la main. Le relire ici lèverait un TypeError, attrapé
+  // plus bas comme « Erreur lors de la réponse. » alors que la réponse est passée.
+  const question = pendingQuestion.value
   try {
     await gameService.playAnswer(
         gameId,
-        pendingQuestion.value.round_id,
-        pendingQuestion.value.action_id,
+        question.round_id,
+        question.action_id,
         myPlayerId.value,
         answer
     )
-    applyAnswer(pendingQuestion.value.action_id, {answer})
-    showAnswerModal.value = false
-    pendingQuestion.value = null
+    applyAnswer(question.action_id, {answer})
+    if (pendingQuestion.value === question) {
+      showAnswerModal.value = false
+      pendingQuestion.value = null
+    }
   } catch (e) {
     error.value = e.response?.data?.message || 'Erreur lors de la réponse.'
   } finally {
