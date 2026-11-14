@@ -15,6 +15,7 @@ pub mod common;
 pub mod controls;
 pub mod game;
 pub mod history;
+pub mod ideas;
 pub mod play;
 pub mod profile;
 pub mod rooms;

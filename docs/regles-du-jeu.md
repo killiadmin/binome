@@ -226,6 +226,28 @@ supprimé mais ses parties restent dans l'historique et le classement, avec le c
 salon (mémorisé par la partie à son lancement). Seul un administrateur peut supprimer une partie, avec un mot de passe dédié
 (voir ci-dessous).
 
+### Boîte à idées (onglet Idées)
+
+Migration 8, `services/ideas.rs`. **Lecture libre** ; poster, voter et supprimer sa propre idée
+exigent un profil connecté (jeton de profil, `401` sinon), validé ou non.
+
+- **Poster** : texte libre de 10 à 500 caractères, **5 idées par 24 h glissantes** et par joueur
+  (une idée supprimée ne compte plus). Pas de commentaires.
+- **Insultes** : refusées à l'envoi (`422` sur `body`, rien n'est enregistré) par
+  `support/moderation.rs`. Le filtre lit `c0nn4rd`, `connnnard` ou `p u t e` comme les mots
+  d'origine, mais compare au **mot entier** pour les termes courts (« contre », « réputation »,
+  « habite » passent). Les jurons d'exclamation (« merde », « putain ») ne sont pas bloqués.
+  Pour ajouter un terme : listes `EXACT` / `PREFIX` / `PHRASES`, avec un cas dans les tests.
+  Un filtre se contourne : la suppression par un administrateur reste le recours.
+- **Votes** : un +1 par joueur et par idée (clé primaire `idea_votes`), retirable, **jamais sur
+  sa propre idée** (`409`). Ajouter / retirer sont idempotents (`PUT` / `DELETE …/vote`).
+- **Ordre** : favoris d'abord (le plus récemment épinglé en tête), puis les plus votées, puis
+  les plus récentes.
+- **Administration** (propriétaire avec le cadenas déverrouillé, ou administrateur désigné),
+  directement sur la page : mettre en favori / retirer (`PATCH /admin/ideas/{id}`) et supprimer
+  n'importe quelle idée. L'auteur supprime aussi la sienne.
+- Joueur supprimé : ses votes partent, ses idées restent signées de son dernier pseudo.
+
 ### Profils et connexion
 
 Chaque pseudo est un **profil** : photo, parties jouées, statistiques. On s'y connecte par

@@ -28,7 +28,7 @@
 
 ## Couverture
 
-75 routes ; 75 observées par le banc.
+82 routes ; 82 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -673,6 +673,154 @@ $.reaction.url                                   null
 Supprimer — accès : admin
 
 Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+```
+
+### `GET /api/ideas`
+
+Boîte à idées : favoris puis plus votées ; `has_voted` / `is_mine` / `remaining_today` selon le jeton — accès : public
+
+Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.daily_limit                                    int
+$.ideas                                          array
+$.ideas[]                                        object
+$.ideas[].author_avatar_url                      null
+$.ideas[].author_name                            string
+$.ideas[].body                                   string
+$.ideas[].created_at                             date:iso8601
+$.ideas[].has_voted                              bool
+$.ideas[].id                                     int
+$.ideas[].is_mine                                bool
+$.ideas[].is_pinned                              bool
+$.ideas[].pinned_at                              date:iso8601 | null
+$.ideas[].votes                                  int
+$.remaining_today                                int | null
+```
+
+### `POST /api/ideas`
+
+Poster `{player_id, body}` (10–500 car., insultes refusées, 5 par 24 h) — accès : player_id · 10/min
+
+Statuts observés : `201`, `401`, `403`, `422`
+
+Réponse `201` :
+
+```
+$                                                object
+$.idea                                           object
+$.idea.author_avatar_url                         null
+$.idea.author_name                               string
+$.idea.body                                      string
+$.idea.created_at                                date:iso8601
+$.idea.has_voted                                 bool
+$.idea.id                                        int
+$.idea.is_mine                                   bool
+$.idea.is_pinned                                 bool
+$.idea.pinned_at                                 null
+$.idea.votes                                     int
+$.message                                        string
+```
+
+### `DELETE /api/ideas/:idea`
+
+Supprimer sa propre idée — accès : player_id (auteur)
+
+Statuts observés : `200`, `403`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+```
+
+### `PUT /api/ideas/:idea/vote`
+
++1 (idempotent ; 409 sur sa propre idée) — accès : player_id · 30/min
+
+Statuts observés : `200`, `401`, `404`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.idea                                           object
+$.idea.author_avatar_url                         null
+$.idea.author_name                               string
+$.idea.body                                      string
+$.idea.created_at                                date:iso8601
+$.idea.has_voted                                 bool
+$.idea.id                                        int
+$.idea.is_mine                                   bool
+$.idea.is_pinned                                 bool
+$.idea.pinned_at                                 null
+$.idea.votes                                     int
+$.message                                        string
+```
+
+### `DELETE /api/ideas/:idea/vote`
+
+Retirer son +1 (idempotent) — accès : player_id · 30/min
+
+Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.idea                                           object
+$.idea.author_avatar_url                         null
+$.idea.author_name                               string
+$.idea.body                                      string
+$.idea.created_at                                date:iso8601
+$.idea.has_voted                                 bool
+$.idea.id                                        int
+$.idea.is_mine                                   bool
+$.idea.is_pinned                                 bool
+$.idea.pinned_at                                 null
+$.idea.votes                                     int
+$.message                                        string
+```
+
+### `PATCH /api/admin/ideas/:idea`
+
+`{ is_pinned }` : favori en tête de liste — accès : admin
+
+Statuts observés : `200`, `403`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.idea                                           object
+$.idea.author_avatar_url                         null
+$.idea.author_name                               string
+$.idea.body                                      string
+$.idea.created_at                                date:iso8601
+$.idea.has_voted                                 bool
+$.idea.id                                        int
+$.idea.is_mine                                   bool
+$.idea.is_pinned                                 bool
+$.idea.pinned_at                                 date:iso8601 | null
+$.idea.votes                                     int
+$.message                                        string
+```
+
+### `DELETE /api/admin/ideas/:idea`
+
+Supprimer une idée (votes compris) — accès : admin
+
+Statuts observés : `200`, `404`
 
 Réponse `200` :
 

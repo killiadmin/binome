@@ -63,6 +63,8 @@ const ACCEPTED = [
     /^CHAMP EN TROP +(GET|PATCH|POST|PUT|DELETE) \/api\/profile[\w/-]* 200 +\$\.player\.admin_role /,
     /^CHAMP EN TROP +POST \/api\/rooms(\/join)? 20[01] +\$\.profile\.admin_role /,
     /^NOUVEAU +DELETE \/api\/profile\/password 409$/,
+    // Boîte à idées (migration 8, 2026-11-14) : routes /ideas* et /admin/ideas/:idea.
+    /^NOUVEAU +(GET|POST|PUT|PATCH|DELETE) \/api\/(admin\/)?ideas(\/:idea(\/vote)?)? \d{3}$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

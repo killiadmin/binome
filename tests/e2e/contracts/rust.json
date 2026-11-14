@@ -11,6 +11,14 @@
     "$": "object",
     "$.message": "string"
   },
+  "DELETE /api/admin/ideas/:idea 200": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "DELETE /api/admin/ideas/:idea 404": {
+    "$": "object",
+    "$.message": "string"
+  },
   "DELETE /api/admin/players/:player 200": {
     "$": "object",
     "$.message": "string"
@@ -37,6 +45,29 @@
   },
   "DELETE /api/characters/:character 200": {
     "$": "object",
+    "$.message": "string"
+  },
+  "DELETE /api/ideas/:idea 200": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "DELETE /api/ideas/:idea 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "DELETE /api/ideas/:idea/vote 200": {
+    "$": "object",
+    "$.idea": "object",
+    "$.idea.author_avatar_url": "null",
+    "$.idea.author_name": "string",
+    "$.idea.body": "string",
+    "$.idea.created_at": "date:iso8601",
+    "$.idea.has_voted": "bool",
+    "$.idea.id": "int",
+    "$.idea.is_mine": "bool",
+    "$.idea.is_pinned": "bool",
+    "$.idea.pinned_at": "null",
+    "$.idea.votes": "int",
     "$.message": "string"
   },
   "DELETE /api/players/:player/avatar 200": {
@@ -603,6 +634,23 @@
     "$.errors.pseudo[]": "string",
     "$.message": "string"
   },
+  "GET /api/ideas 200": {
+    "$": "object",
+    "$.daily_limit": "int",
+    "$.ideas": "array",
+    "$.ideas[]": "object",
+    "$.ideas[].author_avatar_url": "null",
+    "$.ideas[].author_name": "string",
+    "$.ideas[].body": "string",
+    "$.ideas[].created_at": "date:iso8601",
+    "$.ideas[].has_voted": "bool",
+    "$.ideas[].id": "int",
+    "$.ideas[].is_mine": "bool",
+    "$.ideas[].is_pinned": "bool",
+    "$.ideas[].pinned_at": "date:iso8601 | null",
+    "$.ideas[].votes": "int",
+    "$.remaining_today": "int | null"
+  },
   "GET /api/profile 200": {
     "$": "object",
     "$.current": "null | object",
@@ -701,6 +749,32 @@
     "$.cosmos.id": "int",
     "$.cosmos.is_enabled": "bool",
     "$.cosmos.name": "string",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/ideas/:idea 200": {
+    "$": "object",
+    "$.idea": "object",
+    "$.idea.author_avatar_url": "null",
+    "$.idea.author_name": "string",
+    "$.idea.body": "string",
+    "$.idea.created_at": "date:iso8601",
+    "$.idea.has_voted": "bool",
+    "$.idea.id": "int",
+    "$.idea.is_mine": "bool",
+    "$.idea.is_pinned": "bool",
+    "$.idea.pinned_at": "date:iso8601 | null",
+    "$.idea.votes": "int",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/ideas/:idea 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/admin/ideas/:idea 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.is_pinned": "array",
+    "$.errors.is_pinned[]": "string",
     "$.message": "string"
   },
   "PATCH /api/admin/players/:player/admin 200": {
@@ -1255,6 +1329,36 @@
     "$": "object",
     "$.message": "string"
   },
+  "POST /api/ideas 201": {
+    "$": "object",
+    "$.idea": "object",
+    "$.idea.author_avatar_url": "null",
+    "$.idea.author_name": "string",
+    "$.idea.body": "string",
+    "$.idea.created_at": "date:iso8601",
+    "$.idea.has_voted": "bool",
+    "$.idea.id": "int",
+    "$.idea.is_mine": "bool",
+    "$.idea.is_pinned": "bool",
+    "$.idea.pinned_at": "null",
+    "$.idea.votes": "int",
+    "$.message": "string"
+  },
+  "POST /api/ideas 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/ideas 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/ideas 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.body": "array",
+    "$.errors.body[]": "string",
+    "$.message": "string"
+  },
   "POST /api/players/:player/avatar 200": {
     "$": "object",
     "$.avatar_url": "string",
@@ -1490,6 +1594,33 @@
     "$.character.name": "string",
     "$.character.universe_id": "int",
     "$.character.verif_manual": "bool",
+    "$.message": "string"
+  },
+  "PUT /api/ideas/:idea/vote 200": {
+    "$": "object",
+    "$.idea": "object",
+    "$.idea.author_avatar_url": "null",
+    "$.idea.author_name": "string",
+    "$.idea.body": "string",
+    "$.idea.created_at": "date:iso8601",
+    "$.idea.has_voted": "bool",
+    "$.idea.id": "int",
+    "$.idea.is_mine": "bool",
+    "$.idea.is_pinned": "bool",
+    "$.idea.pinned_at": "null",
+    "$.idea.votes": "int",
+    "$.message": "string"
+  },
+  "PUT /api/ideas/:idea/vote 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PUT /api/ideas/:idea/vote 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PUT /api/ideas/:idea/vote 409": {
+    "$": "object",
     "$.message": "string"
   },
   "PUT /api/profile/password 200": {

@@ -29,6 +29,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (5, include_str!("../migrations/0005_changements_personnage.sql")),
     (6, include_str!("../migrations/0006_controles_admin.sql")),
     (7, include_str!("../migrations/0007_administrateurs.sql")),
+    (8, include_str!("../migrations/0008_boite_a_idees.sql")),
 ];
 const READERS: usize = 4;
 
@@ -291,7 +292,9 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 7);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 8);
+            // Migration 8 : boîte à idées vide
+            assert_eq!(c.one::<i64>("SELECT COUNT(*) FROM ideas", [])? + c.one::<i64>("SELECT COUNT(*) FROM idea_votes", [])?, 0);
             // Migration 7 : aucun administrateur désigné
             assert_eq!(c.one::<Option<String>>("SELECT admin_granted_at FROM players WHERE id = 1", [])?, None);
             // Migration 6 : seul « Cosmos imposé », seuls Disney et Films saga, profils non validés
@@ -313,7 +316,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 7"));
+        assert!(db.check().unwrap().contains("version du schéma : 8"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -168,6 +168,9 @@ async function shareJoinUrl() {
       <BNavItem to="/historique" class="arcade-nav-link">
         <i class="fa-solid fa-ranking-star"></i> Historique
       </BNavItem>
+      <BNavItem to="/idees" class="arcade-nav-link">
+        <i class="fa-solid fa-lightbulb"></i> Idées
+      </BNavItem>
       <!-- Onglet Profil seulement une fois connecté ; sinon onglet Connexion -->
       <BNavItem v-if="isLoggedIn" to="/profil" class="arcade-nav-link">
         <span class="arcade-nav-avatar">
@@ -443,6 +446,16 @@ async function shareJoinUrl() {
     max-height: none;
     overflow: visible;
     margin-top: 0;
+  }
+}
+
+/* Tablette : avec l'onglet Idées, les liens d'un administrateur (pseudo,
+   partage, cadenas) passaient sur une troisième ligne à 768px. */
+@media (min-width: 768px) and (max-width: 991.98px) and (min-height: 501px) {
+  .arcade-nav-link :deep(.nav-link),
+  .arcade-lock-btn {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
   }
 }
 </style>

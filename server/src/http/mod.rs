@@ -19,7 +19,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::error::{AppError, AppResult};
 use crate::realtime::ws;
 use crate::services::common::Env;
-use crate::services::{admin, catalog, controls, game, history, play, profile, rooms, score, social, Followup, Out};
+use crate::services::{admin, catalog, controls, game, history, ideas, play, profile, rooms, score, social, Followup, Out};
 use crate::state::AppState;
 use crate::timers;
 use input::{Caller, Input};
@@ -267,6 +267,40 @@ async fn chat_store(State(st): State<AppState>, input: Input) -> Response {
         return r;
     }
     st.write(move |tx, _| social::chat_store(tx, &input)).await
+}
+
+// Boîte à idées : lecture libre ; poster, voter et supprimer la sienne exigent le jeton de profil.
+// Limites indexées sur le joueur du jeton (un player_id falsifié n'épuise pas celle d'un autre).
+// Le quota réel est de 5 idées par 24 h ; la limite par minute freine les essais contre le filtre.
+fn caller_key(input: &Input) -> String {
+    match input.1 {
+        Caller::Player(id) => format!("c:{id}"),
+        _ => raw_player_key(input),
+    }
+}
+async fn ideas_index(State(st): State<AppState>, input: Input) -> Response {
+    st.read(move |c, env| ideas::index(c, env, input.1)).await
+}
+async fn ideas_store(State(st): State<AppState>, input: Input) -> Response {
+    if let Some(r) = st.throttle("ideas", &caller_key(&input), 10) {
+        return r;
+    }
+    st.write(move |tx, env| ideas::store(tx, env, &input)).await
+}
+async fn ideas_vote(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    if let Some(r) = st.throttle("idea-votes", &caller_key(&input), 30) {
+        return r;
+    }
+    st.write(move |tx, env| ideas::vote(tx, env, id(&p, "idea")?, &input, true)).await
+}
+async fn ideas_unvote(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    if let Some(r) = st.throttle("idea-votes", &caller_key(&input), 30) {
+        return r;
+    }
+    st.write(move |tx, env| ideas::vote(tx, env, id(&p, "idea")?, &input, false)).await
+}
+async fn ideas_destroy(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, _| ideas::destroy_own(tx, id(&p, "idea")?, &input)).await
 }
 
 async fn avatar_show(State(st): State<AppState>, Path(p): Params) -> Response {
@@ -646,6 +680,13 @@ async fn admin_reaction_destroy(State(st): State<AppState>, Path(p): Params) -> 
     st.write(move |tx, _| social::admin_reaction_destroy(tx, id(&p, "reaction")?)).await
 }
 
+async fn admin_idea_update(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, env| ideas::admin_update(tx, env, id(&p, "idea")?, &input)).await
+}
+async fn admin_idea_destroy(State(st): State<AppState>, Path(p): Params) -> Response {
+    st.write(move |tx, _| ideas::admin_destroy(tx, id(&p, "idea")?)).await
+}
+
 /// Journalise les requêtes de plus d'une seconde (diagnostic de blocages) et pose
 /// le cache des fichiers du front : assets à empreinte (`/assets/…-HASH.js`) en
 /// cache d'un an, le reste (index.html) toujours revalidé.
@@ -710,6 +751,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/binomes", patch(admin_binome))
         .route("/admin/reactions", get(admin_reactions).post(admin_reaction_store))
         .route("/admin/reactions/{reaction}", patch(admin_reaction_update).delete(admin_reaction_destroy))
+        .route("/admin/ideas/{idea}", patch(admin_idea_update).delete(admin_idea_destroy))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
 
     let api = Router::new()
@@ -727,6 +769,9 @@ pub fn router(state: AppState) -> Router {
         .route("/history/leaderboard", get(history_leaderboard))
         .route("/history/players", get(history_player))
         .route("/chat/messages", get(chat_index).post(chat_store))
+        .route("/ideas", get(ideas_index).post(ideas_store))
+        .route("/ideas/{idea}", axum::routing::delete(ideas_destroy))
+        .route("/ideas/{idea}/vote", axum::routing::put(ideas_vote).delete(ideas_unvote))
         .route("/avatars/{avatar}", get(avatar_show))
         .route("/character-images/{character}", get(character_image))
         .route("/players/{player}/avatar", post(avatar_update).delete(avatar_destroy))

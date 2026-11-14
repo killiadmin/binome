@@ -32,6 +32,12 @@ const routes = [
         component: () => import("./pages/History/HistoryPage.vue"),
     },
     {
+        // Boîte à idées : lecture libre, poster / voter une fois connecté.
+        path: "/idees",
+        name: "Ideas",
+        component: () => import("./pages/Ideas/IdeasPage.vue"),
+    },
+    {
         path: "/connexion",
         name: "Login",
         component: () => import("./pages/Profile/LoginPage.vue"),
