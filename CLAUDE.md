@@ -108,6 +108,10 @@ remains. Details in `docs/regles-du-jeu.md`.
   binomes (`disabled_binomes`, universe + level) — the draw uses `controls::PLAYABLE_CHARACTER`.
   Profiles are validated by hand (`players.validated_at`, tab /admin/players): history routes and
   image emojis require a validated profile (`controls::require_validated`); admin always is.
+- Universe sheets (migration 10, `catalog::cosmos_sheet_*`, tab /admin/univers): a short
+  presentation per cosmos (`cosmos.description`, `cosmos.image` data URI 16/9, versioned by
+  `sheet_updated_at`), public in `GET /cosmos` and `GET /cosmos-images/{id}`; shown in the lobby
+  (selected cosmos + « Voir les fiches ») and in the rules (« Univers jouables », enabled cosmos).
 - Erasure (GDPR, migration 9, `profile::anonymize`): a player who played cannot be deleted
   without destroying others' games (`rounds.current_player_id` / `actions.player_id` have no
   ON DELETE), so they are anonymized: pseudo → `Joueur supprimé #000123` (23 chars, untypeable),

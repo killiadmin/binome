@@ -6,8 +6,11 @@ import { BModal } from 'bootstrap-vue-next'
 
 const props = defineProps({
   imageSrc: { type: String, default: null },
-  // Sortie carrée en JPEG. Défaut : format des images de personnages.
+  // Sortie JPEG. Défaut : carré au format des images de personnages ;
+  // `aspectRatio` + `outputHeight` pour un autre format (fiches d'univers : 16/9).
   outputSize: { type: Number, default: 512 },
+  outputHeight: { type: Number, default: null },
+  aspectRatio: { type: Number, default: 1 },
   quality: { type: Number, default: 0.9 },
 })
 
@@ -23,7 +26,7 @@ let imageIsLoaded = false
 function tryInitCropper() {
   if (modalIsShown && imageIsLoaded && imageRef.value && !cropper) {
     cropper = new Cropper(imageRef.value, {
-      aspectRatio: 1,
+      aspectRatio: props.aspectRatio,
       viewMode: 1,
       dragMode: 'move',
       autoCropArea: 1,
@@ -60,9 +63,10 @@ function handleCancel() {
 function handleValidate() {
   if (!cropper) return
 
-  cropper.getCroppedCanvas({ width: props.outputSize, height: props.outputSize }).toBlob((blob) => {
+  const height = props.outputHeight ?? props.outputSize
+  cropper.getCroppedCanvas({ width: props.outputSize, height }).toBlob((blob) => {
     if (!blob) return
-    emit('cropped', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }))
+    emit('cropped', new File([blob], 'image.jpg', { type: 'image/jpeg' }))
     visible.value = false
   }, 'image/jpeg', props.quality)
 }

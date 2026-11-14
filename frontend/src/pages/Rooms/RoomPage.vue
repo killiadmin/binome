@@ -13,6 +13,8 @@ import JoinQrCode from '../../components/room/JoinQrCode.vue'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 import AvatarEditor from '../../components/player/AvatarEditor.vue'
 import PasswordPromptModal from '../../components/player/PasswordPromptModal.vue'
+import UniverseSheet from '../../components/universe/UniverseSheet.vue'
+import UniverseGallery from '../../components/universe/UniverseGallery.vue'
 import {profileService} from '../../services/profileService'
 import {isLoggedIn, profilePlayer, setProfile, updateProfilePlayer} from '../../services/profile'
 import {resumeFromProfile} from '../../services/gameSession'
@@ -79,7 +81,7 @@ function setAvatar(id, url) {
 // ─── MODE DE JEU ──────────────────────────────────────────────────────────────
 const gameMode = ref('random')          // 'random' | 'cosmos'
 const cosmosId = ref(null)
-const cosmosOptions = ref([])            // cosmos activés par l'admin : [{ id, name, playable_universe_count }]
+const cosmosOptions = ref([])            // cosmos activés par l'admin : [{ id, name, playable_universe_count, description, image }]
 // Modes proposés par l'administrateur (GET /cosmos → game_modes)
 const enabledModes = ref(['random', 'cosmos'])
 // Options pour les joueurs éliminés (actives par défaut côté serveur)
@@ -113,6 +115,27 @@ const startBlockedReason = computed(() => {
   }
   return null
 })
+
+// Fiches des univers (modale « Voir les fiches ») : vignettes, puis la fiche
+// touchée ; l'hôte peut choisir le cosmos depuis sa fiche.
+const showUniverses = ref(false)
+const universeDetail = ref(null)
+
+function openUniverses() {
+  universeDetail.value = null
+  showUniverses.value = true
+}
+
+function cosmosFeasible(c) {
+  return !!c && c.playable_universe_count >= pairsNeeded.value
+}
+
+function chooseCosmos(c) {
+  if (!isHost.value || !cosmosFeasible(c)) return
+  cosmosId.value = c.id
+  showUniverses.value = false
+  handleUpdateSettings()
+}
 
 async function loadCosmosOptions() {
   try {
@@ -730,15 +753,28 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                     Il faut au moins {{ pairsNeeded }} univers jouables dans le cosmos
                     ({{ players.length }} joueur{{ players.length > 1 ? 's' : '' }}).
                   </p>
+                  <UniverseSheet v-if="selectedCosmos" :cosmos="selectedCosmos" compact heading-tag="h6" class="mode-cosmos__sheet" />
+                  <button v-if="cosmosOptions.length" type="button" class="mode-cosmos__browse" @click="openUniverses">
+                    <i class="fa-solid fa-book-open"></i> Voir les fiches des univers
+                  </button>
                 </div>
               </template>
 
-              <p v-else class="mode-readonly">
-                <i :class="gameMode === 'cosmos' ? 'fa-solid fa-globe' : 'fa-solid fa-shuffle'"></i>
-                {{ gameMode === 'cosmos'
-                    ? `Cosmos imposé${selectedCosmos ? ' — ' + selectedCosmos.name : ''}`
-                    : 'Univers aléatoires' }}
-              </p>
+              <template v-else>
+                <p class="mode-readonly">
+                  <i :class="gameMode === 'cosmos' ? 'fa-solid fa-globe' : 'fa-solid fa-shuffle'"></i>
+                  {{ gameMode === 'cosmos'
+                      ? `Cosmos imposé${selectedCosmos ? ' — ' + selectedCosmos.name : ''}`
+                      : 'Univers aléatoires' }}
+                </p>
+                <UniverseSheet
+                    v-if="gameMode === 'cosmos' && selectedCosmos"
+                    :cosmos="selectedCosmos"
+                    compact
+                    heading-tag="h6"
+                    class="mode-cosmos__sheet"
+                />
+              </template>
 
               <!-- Joueurs éliminés : de quoi les occuper jusqu'à la fin -->
               <h5 class="roster__title eliminated-options__title">Joueurs éliminés</h5>
@@ -796,6 +832,32 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                 <i class="fa-solid fa-right-from-bracket"></i>
               </button>
             </div>
+
+            <!-- Fiches des univers : vignettes, puis la fiche choisie -->
+            <BModal v-model="showUniverses" title="Fiches des univers" no-footer class="arcade-modal">
+              <template v-if="universeDetail">
+                <UniverseSheet :cosmos="universeDetail" heading-tag="h6" />
+                <p v-if="isHost && !cosmosFeasible(universeDetail)" class="universe-modal__note">
+                  {{ universeDetail.playable_universe_count }} binôme(s) possible(s), il en faut {{ pairsNeeded }}
+                  pour {{ players.length }} joueur{{ players.length > 1 ? 's' : '' }}.
+                </p>
+                <div class="universe-modal__actions">
+                  <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="universeDetail = null">
+                    <i class="fa-solid fa-arrow-left"></i> Toutes les fiches
+                  </button>
+                  <button
+                      v-if="isHost && universeDetail.id !== cosmosId"
+                      type="button"
+                      class="cabinet-btn cabinet-btn--sm"
+                      :disabled="!cosmosFeasible(universeDetail)"
+                      @click="chooseCosmos(universeDetail)"
+                  >
+                    <i class="fa-solid fa-check"></i> Choisir cet univers
+                  </button>
+                </div>
+              </template>
+              <UniverseGallery v-else :cosmos="cosmosOptions" :selected-id="cosmosId" @open="universeDetail = $event" />
+            </BModal>
 
             <BModal v-model="showLeaveModal" title="Quitter le salon" no-footer class="arcade-modal">
               <p class="text-center">Es-tu sûr de vouloir quitter le salon ?</p>
@@ -1195,6 +1257,47 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 
 .mode-cosmos__select {
   margin-bottom: 0.4rem;
+}
+
+.mode-cosmos__sheet {
+  margin-top: 0.6rem;
+}
+
+.mode-cosmos__browse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 2px dashed var(--arcade-blue-grey-dark, #37474f);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--arcade-blue-grey-dark, #37474f);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.universe-modal__note {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: #c62828;
+  text-align: center;
+}
+
+.universe-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.universe-modal__actions .cabinet-btn {
+  margin: 0;
 }
 
 .mode-cosmos__hint,

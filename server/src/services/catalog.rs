@@ -61,27 +61,115 @@ pub fn login(password_hash: Option<&str>, given: &str) -> AppResult<Out> {
 
 /// GET /cosmos — tous les cosmos (l'admin s'en sert aussi pour ranger ses
 /// univers) ; `is_enabled` et `game_modes` disent ce que l'hôte peut choisir.
-pub fn cosmos_index(c: &impl Q) -> AppResult<Out> {
+/// `description` / `image` : fiche de présentation (null sans fiche).
+pub fn cosmos_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let playable = crate::services::controls::playable_universes_sql();
     let list = c.all(
         &format!(
             "SELECT co.id, co.name, co.is_enabled,
                     (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id),
-                    (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id AND u.id IN ({playable}))
+                    (SELECT COUNT(*) FROM universes u WHERE u.cosmos_id = co.id AND u.id IN ({playable})),
+                    co.description, (co.image IS NOT NULL AND co.image <> ''), co.sheet_updated_at
              FROM cosmos co ORDER BY co.name"
         ),
         [],
         |r| {
+            let id: i64 = r.get(0)?;
             Ok(json!({
-                "id": r.get::<_, i64>(0)?,
+                "id": id,
                 "name": r.get::<_, String>(1)?,
                 "is_enabled": r.get::<_, bool>(2)?,
                 "universes_count": r.get::<_, i64>(3)?,
                 "playable_universe_count": r.get::<_, i64>(4)?,
+                "description": r.get::<_, Option<String>>(5)?,
+                "image": cosmos_image_url(env, id, r.get(6)?, r.get::<_, Option<String>>(7)?.as_deref()),
             }))
         },
     )?;
     Ok(Out::ok(json!({ "cosmos": list, "game_modes": crate::services::controls::enabled_modes(c)? })))
+}
+
+// ─── Fiches de présentation des cosmos (migration 10) ──────────────────────
+
+pub const SHEET_DESCRIPTION_MIN: usize = 10;
+pub const SHEET_DESCRIPTION_MAX: usize = 600;
+
+fn cosmos_sheet_json(c: &impl Q, env: &Env, id: i64) -> AppResult<Value> {
+    c.opt(
+        "SELECT name, description, (image IS NOT NULL AND image <> ''), sheet_updated_at FROM cosmos WHERE id = ?1",
+        [id],
+        |r| {
+            Ok(json!({
+                "id": id,
+                "name": r.get::<_, String>(0)?,
+                "description": r.get::<_, Option<String>>(1)?,
+                "image": cosmos_image_url(env, id, r.get(2)?, r.get::<_, Option<String>>(3)?.as_deref()),
+            }))
+        },
+    )?
+    .ok_or(AppError::NotFound)
+}
+
+/// PUT /admin/cosmos/{cosmos}/sheet (multipart ou JSON) — `description` (requise),
+/// fichier `image` facultatif (remplace l'actuelle), `remove_image` = 1 pour la retirer.
+pub fn cosmos_sheet_update(tx: &Transaction, env: &Env, id: i64, input: &Input, file: Option<Vec<u8>>) -> AppResult<Out> {
+    let name = cosmos_name(tx, Some(id))?.ok_or(AppError::NotFound)?;
+    let mut v = V::new(input).messages(&[
+        ("description.required", "La présentation est requise."),
+        ("description.min", "La présentation doit faire au moins 10 caractères."),
+        ("description.max", "La présentation ne peut pas dépasser 600 caractères."),
+    ]);
+    // Espaces de début / fin ignorés : un texte fait d'espaces manque.
+    let description = match input.get("description") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.trim().to_string()).filter(|t| !t.is_empty()),
+        Some(_) => {
+            v.fail("description", "string", "The description field must be a string.".into());
+            Some(String::new())
+        }
+    };
+    let description = match description {
+        None => {
+            v.fail("description", "required", "The description field is required.".into());
+            None
+        }
+        Some(t) if t.chars().count() < SHEET_DESCRIPTION_MIN => {
+            v.fail("description", "min", format!("The description field must be at least {SHEET_DESCRIPTION_MIN} characters."));
+            None
+        }
+        Some(t) if t.chars().count() > SHEET_DESCRIPTION_MAX => {
+            v.fail("description", "max", format!("The description field must not be greater than {SHEET_DESCRIPTION_MAX} characters."));
+            None
+        }
+        Some(t) => Some(t),
+    };
+    let remove_image = v.opt_bool("remove_image").unwrap_or(false);
+    let image = check_upload(&mut v, file.as_ref(), false);
+    v.finish()?;
+    let description = description.expect("validé");
+    let now = now_db();
+    if remove_image && image.is_none() {
+        tx.run("UPDATE cosmos SET description = ?1, image = NULL, sheet_updated_at = ?2 WHERE id = ?3", (&description, &now, id))?;
+    } else {
+        tx.run(
+            "UPDATE cosmos SET description = ?1, image = COALESCE(?2, image), sheet_updated_at = ?3 WHERE id = ?4",
+            (&description, &image, &now, id),
+        )?;
+    }
+    Ok(Out::ok(json!({ "message": format!("Fiche « {name} » enregistrée."), "cosmos": cosmos_sheet_json(tx, env, id)? })))
+}
+
+/// DELETE /admin/cosmos/{cosmos}/sheet — retire présentation et image.
+pub fn cosmos_sheet_destroy(tx: &Transaction, env: &Env, id: i64) -> AppResult<Out> {
+    let name = cosmos_name(tx, Some(id))?.ok_or(AppError::NotFound)?;
+    tx.run("UPDATE cosmos SET description = NULL, image = NULL, sheet_updated_at = ?1 WHERE id = ?2", (now_db(), id))?;
+    Ok(Out::ok(json!({ "message": format!("Fiche « {name} » supprimée."), "cosmos": cosmos_sheet_json(tx, env, id)? })))
+}
+
+/// GET /cosmos-images/{cosmos} → (type, octets)
+pub fn cosmos_image(c: &impl Q, id: i64) -> AppResult<(String, Vec<u8>)> {
+    let data: Option<String> = c.opt("SELECT image FROM cosmos WHERE id = ?1", [id], |r| r.get(0))?.flatten();
+    data.as_deref().and_then(image::decode_data_uri).ok_or(AppError::NotFound)
 }
 
 fn unique_slug(tx: &Transaction, table: &str, base: &str, extra: &str, params: &[i64]) -> AppResult<String> {

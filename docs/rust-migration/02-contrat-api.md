@@ -22,13 +22,13 @@
 - Dates : deux formats coexistent selon la route — `date:iso8601` = `2026-11-11T10:00:00+00:00`,
   `date:eloquent` = `2026-11-11T10:00:00.000000Z`. Les deux sont à reproduire là où ils apparaissent.
 - Booléens : certains champs sortent en `0` / `1` (`int`), ex. `players[].is_ready`. À reproduire.
-- Images (`/avatars`, `/character-images`, `/reactions/:id/image`) : binaire, `Cache-Control: public, max-age=31536000, immutable`,
+- Images (`/avatars`, `/character-images`, `/cosmos-images`, `/reactions/:id/image`) : binaire, `Cache-Control: public, max-age=31536000, immutable`,
   `X-Content-Type-Options: nosniff`. URLs renvoyées : `/binome/api/...?v=<updated_at timestamp>`.
 - Limites de débit (par joueur, jamais par IP) : chat 20/min, réactions 30/min, emojis 5/min, avatars 10/min.
 
 ## Couverture
 
-83 routes ; 83 observées par le banc.
+86 routes ; 86 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -48,7 +48,7 @@ $.token                                          string
 
 ### `GET /api/cosmos`
 
-Cosmos + `is_enabled` + `universes_count` + `playable_universe_count` ; `game_modes` proposés — accès : public
+Cosmos + `is_enabled` + `universes_count` + `playable_universe_count` + fiche (`description`, `image` = URL ou null) ; `game_modes` proposés — accès : public
 
 Statuts observés : `200`
 
@@ -58,7 +58,9 @@ Réponse `200` :
 $                                                object
 $.cosmos                                         array
 $.cosmos[]                                       object
+$.cosmos[].description                           null | string
 $.cosmos[].id                                    int
+$.cosmos[].image                                 null | string
 $.cosmos[].is_enabled                            bool
 $.cosmos[].name                                  string
 $.cosmos[].playable_universe_count               int
@@ -589,6 +591,42 @@ $                                                object
 $.cosmos                                         object
 $.cosmos.id                                      int
 $.cosmos.is_enabled                              bool
+$.cosmos.name                                    string
+$.message                                        string
+```
+
+### `PUT /api/admin/cosmos/:cosmos/sheet`
+
+Fiche de présentation (multipart ou JSON) : `description` 10–600 car. (rognée), fichier `image` facultatif (remplace), `remove_image=1` pour la retirer — accès : admin
+
+Statuts observés : `200`, `403`, `404`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.cosmos                                         object
+$.cosmos.description                             string
+$.cosmos.id                                      int
+$.cosmos.image                                   null | string
+$.cosmos.name                                    string
+$.message                                        string
+```
+
+### `DELETE /api/admin/cosmos/:cosmos/sheet`
+
+Retirer la fiche (présentation + image) — accès : admin
+
+Statuts observés : `200`
+
+Réponse `200` :
+
+```
+$                                                object
+$.cosmos                                         object
+$.cosmos.description                             null
+$.cosmos.id                                      int
+$.cosmos.image                                   null
 $.cosmos.name                                    string
 $.message                                        string
 ```
@@ -1144,6 +1182,20 @@ $.content_type                                   string
 ### `GET /api/character-images/:character`
 
 Image de personnage (type d'origine, cache 1 an) — accès : public
+
+Statuts observés : `200`, `404`
+
+Réponse `200` (binaire) :
+
+```
+$                                                object
+$.cache_control                                  string
+$.content_type                                   string
+```
+
+### `GET /api/cosmos-images/:cosmos`
+
+Image de la fiche d'un cosmos (type d'origine, cache 1 an, URL versionnée `?v=` sur la dernière modification de la fiche) — accès : public
 
 Statuts observés : `200`, `404`
 

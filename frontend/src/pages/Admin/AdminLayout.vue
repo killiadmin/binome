@@ -11,6 +11,7 @@ const router = useRouter()
 const SECTIONS = [
   { to: '/admin/games', icon: 'fa-gamepad', label: 'Parties' },
   { to: '/admin/binomes', icon: 'fa-user-group', label: 'Binômes' },
+  { to: '/admin/univers', icon: 'fa-earth-europe', label: 'Univers' },
   { to: '/admin/prompts', icon: 'fa-terminal', label: 'Prompts' },
   { to: '/admin/players', icon: 'fa-users', label: 'Joueurs' },
   { to: '/admin/reactions', icon: 'fa-face-grin-stars', label: 'Emojis' },
@@ -74,14 +75,15 @@ function lockAccess() {
   margin: 0;
 }
 
-/* Barre de sections, collée sous la navbar. Téléphone : 5 colonnes égales,
-   icône au-dessus du libellé (tout tient à 320px, sans défilement caché). */
+/* Barre de sections, collée sous la navbar. Téléphone : 2 rangées de 3,
+   icône devant le libellé (6 colonnes ne tiennent pas à 320px : « Binômes »
+   serait tronqué), sans défilement caché. */
 .admin-sections {
   position: sticky;
   top: var(--navbar-height);
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.25rem;
   max-width: 900px;
   margin: 0 auto;
@@ -92,18 +94,17 @@ function lockAccess() {
 
 .admin-section {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
+  gap: 0.35rem;
   min-width: 0;
-  min-height: 48px;
-  padding: 0.3rem 0.1rem;
+  min-height: 44px;
+  padding: 0.2rem 0.25rem;
   border-radius: 10px;
   border: 2px solid var(--arcade-blue-grey);
   color: var(--arcade-taupe);
   font-weight: 700;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   line-height: 1.1;
   text-decoration: none;
 }
@@ -116,7 +117,8 @@ function lockAccess() {
 }
 
 .admin-section i {
-  font-size: 1rem;
+  flex: none;
+  font-size: 0.95rem;
 }
 
 .admin-section:hover {
@@ -142,6 +144,12 @@ function lockAccess() {
 
 @media (min-width: 576px) {
   .admin-sections {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .admin-sections {
     display: flex;
     justify-content: center;
     gap: 0.35rem;
@@ -149,9 +157,7 @@ function lockAccess() {
   }
 
   .admin-section {
-    flex-direction: row;
     gap: 0.4rem;
-    min-height: 44px;
     padding: 0.4rem 0.8rem;
     font-size: 1rem;
   }

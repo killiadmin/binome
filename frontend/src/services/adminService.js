@@ -71,6 +71,24 @@ export const adminService = {
         return api.patch(`/admin/cosmos/${id}`, { is_enabled: isEnabled })
     },
 
+    /**
+     * Fiche de présentation d'un cosmos (description + image 16/9 facultative)
+     * PUT /api/admin/cosmos/{id}/sheet (multipart) — description, image? (File), remove_image?
+     */
+    saveCosmosSheet(id, { description, imageFile = null, removeImage = false }) {
+        const formData = new FormData()
+        formData.append('description', description)
+        if (imageFile) formData.append('image', imageFile)
+        if (removeImage) formData.append('remove_image', '1')
+        // Content-Type retiré : le navigateur pose le boundary multipart.
+        return api.put(`/admin/cosmos/${id}/sheet`, formData, { headers: { 'Content-Type': undefined } })
+    },
+
+    /** DELETE /api/admin/cosmos/{id}/sheet — retire présentation et image */
+    deleteCosmosSheet(id) {
+        return api.delete(`/admin/cosmos/${id}/sheet`)
+    },
+
     /** PATCH /api/admin/binomes — { universe_id, level_affectation, is_enabled } */
     setBinome(universeId, level, isEnabled) {
         return api.patch('/admin/binomes', { universe_id: universeId, level_affectation: level, is_enabled: isEnabled })

@@ -14,7 +14,7 @@ const DOCS = new URL('../../docs/rust-migration/', import.meta.url)
 // ─── Routes : description + accès ───────────────────────────────────────────
 const ROUTES = {
     'POST /api/access/characters': ['Échange le mot de passe admin contre le jeton `X-Characters-Access`', 'public'],
-    'GET /api/cosmos': ['Cosmos + `is_enabled` + `universes_count` + `playable_universe_count` ; `game_modes` proposés', 'public'],
+    'GET /api/cosmos': ['Cosmos + `is_enabled` + `universes_count` + `playable_universe_count` + fiche (`description`, `image` = URL ou null) ; `game_modes` proposés', 'public'],
     'POST /api/cosmos': ['Créer un cosmos', 'admin'],
     'GET /api/universes': ['Univers + cosmos + `characters_count`', 'admin'],
     'POST /api/universes': ['Créer un univers', 'admin'],
@@ -39,6 +39,8 @@ const ROUTES = {
     'GET /api/admin/settings': ['Modes de jeu, cosmos et binômes complets, avec leur état', 'admin'],
     'PATCH /api/admin/settings/game-modes/:mode': ['`{ enabled }` (`409` pour le dernier mode actif)', 'admin'],
     'PATCH /api/admin/cosmos/:cosmos': ['`{ is_enabled }` : cosmos proposé aux hôtes', 'admin'],
+    'PUT /api/admin/cosmos/:cosmos/sheet': ['Fiche de présentation (multipart ou JSON) : `description` 10–600 car. (rognée), fichier `image` facultatif (remplace), `remove_image=1` pour la retirer', 'admin'],
+    'DELETE /api/admin/cosmos/:cosmos/sheet': ['Retirer la fiche (présentation + image)', 'admin'],
     'PATCH /api/admin/binomes': ['`{ universe_id, level_affectation, is_enabled }` : binôme tirable', 'admin'],
     'DELETE /api/admin/players/:player/room': ['Retirer le joueur de son salon', 'admin'],
     'DELETE /api/admin/players/:player': ['Effacer : anonymisé s\'il a joué (parties gardées sous « Joueur supprimé #000123 »), supprimé sinon ; `?with_games=1` (+ `X-Delete-Password`) supprime aussi ses parties ; `409` si déjà anonymisé', 'admin'],
@@ -65,6 +67,7 @@ const ROUTES = {
     'POST /api/chat/messages': ['Poster (`player_id` ou `anon_id`) → `chat.message`', 'public · 20/min par auteur'],
     'GET /api/avatars/:avatar': ['Photo JPEG (cache 1 an) ; URL signée `?v=&s=` (sur la dernière modification), `404` sans signature valide ou après changement', 'URL signée'],
     'GET /api/character-images/:character': ['Image de personnage (type d\'origine, cache 1 an)', 'public'],
+    'GET /api/cosmos-images/:cosmos': ['Image de la fiche d\'un cosmos (type d\'origine, cache 1 an, URL versionnée `?v=` sur la dernière modification de la fiche)', 'public'],
     'POST /api/players/:player/avatar': ['Enregistrer sa photo (JPEG carré 64–512 px ≤ 200 ko)', 'player_id = :player · 10/min'],
     'DELETE /api/players/:player/avatar': ['Retirer sa photo', 'player_id = :player · 10/min'],
     'POST /api/rooms': ['Créer un salon (`409` si le pseudo est connecté ailleurs)', 'public'],
@@ -156,7 +159,7 @@ let api = `# Migration Rust — 02. Contrat de l'API REST
 - Dates : deux formats coexistent selon la route — \`date:iso8601\` = \`2026-11-11T10:00:00+00:00\`,
   \`date:eloquent\` = \`2026-11-11T10:00:00.000000Z\`. Les deux sont à reproduire là où ils apparaissent.
 - Booléens : certains champs sortent en \`0\` / \`1\` (\`int\`), ex. \`players[].is_ready\`. À reproduire.
-- Images (\`/avatars\`, \`/character-images\`, \`/reactions/:id/image\`) : binaire, \`Cache-Control: public, max-age=31536000, immutable\`,
+- Images (\`/avatars\`, \`/character-images\`, \`/cosmos-images\`, \`/reactions/:id/image\`) : binaire, \`Cache-Control: public, max-age=31536000, immutable\`,
   \`X-Content-Type-Options: nosniff\`. URLs renvoyées : \`/binome/api/...?v=<updated_at timestamp>\`.
 - Limites de débit (par joueur, jamais par IP) : chat 20/min, réactions 30/min, emojis 5/min, avatars 10/min.
 

@@ -1,4 +1,13 @@
 {
+  "DELETE /api/admin/cosmos/:cosmos/sheet 200": {
+    "$": "object",
+    "$.cosmos": "object",
+    "$.cosmos.description": "null",
+    "$.cosmos.id": "int",
+    "$.cosmos.image": "null",
+    "$.cosmos.name": "string",
+    "$.message": "string"
+  },
   "DELETE /api/admin/games/:game 200": {
     "$": "object",
     "$.message": "string"
@@ -359,13 +368,24 @@
     "$": "object",
     "$.cosmos": "array",
     "$.cosmos[]": "object",
+    "$.cosmos[].description": "null | string",
     "$.cosmos[].id": "int",
+    "$.cosmos[].image": "null | string",
     "$.cosmos[].is_enabled": "bool",
     "$.cosmos[].name": "string",
     "$.cosmos[].playable_universe_count": "int",
     "$.cosmos[].universes_count": "int",
     "$.game_modes": "array",
     "$.game_modes[]": "string"
+  },
+  "GET /api/cosmos-images/:cosmos 200 [binaire]": {
+    "$": "object",
+    "$.cache_control": "string",
+    "$.content_type": "string"
+  },
+  "GET /api/cosmos-images/:cosmos 404": {
+    "$": "object",
+    "$.message": "string"
   },
   "GET /api/games/:game 200": {
     "$": "object",
@@ -1644,6 +1664,30 @@
     "$.errors.level_affectation[]": "string",
     "$.errors.name": "array",
     "$.errors.name[]": "string",
+    "$.message": "string"
+  },
+  "PUT /api/admin/cosmos/:cosmos/sheet 200": {
+    "$": "object",
+    "$.cosmos": "object",
+    "$.cosmos.description": "string",
+    "$.cosmos.id": "int",
+    "$.cosmos.image": "null | string",
+    "$.cosmos.name": "string",
+    "$.message": "string"
+  },
+  "PUT /api/admin/cosmos/:cosmos/sheet 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PUT /api/admin/cosmos/:cosmos/sheet 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PUT /api/admin/cosmos/:cosmos/sheet 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.description": "array",
+    "$.errors.description[]": "string",
     "$.message": "string"
   },
   "PUT /api/characters/:character 200": {

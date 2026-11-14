@@ -572,10 +572,25 @@ async fn access_login(State(st): State<AppState>, input: Input) -> Response {
     }
 }
 async fn cosmos_index(State(st): State<AppState>) -> Response {
-    st.read(|c, _| catalog::cosmos_index(c)).await
+    st.read(|c, env| catalog::cosmos_index(c, env)).await
 }
 async fn cosmos_store(State(st): State<AppState>, input: Input) -> Response {
     st.write(move |tx, _| catalog::cosmos_store(tx, &input)).await
+}
+async fn cosmos_sheet_update(State(st): State<AppState>, Path(p): Params, req: Request) -> Response {
+    match form_input(req).await {
+        Ok((input, file)) => st.write(move |tx, env| catalog::cosmos_sheet_update(tx, env, id(&p, "cosmos")?, &input, file)).await,
+        Err(e) => e.into_response(),
+    }
+}
+async fn cosmos_sheet_destroy(State(st): State<AppState>, Path(p): Params) -> Response {
+    st.write(move |tx, env| catalog::cosmos_sheet_destroy(tx, env, id(&p, "cosmos")?)).await
+}
+async fn cosmos_image(State(st): State<AppState>, Path(p): Params) -> Response {
+    match st.db.read(move |c| catalog::cosmos_image(c, id(&p, "cosmos")?)).await {
+        Ok((mime, bytes)) => image_response(&mime, bytes),
+        Err(e) => e.into_response(),
+    }
 }
 async fn universes_index(State(st): State<AppState>) -> Response {
     st.read(|c, _| catalog::universes_index(c)).await
@@ -802,6 +817,7 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/settings", get(admin_settings))
         .route("/admin/settings/game-modes/{mode}", patch(admin_game_mode))
         .route("/admin/cosmos/{cosmos}", patch(admin_cosmos))
+        .route("/admin/cosmos/{cosmos}/sheet", axum::routing::put(cosmos_sheet_update).delete(cosmos_sheet_destroy))
         .route("/admin/binomes", patch(admin_binome))
         .route("/admin/reactions", get(admin_reactions).post(admin_reaction_store))
         .route("/admin/reactions/{reaction}", patch(admin_reaction_update).delete(admin_reaction_destroy))
@@ -828,6 +844,7 @@ pub fn router(state: AppState) -> Router {
         .route("/ideas/{idea}/vote", axum::routing::put(ideas_vote).delete(ideas_unvote))
         .route("/avatars/{avatar}", get(avatar_show))
         .route("/character-images/{character}", get(character_image))
+        .route("/cosmos-images/{cosmos}", get(cosmos_image))
         .route("/players/{player}/avatar", post(avatar_update).delete(avatar_destroy))
         .route("/rooms", post(rooms_store))
         .route("/rooms/join", post(rooms_join))
