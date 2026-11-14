@@ -290,6 +290,11 @@
     "$.cache_control": "string",
     "$.content_type": "string"
   },
+  "GET /api/avatars/:avatar 404 [binaire]": {
+    "$": "object",
+    "$.cache_control": "null",
+    "$.content_type": "string"
+  },
   "GET /api/character-images/:character 200 [binaire]": {
     "$": "object",
     "$.cache_control": "string",
@@ -745,6 +750,11 @@
   "GET /api/reactions/:reaction/image 200 [binaire]": {
     "$": "object",
     "$.cache_control": "string",
+    "$.content_type": "string"
+  },
+  "GET /api/reactions/:reaction/image 404 [binaire]": {
+    "$": "object",
+    "$.cache_control": "null",
     "$.content_type": "string"
   },
   "GET /api/rooms/:room 200": {

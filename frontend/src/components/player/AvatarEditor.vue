@@ -88,7 +88,7 @@ watch(show, (open) => {
         </div>
         <p class="avatar-editor__hint">
           Ta photo remplace ton initiale partout dans le jeu et te suit d'une partie à l'autre.
-          Visible de tous, même sans connexion ; tu peux la retirer quand tu veux.
+          Les autres joueurs la voient ; tu peux la retirer quand tu veux.
           <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
         </p>
 

@@ -200,9 +200,14 @@ pub fn avatar_destroy(tx: &Transaction, player_id: i64, input: &Input) -> AppRes
     Ok(Out::ok(json!({ "message": "Photo supprimée.", "avatar_url": null })).event(event))
 }
 
-/// GET /avatars/{avatar} → octets JPEG
-pub fn avatar_image(c: &impl Q, id: i64) -> AppResult<Vec<u8>> {
-    let data: String = c.opt("SELECT image FROM player_avatars WHERE id = ?1", [id], |r| r.get(0))?.ok_or(AppError::NotFound)?;
+/// GET /avatars/{avatar}?v=…&s=… → octets JPEG ; signature absente, fausse ou
+/// périmée (photo changée depuis) : 404, comme une photo inexistante.
+pub fn avatar_image(c: &impl Q, secret: &[u8], id: i64, sig: Option<&str>) -> AppResult<Vec<u8>> {
+    let (data, updated): (String, Option<String>) =
+        c.opt("SELECT image, updated_at FROM player_avatars WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?.ok_or(AppError::NotFound)?;
+    if !image_sig_ok(secret, "avatar", id, updated.as_deref(), sig) {
+        return Err(AppError::NotFound);
+    }
     decode_after_comma(&data)
 }
 
@@ -225,7 +230,7 @@ fn reaction_public(env: &Env, r: &rusqlite::Row) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": id,
         "name": r.get::<_, String>(1)?,
-        "url": reaction_url(env, id, emoji.is_some(), updated.as_deref()),
+        "url": reaction_url(env, id, emoji.is_some(), r.get::<_, Option<String>>(5)?.as_deref(), updated.as_deref()),
         "emoji": emoji,
         "created_by": r.get::<_, Option<String>>(3)?,
     }))
@@ -245,9 +250,14 @@ pub fn reactions_index(c: &impl Q, env: &Env, caller: Caller) -> AppResult<Out> 
     Ok(Out::ok(json!({ "reactions": list })))
 }
 
-/// GET /reactions/{reaction}/image — servie même masquée (URL déjà affichée).
-pub fn reaction_image(c: &impl Q, id: i64) -> AppResult<Vec<u8>> {
-    let data: Option<String> = c.opt("SELECT image FROM custom_reactions WHERE id = ?1", [id], |r| r.get(0))?.ok_or(AppError::NotFound)?;
+/// GET /reactions/{reaction}/image?v=…&s=… — servie même masquée (URL déjà
+/// affichée), mais seulement avec sa signature.
+pub fn reaction_image(c: &impl Q, secret: &[u8], id: i64, sig: Option<&str>) -> AppResult<Vec<u8>> {
+    let (data, created): (Option<String>, Option<String>) =
+        c.opt("SELECT image, created_at FROM custom_reactions WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?.ok_or(AppError::NotFound)?;
+    if !image_sig_ok(secret, "reaction", id, created.as_deref(), sig) {
+        return Err(AppError::NotFound);
+    }
     decode_after_comma(&data.ok_or(AppError::NotFound)?)
 }
 

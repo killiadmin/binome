@@ -329,8 +329,12 @@ async fn ideas_destroy(State(st): State<AppState>, Path(p): Params, input: Input
     st.write(move |tx, _| ideas::destroy_own(tx, id(&p, "idea")?, &input)).await
 }
 
-async fn avatar_show(State(st): State<AppState>, Path(p): Params) -> Response {
-    match st.db.read(move |c| social::avatar_image(c, id(&p, "avatar")?)).await {
+/// Signature `s` de l'URL d'une image personnelle (voir `common::image_sig`).
+type ImageQuery = axum::extract::Query<HashMap<String, String>>;
+
+async fn avatar_show(State(st): State<AppState>, Path(p): Params, axum::extract::Query(q): ImageQuery) -> Response {
+    let secret = st.profile_secret.clone();
+    match st.db.read(move |c| social::avatar_image(c, &secret, id(&p, "avatar")?, q.get("s").map(String::as_str))).await {
         Ok(bytes) => image_response("image/jpeg", bytes),
         Err(e) => e.into_response(),
     }
@@ -363,8 +367,9 @@ async fn reactions_store(State(st): State<AppState>, input: Input) -> Response {
     }
     st.write(move |tx, env| social::reaction_store(tx, env, &input)).await
 }
-async fn reactions_image(State(st): State<AppState>, Path(p): Params) -> Response {
-    match st.db.read(move |c| social::reaction_image(c, id(&p, "reaction")?)).await {
+async fn reactions_image(State(st): State<AppState>, Path(p): Params, axum::extract::Query(q): ImageQuery) -> Response {
+    let secret = st.profile_secret.clone();
+    match st.db.read(move |c| social::reaction_image(c, &secret, id(&p, "reaction")?, q.get("s").map(String::as_str))).await {
         Ok(bytes) => image_response("image/jpeg", bytes),
         Err(e) => e.into_response(),
     }

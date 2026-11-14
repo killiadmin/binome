@@ -141,7 +141,31 @@ pub fn avatar_urls<'a>(c: &impl Q, env: &Env, pseudos: impl Iterator<Item = &'a 
 }
 
 pub fn avatar_url(env: &Env, id: i64, updated_at: Option<&str>) -> String {
-    format!("{}/api/avatars/{id}?v={}", env.prefix, clock::unix(updated_at))
+    let v = clock::unix(updated_at);
+    format!("{}/api/avatars/{id}?v={v}&s={}", env.prefix, image_sig(&env.profile_secret, "avatar", id, &v))
+}
+
+// ─── Images personnelles signées (photos, emojis personnalisés) ─────────────
+//
+// Les id sont séquentiels : sans signature, `/api/avatars/1`, `/2`… livraient toutes
+// les photos à qui les demandait. L'URL porte désormais `s = HMAC(secret, type|id|v)`
+// (v = date de la dernière modification) : seul qui a reçu l'URL de l'API peut
+// afficher l'image, et une photo changée ou retirée invalide les anciennes URL.
+
+/// Signature d'une image personnelle : 32 caractères hexadécimaux (128 bits).
+pub fn image_sig(secret: &[u8], kind: &str, id: i64, version: &str) -> String {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret).expect("clé HMAC");
+    mac.update(format!("image|{kind}|{id}|{version}").as_bytes());
+    hex::encode(&mac.finalize().into_bytes()[..16])
+}
+
+/// La signature fournie correspond-elle à la date signée (photo : dernière modification ;
+/// emoji : création) ?
+pub fn image_sig_ok(secret: &[u8], kind: &str, id: i64, signed_date: Option<&str>, given: Option<&str>) -> bool {
+    use subtle::ConstantTimeEq;
+    let expected = image_sig(secret, kind, id, &clock::unix(signed_date));
+    given.is_some_and(|g| g.len() == expected.len() && bool::from(g.as_bytes().ct_eq(expected.as_bytes())))
 }
 
 pub fn character_image_url(env: &Env, id: i64, has_image: bool, updated_at: Option<&str>) -> Value {
@@ -152,11 +176,16 @@ pub fn character_image_url(env: &Env, id: i64, has_image: bool, updated_at: Opti
     }
 }
 
-pub fn reaction_url(env: &Env, id: i64, is_unicode: bool, updated_at: Option<&str>) -> Value {
+/// L'image d'un emoji ne change jamais (seuls son nom et son état) : la signature
+/// porte sur sa date de création, stable, pour que les URL déjà affichées restent
+/// valides quand un administrateur le renomme ou le masque.
+pub fn reaction_url(env: &Env, id: i64, is_unicode: bool, created_at: Option<&str>, updated_at: Option<&str>) -> Value {
     if is_unicode {
         Value::Null
     } else {
-        json!(format!("{}/api/reactions/{id}/image?v={}", env.prefix, clock::unix(updated_at)))
+        let v = clock::unix(updated_at);
+        let s = image_sig(&env.profile_secret, "reaction", id, &clock::unix(created_at));
+        json!(format!("{}/api/reactions/{id}/image?v={v}&s={s}", env.prefix))
     }
 }
 
@@ -450,4 +479,31 @@ pub fn character(c: &impl Q, id: i64) -> AppResult<Option<Character>> {
             })
         },
     )
+}
+
+#[cfg(test)]
+mod image_sig_tests {
+    use super::*;
+
+    /// Une URL d'image personnelle n'ouvre que son image, dans sa version signée.
+    #[test]
+    fn signed_image_urls_resist_enumeration() {
+        let env = Env { prefix: "/binome".into(), hub: Hub::new(), profile_secret: Arc::new(b"secret".to_vec()), admin_pseudo: None };
+        let at = Some("2026-11-14 10:00:00");
+        let url = avatar_url(&env, 7, at);
+        let sig = url.split("&s=").nth(1).unwrap();
+        assert!(url.starts_with("/binome/api/avatars/7?v=") && sig.len() == 32);
+        assert!(image_sig_ok(b"secret", "avatar", 7, at, Some(sig)));
+        assert!(!image_sig_ok(b"secret", "avatar", 8, at, Some(sig)), "autre id");
+        assert!(!image_sig_ok(b"secret", "avatar", 7, Some("2026-11-14 10:00:01"), Some(sig)), "photo changée depuis");
+        assert!(!image_sig_ok(b"secret", "reaction", 7, at, Some(sig)), "autre type d'image");
+        assert!(!image_sig_ok(b"autre", "avatar", 7, at, Some(sig)), "autre secret");
+        assert!(!image_sig_ok(b"secret", "avatar", 7, at, None), "sans signature");
+        assert!(!image_sig_ok(b"secret", "avatar", 7, at, Some(&sig[..31])), "signature tronquée");
+        // Emoji : signé sur la création, l'URL survit à un renommage (updated_at)
+        let r = reaction_url(&env, 3, false, Some("2026-01-01 00:00:00"), Some("2026-11-14 10:00:00"));
+        let rs = r.as_str().unwrap().split("&s=").nth(1).unwrap().to_string();
+        assert!(image_sig_ok(b"secret", "reaction", 3, Some("2026-01-01 00:00:00"), Some(&rs)));
+        assert_eq!(reaction_url(&env, 3, true, None, None), Value::Null, "emoji Unicode : pas d'image");
+    }
 }

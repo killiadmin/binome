@@ -63,8 +63,9 @@ const UPDATED_AT = '14 novembre 2026'
 
           <dt>Photo de profil (facultative)</dt>
           <dd>
-            Elle est visible par tous les joueurs. Attention : quelqu'un qui connaît son adresse peut l'afficher
-            sans être connecté. Tu peux la retirer à tout moment depuis ton profil.
+            Elle est visible par les autres joueurs. Son adresse est signée : on ne peut pas
+            récupérer les photos en devinant leurs adresses, et une photo changée ou retirée n'est plus
+            accessible. Tu peux la retirer à tout moment depuis ton profil.
           </dd>
 
           <dt>Parties</dt>
