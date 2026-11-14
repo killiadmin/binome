@@ -89,6 +89,11 @@ const routes = [
                 component: CharacterPage,
             },
             {
+                path: 'univers',
+                name: 'AdminUniverses',
+                component: () => import('./pages/Admin/AdminUniversesPage.vue'),
+            },
+            {
                 path: 'prompts',
                 name: 'AdminPrompts',
                 component: () => import('./pages/Admin/AdminPromptsPage.vue'),

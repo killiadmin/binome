@@ -31,6 +31,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (7, include_str!("../migrations/0007_administrateurs.sql")),
     (8, include_str!("../migrations/0008_boite_a_idees.sql")),
     (9, include_str!("../migrations/0009_effacement.sql")),
+    (10, include_str!("../migrations/0010_fiches_univers.sql")),
 ];
 const READERS: usize = 4;
 
@@ -293,7 +294,11 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 9);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 10);
+            // Migration 10 : fiche rédigée pour Disney, aucune pour les autres, sans image
+            assert!(c.one::<Option<String>>("SELECT description FROM cosmos WHERE slug = 'disney'", [])?.is_some_and(|d| d.contains("Pixar")));
+            assert_eq!(c.one::<Option<String>>("SELECT description FROM cosmos WHERE slug = 'pixar'", [])?, None);
+            assert_eq!(c.one::<i64>("SELECT COUNT(*) FROM cosmos WHERE image IS NOT NULL", [])?, 0);
             // Migration 9 : activité initialisée à la migration, aucun profil anonymisé
             assert!(c.one::<Option<String>>("SELECT last_seen_at FROM players WHERE id = 1", [])?.is_some());
             assert_eq!(c.one::<Option<String>>("SELECT deleted_at FROM players WHERE id = 1", [])?, None);
@@ -320,7 +325,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 9"));
+        assert!(db.check().unwrap().contains("version du schéma : 10"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -97,6 +97,35 @@ export async function catalog(ctx) {
     const cosmosList = (await api.get('/cosmos', { expect: 200 })).data.cosmos
     ctx.check(cosmosList.some((x) => x.id === cosmos.id), 'GET /cosmos ouvert sans jeton')
 
+    // ── Fiche de présentation du cosmos (migration 10) ──────────────────────
+    const fresh = cosmosList.find((x) => x.id === cosmos.id)
+    ctx.check(fresh.description === null && fresh.image === null, 'cosmos neuf : pas de fiche')
+    const sheetForm = (description, { image = false, removeImage = false } = {}) => {
+        const f = new FormData()
+        f.append('description', description)
+        if (image) f.append('image', fixtureBlob('character.png', 'image/png'), 'fiche.png')
+        if (removeImage) f.append('remove_image', '1')
+        return f
+    }
+    const sheetText = '  Les grands classiques du test, rien de confidentiel.  '
+    await ctx.refused(403, 'PUT', '/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, form: sheetForm(sheetText) }, 'fiche sans jeton admin')
+    await ctx.refused(422, 'PUT', '/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, form: sheetForm('   court   '), admin: true }, 'fiche : présentation trop courte (espaces ignorés)')
+    await ctx.refused(422, 'PUT', '/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, form: sheetForm('x'.repeat(601)), admin: true }, 'fiche : présentation trop longue')
+    await ctx.refused(404, 'PUT', '/admin/cosmos/:cosmos/sheet', { params: { cosmos: 999999999 }, form: sheetForm(sheetText), admin: true }, 'fiche d\'un cosmos inconnu')
+    const sheet = (await api.put('/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, form: sheetForm(sheetText, { image: true }), admin: true, expect: 200 })).data.cosmos
+    ctx.check(sheet.description === sheetText.trim() && sheet.image?.startsWith(`/binome/api/cosmos-images/${cosmos.id}?v=`), 'fiche créée : texte rogné, URL d\'image versionnée', sheet)
+    const sheetImg = await api.get('/cosmos-images/:cosmos', { params: { cosmos: cosmos.id }, raw: true, expect: 200 })
+    ctx.check(sheetImg.data.contentType.startsWith('image/png') && /immutable/.test(sheetImg.data.cacheControl ?? ''), 'image de fiche servie publiquement, cache immutable')
+    const listed = (await api.get('/cosmos', { expect: 200 })).data.cosmos.find((x) => x.id === cosmos.id)
+    ctx.check(listed.description === sheet.description && listed.image === sheet.image, 'GET /cosmos : fiche publique (description + image)')
+    const kept = (await api.put('/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, body: { description: 'Texte modifié sans toucher à l\'image.' }, admin: true, expect: 200 })).data.cosmos
+    ctx.check(kept.image !== null && kept.description.startsWith('Texte modifié'), 'fiche modifiée en JSON sans fichier : image conservée')
+    const noImage = (await api.put('/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, form: sheetForm(sheetText, { removeImage: true }), admin: true, expect: 200 })).data.cosmos
+    ctx.check(noImage.image === null, 'fiche : image retirée (remove_image)')
+    await ctx.refused(404, 'GET', '/cosmos-images/:cosmos', { params: { cosmos: cosmos.id } }, 'image de fiche retirée')
+    const cleared = (await api.delete('/admin/cosmos/:cosmos/sheet', { params: { cosmos: cosmos.id }, admin: true, expect: 200 })).data.cosmos
+    ctx.check(cleared.description === null && cleared.image === null, 'fiche supprimée')
+
     for (const id of ids) {
         await api.delete('/characters/:character', { params: { character: id }, admin: true, expect: 200 })
         ctx.created.characters.delete(id)

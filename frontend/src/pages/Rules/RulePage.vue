@@ -7,11 +7,24 @@
  *   { note: "texte" }         encadré d'avertissement / de minuteur
  * Un item est une chaîne, ou { text, sub: [chaîne…] } pour une sous-liste
  * (affichée en retrait, avec des flèches).
+ *
+ * Sous les règles, « Univers jouables » : vignettes des cosmos activés par
+ * l'admin (GET /cosmos), un clic ouvre leur fiche de présentation.
  */
+import { BModal } from "bootstrap-vue-next";
+import { characterService } from "../../services/characterService";
+import UniverseGallery from "../../components/universe/UniverseGallery.vue";
+import UniverseSheet from "../../components/universe/UniverseSheet.vue";
+
 export default {
   name: "RulePage",
+  components: { BModal, UniverseGallery, UniverseSheet },
   data() {
     return {
+      universes: [],
+      universesLoading: true,
+      universesError: false,
+      openedUniverse: null,
       rules: [
         {
           title: "🎯 Objectif du jeu",
@@ -191,6 +204,26 @@ export default {
       ]
     };
   },
+  computed: {
+    showUniverse: {
+      get() {
+        return this.openedUniverse !== null;
+      },
+      set(v) {
+        if (!v) this.openedUniverse = null;
+      },
+    },
+  },
+  async mounted() {
+    try {
+      const { data } = await characterService.listCosmos();
+      this.universes = (data.cosmos ?? []).filter((c) => c.is_enabled);
+    } catch {
+      this.universesError = true;
+    } finally {
+      this.universesLoading = false;
+    }
+  },
 };
 </script>
 
@@ -230,6 +263,25 @@ export default {
           </div>
         </div>
       </div>
+
+      <section id="univers" class="board-card rule-card universes-card" aria-labelledby="universes-title">
+        <div class="board-card__rivet board-card__rivet--tl"></div>
+        <div class="board-card__rivet board-card__rivet--tr"></div>
+        <div class="board-card__rivet board-card__rivet--bl"></div>
+        <div class="board-card__rivet board-card__rivet--br"></div>
+        <h2 id="universes-title" class="rule-title">🌍 Univers jouables</h2>
+        <div class="rule-body">
+          <p class="rule-p">Les univers dans lesquels l'hôte peut piocher les personnages. Touche une vignette pour lire sa fiche : elle te dit jusqu'où chercher pendant ton enquête.</p>
+          <p v-if="universesLoading" class="rule-p universes-status">Chargement…</p>
+          <p v-else-if="universesError" class="rule-p universes-status">Impossible de charger les univers pour le moment.</p>
+          <p v-else-if="universes.length === 0" class="rule-p universes-status">Aucun univers jouable pour le moment.</p>
+          <UniverseGallery v-else :cosmos="universes" @open="openedUniverse = $event" />
+        </div>
+      </section>
+
+      <BModal v-model="showUniverse" title="Fiche de l'univers" no-footer class="arcade-modal">
+        <UniverseSheet v-if="openedUniverse" :cosmos="openedUniverse" heading-tag="h3" />
+      </BModal>
     </div>
   </div>
 </template>
@@ -264,6 +316,15 @@ export default {
 .rule-card {
   text-align: left;
   padding: 1.5rem 1.35rem;
+}
+
+.universes-card {
+  margin-top: 1.25rem;
+}
+
+.universes-status {
+  font-style: italic;
+  color: var(--arcade-taupe);
 }
 
 .rule-title {

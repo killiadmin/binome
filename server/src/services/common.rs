@@ -176,6 +176,16 @@ pub fn character_image_url(env: &Env, id: i64, has_image: bool, updated_at: Opti
     }
 }
 
+/// Image de la fiche d'un cosmos : publique, versionnée sur la dernière
+/// modification de la fiche (`cosmos.sheet_updated_at`).
+pub fn cosmos_image_url(env: &Env, id: i64, has_image: bool, sheet_updated_at: Option<&str>) -> Value {
+    if has_image {
+        json!(format!("{}/api/cosmos-images/{id}?v={}", env.prefix, clock::unix(sheet_updated_at)))
+    } else {
+        Value::Null
+    }
+}
+
 /// L'image d'un emoji ne change jamais (seuls son nom et son état) : la signature
 /// porte sur sa date de création, stable, pour que les URL déjà affichées restent
 /// valides quand un administrateur le renomme ou le masque.

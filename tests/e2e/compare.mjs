@@ -65,6 +65,11 @@ const ACCEPTED = [
     /^NOUVEAU +DELETE \/api\/profile\/password 409$/,
     // Boîte à idées (migration 8, 2026-11-14) : routes /ideas* et /admin/ideas/:idea.
     /^NOUVEAU +(GET|POST|PUT|PATCH|DELETE) \/api\/(admin\/)?ideas(\/:idea(\/vote)?)? \d{3}$/,
+    // Fiches de présentation des univers (migration 10, 2026-11-14) : texte + image du
+    // cosmos dans GET /cosmos, édition admin, image publique.
+    /^CHAMP EN TROP +GET \/api\/cosmos 200 +\$\.cosmos\[\]\.(description|image) /,
+    /^NOUVEAU +(PUT|DELETE) \/api\/admin\/cosmos\/:cosmos\/sheet \d{3}$/,
+    /^NOUVEAU +GET \/api\/cosmos-images\/:cosmos (200 \[binaire\]|404)$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 
