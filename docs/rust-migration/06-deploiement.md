@@ -152,7 +152,9 @@ docker run --rm -v "$PWD":/b -e BINOME_DATABASE=/b/binome-railway.sqlite binome:
 ```
 
 Chaque redéploiement coupe le service quelques secondes (volume attaché : pas de recouvrement).
-Les sauvegardes de volume Railway restent chez Railway : une copie externe reste à prévoir.
+**Sauvegardes** : copie quotidienne sur le Mac par `scripts/backup-railway.sh` (tâche launchd,
+voir « Sauvegardes » plus bas), en plus des sauvegardes de volume natives de Railway (onglet
+*Backups* du volume) qui, elles, restent chez Railway et disparaissent avec le volume.
 
 ## Mots de passe (administration, suppression de parties)
 
@@ -195,6 +197,31 @@ complète fait ~14 Mo, dont 13 Mo d'images de personnages.
 
 L'outil `sqlite3` standard peut lire la base mais pas la contrôler ni requêter les pseudos :
 la collation `BINOME_CI` (insensible à la casse et aux accents) n'existe que dans le binaire.
+
+### Railway → Mac (en service depuis le 2026-11-14)
+
+`scripts/backup-railway.sh` : `binome backup` + `binome check` + SHA-256 sur Railway, rapatriement
+par `railway ssh`, contrôle de l'empreinte, effacement de la copie distante, gzip dans
+`backups/railway/` (ignoré par Git) avec rotation : 7 quotidiennes, 4 hebdomadaires, 6 mensuelles.
+
+```bash
+scripts/backup-railway.sh                 # une sauvegarde maintenant (~6 s, ~10 Mo compressée)
+scripts/backup-railway.sh install [HH:MM] # tâche launchd quotidienne (12:30 par défaut ; au réveil si le Mac dormait)
+scripts/backup-railway.sh status          # dernière réussite + fin du journal (backups/railway/sauvegarde.log)
+scripts/backup-railway.sh uninstall
+```
+
+Un échec (réseau, jeton `railway login` expiré, contrôle raté) affiche une notification macOS ;
+`railway login` puis relancer le script. Mac éteint toute la journée = pas de sauvegarde ce
+jour-là. Copie hors du Mac : `BINOME_BACKUP_MIRROR=<dossier> scripts/backup-railway.sh install`
+(même rotation dans ce dossier). Contrôle mensuel d'une sauvegarde :
+
+```bash
+mkdir -p /tmp/r && gunzip -c backups/railway/mensuelles/<fichier>.sqlite.gz > /tmp/r/b.sqlite
+docker run --rm -v /tmp/r:/r -e BINOME_DATABASE=/r/b.sqlite binome:latest check
+```
+
+Restauration : décompresser, puis « Envoyer une base vers Railway » ci-dessus.
 
 ## Réseau local (comme aujourd'hui)
 
