@@ -910,11 +910,18 @@ async function handleCharactersRedrawn(data) {
 async function voteCharacter(accepted) {
   if (submittingVote.value || !myCharacter.value) return
   submittingVote.value = true
+  const draw = drawNumber.value
   try {
     await gameService.voteCharacter(gameId, myPlayerId.value, myCharacter.value.id, accepted)
-    // L'event suit, mais on affiche son propre vote sans attendre
+    // On affiche son propre vote sans attendre l'event… sauf si ce vote a clos le
+    // tirage : le serveur publie les events AVANT de répondre, donc pour le dernier
+    // votant « characters.redrawn » (nouveau tirage, votes remis à zéro) ou
+    // « round.started » est souvent déjà traité. Ajouter le vote ici le reporterait
+    // sur le nouveau tirage et masquerait les boutons jusqu'au rechargement.
     const mine = accepted ? acceptedPlayerIds : changePlayerIds
-    if (votingCharacters.value) mine.value = new Set([...mine.value, myPlayerId.value])
+    if (votingCharacters.value && drawNumber.value === draw) {
+      mine.value = new Set([...mine.value, myPlayerId.value])
+    }
   } catch (e) {
     showNotice(apiErrorMessage(e, "Impossible d'enregistrer ton choix."))
     // 409 : retirage passé entre-temps ou vote déjà clos → on se recale
