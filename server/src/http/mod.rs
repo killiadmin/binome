@@ -2,6 +2,7 @@
 //! transaction → publication des events APRÈS le commit → réponse.
 
 pub mod input;
+mod security;
 
 use std::collections::HashMap;
 
@@ -713,6 +714,7 @@ pub fn router(state: AppState) -> Router {
 
     let api = Router::new()
         .route("/access/characters", post(access_login))
+        .route("/csp-report", post(security::report))
         .route("/profile", get(profile_show).patch(profile_rename))
         .route("/profile/login", post(profile_login))
         .route("/profile/password", axum::routing::put(profile_password_set).delete(profile_password_remove))
@@ -773,8 +775,9 @@ pub fn router(state: AppState) -> Router {
         app = app.fallback_service(spa);
     }
 
+    let headers = middleware::from_fn_with_state(state.clone(), security::headers);
     let app = app.layer(DefaultBodyLimit::max(6 * 1024 * 1024)).layer(middleware::from_fn(log_slow)).with_state(state);
-    if prefix.is_empty() {
+    let app = if prefix.is_empty() {
         app
     } else {
         let home = format!("{prefix}/");
@@ -789,5 +792,7 @@ pub fn router(state: AppState) -> Router {
             None => outer,
         };
         outer.nest(&prefix, app)
-    }
+    };
+    // En-têtes de sécurité sur tout, y compris la redirection et `/binome/` ci-dessus.
+    app.layer(headers)
 }

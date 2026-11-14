@@ -44,6 +44,7 @@ ENV BINOME_BIND=0.0.0.0:8080 \
     BINOME_DATABASE=/data/binome.sqlite \
     BINOME_STATIC_DIR=/static \
     BINOME_PUBLIC_PREFIX=${BINOME_PUBLIC_PREFIX} \
+    BINOME_HSTS=1 \
     PATH=/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN mkdir -p /data
 EXPOSE 8080

@@ -16,6 +16,10 @@ const BASE = (process.env.VITE_BASE ?? '/binome').replace(/\/+$/, '')
 export default defineConfig({
   base: `${BASE}/`,
   plugins: [vue()],
+  build: {
+    // Polices toujours en fichiers : la CSP du serveur (font-src 'self') refuse data:.
+    assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

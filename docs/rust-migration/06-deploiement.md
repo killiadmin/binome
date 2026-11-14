@@ -114,6 +114,15 @@ Code `railway.toml` est abandonné par Railway au 2026-12-01 ; son remplaçant, 
   (pas de `.env`). `BINOME_PUBLIC_PREFIX`, si on la définit, sert au build et à l'exécution ;
   adapter alors le *Healthcheck Path* (`<préfixe>/up`).
 
+**En-têtes de sécurité** (pas de Caddy sur Railway : posés par le serveur, `server/src/http/security.rs`,
+sur toutes les réponses) : `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`,
+`Permissions-Policy` (caméra autorisée pour les photos), HSTS via `BINOME_HSTS=1` (fixé dans
+`Dockerfile.railway` ; jamais sur le Mac en HTTP). Pages HTML : CSP, en **Report-Only** tant que
+`CSP_ENFORCE` vaut `false` — rien n'est bloqué, les violations sont envoyées à `/api/csp-report`
+(30 rapports/min au plus) et journalisées : `railway logs | grep CSP`. Passer `CSP_ENFORCE` à
+`true` une fois les journaux propres après de vraies parties sur téléphone. Les polices sont
+servies par l'application (`frontend/src/assets/fonts/`), plus par Google Fonts.
+
 **Administration** : `railway ssh`, puis `binome check`, `binome backup /data/x.sqlite`,
 `binome prune-rooms`… (le binaire est dans le `PATH`).
 

@@ -28,6 +28,9 @@ pub struct Config {
     /// `lan-url.json` (lien de partage sur le réseau local, écrit par
     /// scripts/update-lan-ip.sh) relu à chaque requête ; absent hors LAN.
     pub lan_url_file: Option<PathBuf>,
+    /// `BINOME_HSTS=1` : envoie `Strict-Transport-Security`. Seulement derrière
+    /// HTTPS (Railway) ; jamais sur le Mac en HTTP du réseau local.
+    pub hsts: bool,
 }
 
 impl Config {
@@ -52,6 +55,7 @@ impl Config {
             legacy_admin_password_set: var("BINOME_ADMIN_PASSWORD").is_some() || var("CHARACTERS_ACCESS_PASSWORD").is_some(),
             lan_url_file: var("BINOME_LAN_URL_FILE").map(PathBuf::from),
             delete_password_hash: var("BINOME_DELETE_PASSWORD_HASH"),
+            hsts: var("BINOME_HSTS").is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes")),
         })
     }
 }

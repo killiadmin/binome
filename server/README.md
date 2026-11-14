@@ -54,6 +54,7 @@ Flux de création de personnages : `docs/generation-personnages.md` (page admin 
 | `BINOME_ADMIN_PSEUDO` | — | Pseudo du profil administrateur : il s'ouvre uniquement avec le mot de passe d'administration, renvoie le jeton admin et seul ce profil voit le cadenas. Absent = aucun profil admin |
 | `BINOME_DELETE_PASSWORD_HASH` | — | Empreinte du mot de passe exigé pour supprimer des parties ; absente = suppression désactivée |
 | `BINOME_LAN_URL_FILE` | — | `lan-url.json` du bouton « Partager le lien » (réseau local) |
+| `BINOME_HSTS` | — | `1` : envoie `Strict-Transport-Security` (seulement derrière HTTPS : Railway, Caddy) |
 | `RUST_LOG` | `binome=info` | Journaux |
 
 ## Organisation
