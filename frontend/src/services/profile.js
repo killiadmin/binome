@@ -43,8 +43,13 @@ export function updateProfilePlayer(patch) {
     persist()
 }
 
+/**
+ * Déconnexion. La session de jeu part avec : sans jeton, le serveur refuse
+ * toute action au nom du joueur (on la retrouve en se reconnectant).
+ */
 export function logout() {
     if (state.player?.is_admin) charactersAccess.lock()
+    localStorage.removeItem('session')
     state.token = null
     state.player = null
     persist()

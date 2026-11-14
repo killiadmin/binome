@@ -76,8 +76,9 @@ class NativeClient extends RealtimeClient {
     }
 
     connect() {
-        const { wsUrl, playerId } = this.opts
-        const qs = playerId ? `?player_id=${playerId}` : ''
+        // Le serveur déduit le joueur du jeton de profil (jamais d'un player_id)
+        const { wsUrl, token } = this.opts
+        const qs = token ? `?token=${encodeURIComponent(token)}` : ''
         return new Promise((resolve, reject) => {
             this.ws = new WebSocket(`${wsUrl}${qs}`)
             this.ws.onopen = () => resolve(this)

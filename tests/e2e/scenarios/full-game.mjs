@@ -8,6 +8,7 @@
 
 import { Bot, everyone, gameState, marks, oracle, sleep } from '../lib/bots.mjs'
 import { jpegDataUri } from '../lib/http.mjs'
+import { connect } from '../lib/realtime.mjs'
 
 const CARD_EXPIRY_TIMEOUT = 45_000 // ActionService::CARD_DRAW_SECONDS (30 s) + marge du worker
 
@@ -153,6 +154,29 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         ctx.check(refusedRoom && refusedRoom.status === 403, 'presence room.{id} refusée à un joueur hors du salon (403)')
         await api.delete('/rooms/:room/leave', { params: { room: o.data.room.id }, body: { player_id: outsider.id }, expect: 200 })
         outsider.rt.close()
+
+        // ── Identité signée (checklist point 5) : un player_id n'est cru qu'avec son jeton
+        const victim = bots[1]
+        const forged = `${victim.id}.${'0'.repeat(64)}`
+        const asSpectator = { 'X-Profile-Token': api.tokens.get(spectator.id) }
+        const me = (extra) => ({ params: { game: gameId }, query: { player_id: victim.id }, ...extra })
+        await ctx.refused(401, 'GET', '/games/:game/me', me({ auth: false }), '/me d\'un joueur sans jeton')
+        await ctx.refused(401, 'GET', '/games/:game/me', me({ headers: { 'X-Profile-Token': forged } }), '/me avec un jeton falsifié')
+        await ctx.refused(403, 'GET', '/games/:game/me', me({ headers: asSpectator }), '/me d\'un autre joueur avec son propre jeton')
+        await ctx.refused(403, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: host.id, reaction_id: 1 }, headers: asSpectator }, 'action au nom d\'un autre joueur')
+        await ctx.refused(403, 'PATCH', '/rooms/:room/ready', { params: { room: room.id }, body: { player_id: victim.id }, headers: asSpectator }, 'salon : prêt au nom d\'un autre joueur')
+        // WebSocket : le joueur vient du jeton, jamais d'un identifiant fourni
+        const wsForged = await ctx.connect('ws-forge', null, forged)
+        const r1 = await wsForged.subscribe(`player.${victim.id}`).then(() => null, (e) => e)
+        ctx.check(r1?.status === 403, 'WebSocket : jeton falsifié → canal privé refusé (403)')
+        wsForged.close()
+        const legacy = await connect({ ...ctx.target.realtime, wsUrl: `${ctx.target.realtime.wsUrl}?player_id=${victim.id}`, label: 'ws-legacy', recorder: ctx.recorder })
+        ctx.clients.add(legacy)
+        const r2 = await legacy.subscribe(`player.${victim.id}`).then(() => null, (e) => e)
+        ctx.check(r2?.status === 403, 'WebSocket : ancien ?player_id= ignoré → canal privé refusé (403)')
+        const r3 = await legacy.subscribe(gameCh).then(() => null, (e) => e)
+        ctx.check(r3?.status === 403, 'WebSocket : sans jeton, presence game.{id} refusée (403)')
+        legacy.close()
     }
 
     const watchers = () => [...bots, ...(spectator ? [spectator] : [])].filter((b) => !b.offline)

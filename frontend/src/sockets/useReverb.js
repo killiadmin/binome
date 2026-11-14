@@ -20,9 +20,20 @@ let client = null
 // pas réabonnés par la page appelante (le chat du hall) se rebranchent dessus.
 const resetListeners = new Set()
 
+// Jeton du profil connecté (même clé localStorage que l'intercepteur d'api.js) :
+// le serveur en déduit le joueur ; sans jeton valide, seul le canal `lobby` est ouvert.
+function profileToken() {
+    try {
+        return JSON.parse(localStorage.getItem('profile') ?? 'null')?.token ?? null
+    } catch {
+        return null
+    }
+}
+
 function socketUrl(playerId) {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const qs = playerId ? `?player_id=${encodeURIComponent(playerId)}` : ''
+    const token = playerId ? profileToken() : null
+    const qs = token ? `?token=${encodeURIComponent(token)}` : ''
     return `${scheme}://${window.location.host}${import.meta.env.BASE_URL}ws${qs}`
 }
 

@@ -41,8 +41,10 @@ export class Context {
         return `e2e${this.tag}${name}`.slice(0, 20)
     }
 
-    async connect(label, playerId = null) {
-        const client = await connect({ ...this.target.realtime, label, recorder: this.recorder, playerId })
+    /** Connexion WebSocket ; `token` explicite pour les tests de refus (sinon celui du joueur). */
+    async connect(label, playerId = null, token = undefined) {
+        const t = token !== undefined ? token : playerId ? this.api.tokens.get(Number(playerId)) : null
+        const client = await connect({ ...this.target.realtime, label, recorder: this.recorder, playerId, token: t })
         this.clients.add(client)
         return client
     }

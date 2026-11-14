@@ -239,7 +239,7 @@ broker de messages, `chrono`, `anyhow` côté serveur (une seule énumération d
 | Concurrence SQLite (un seul écrivain) | Faible à l'échelle de Binome | Mode WAL ; transactions `BEGIN IMMEDIATE` (sérialisation plus forte que les `lockForUpdate` actuels) ; mises à jour conditionnelles conservées |
 | Un seul processus = point de défaillance unique | Faible | Aujourd'hui, Reverb seul est déjà un point unique. `restart: unless-stopped` ; les tirages de carte en cours sont réarmés au démarrage depuis `card_draw_deadline` |
 | Reconnexion WebSocket (téléphones verrouillés) | Moyenne | Ping serveur + détection côté client, reconnexion avec backoff, réabonnement automatique, émission de `state_change` → `connected` pour que la logique `resync()` existante de `RoundPage.vue` reste inchangée |
-| Modèle de confiance faible (`player_id` / `X-Player-Id` non signés) | Existant | **Reproduit tel quel** (pas de changement de comportement). Amélioration possible plus tard : jeton signé délivré à la création ou à l'arrivée dans un salon (§10, hors périmètre) |
+| Modèle de confiance faible (`player_id` / `X-Player-Id` non signés) | Existant | **Reproduit tel quel** (pas de changement de comportement). Amélioration possible plus tard : jeton signé délivré à la création ou à l'arrivée dans un salon (§10, hors périmètre). *Fait le 2026-11-14 (jeton de profil exigé, voir CLAUDE.md).* |
 | Portail `../portail` qui vise `binome_frontend:5173` | Faible | Alias réseau Docker `binome_frontend` sur le nouveau conteneur, port 5173 conservé en interne : **aucune modification du portail** |
 | Pas de toolchain Rust sur l'hôte | Faible | Compilation dans une étape Docker `rust:*-alpine` ; `rustup` sur l'hôte facultatif (plus confortable pour itérer) |
 
@@ -315,6 +315,7 @@ Protocole proposé (documenté en détail en phase 3) :
 
 ```
 connexion : GET /binome/ws?player_id=123        (sans player_id : visiteur, seul « lobby » autorisé)
+             → depuis le 2026-11-14 : ?token=<jeton de profil> (04-protocole-ws.md)
 client → { "op": "sub",   "ch": "game.12" }   |  { "op": "unsub", "ch": "game.12" }
 serveur → { "op": "sub_ok", "ch": "game.12", "members": [{ "id": 1, "pseudo": "…" }] }  // here
           { "op": "sub_err", "ch": "game.12", "status": 403 }

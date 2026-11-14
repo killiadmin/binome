@@ -174,6 +174,15 @@ async function restoreSession() {
   try {
     const session = JSON.parse(raw)
 
+    // Session de jeu sans le jeton de CE joueur (session antérieure aux jetons,
+    // profil déconnecté…) : le serveur refuserait toute action et tout canal
+    // temps réel. La connexion ramène au salon / à la partie en cours.
+    if (!isLoggedIn.value || profilePlayer.value?.id !== session.playerId) {
+      clearSession()
+      router.replace({name: 'Login', query: {expired: '1'}})
+      return
+    }
+
     if (session.gameId) {
       // La session n'est nettoyée que via le bouton du tableau des scores : si
       // le joueur a quitté autrement (navbar, retour, onglet fermé), le gameId
@@ -380,12 +389,13 @@ const handleCreateGame = async () => {
       avatar_url: res.data.player.avatar_url ?? null,
     }]
 
+    // Jeton du profil AVANT d'ouvrir le WebSocket : le serveur en déduit le joueur
+    afterRoomEntry(res.data)
     saveSession()
     resetEcho()
     initLobby(roomId.value)
 
     showCreateModal.value = false
-    afterRoomEntry(res.data)
   } catch (e) {
     error.value = roomEntryError(e, 'Erreur lors de la création du salon.')
   }
@@ -412,12 +422,13 @@ const handleJoinGame = async () => {
     currentGameId.value = res.data.room.current_game_id ?? null
     isHost.value = false
 
+    // Jeton du profil AVANT d'ouvrir le WebSocket : le serveur en déduit le joueur
+    afterRoomEntry(res.data)
     saveSession()
     resetEcho()
     initLobby(roomId.value)
 
     showJoinModal.value = false
-    afterRoomEntry(res.data)
   } catch (e) {
     error.value = roomEntryError(e, 'Erreur lors de la connexion au salon.')
   }

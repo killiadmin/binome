@@ -57,10 +57,12 @@ export async function profile(ctx) {
 
     // ── Photo d'un profil protégé : jeton exigé ──────────────────────────────
     const photo = { player_id: a.id, image: jpegDataUri('square-64.jpg') }
-    await ctx.refused(403, 'POST', '/players/:player/avatar', { params: { player: a.id }, body: photo }, 'photo d\'un profil protégé sans jeton')
+    await ctx.refused(401, 'POST', '/players/:player/avatar', { params: { player: a.id }, body: photo, auth: false }, 'photo d\'un profil protégé sans jeton')
     const avatar = await api.post('/players/:player/avatar', { params: { player: a.id }, body: photo, headers: tok(token), expect: 200 })
     ctx.check(typeof avatar.data.avatar_url === 'string', 'photo d\'un profil protégé avec son jeton')
-    // Profil public : inchangé (pas de jeton exigé)
+    // Profil public : son jeton est exigé aussi (point 5), le banc le joint comme le front
+    await ctx.refused(401, 'POST', '/players/:player/avatar', { params: { player: b.id }, body: { player_id: b.id, image: jpegDataUri('square-64.jpg') }, auth: false }, 'photo d\'un profil public sans jeton')
+    await ctx.refused(403, 'POST', '/players/:player/avatar', { params: { player: b.id }, body: { player_id: b.id, image: jpegDataUri('square-64.jpg') }, headers: tok(token) }, 'photo d\'un autre joueur avec son propre jeton')
     await api.post('/players/:player/avatar', { params: { player: b.id }, body: { player_id: b.id, image: jpegDataUri('square-64.jpg') }, expect: 200 })
 
     // ── Connexion à un profil protégé (autre navigateur) ─────────────────────

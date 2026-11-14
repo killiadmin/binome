@@ -84,7 +84,8 @@ messages. Optionnel en production : Caddy (HTTPS automatique), un conteneur de p
 
 ## Points ouverts
 
-- **Identité** : `player_id` non signé (modèle de confiance d'origine, inchangé) ; un jeton
-  signé à l'arrivée dans un salon fermerait l'usurpation d'un joueur par son identifiant.
+- ~~**Identité** : `player_id` non signé~~ — fait le 2026-11-14 : le jeton de profil signé est
+  exigé pour toute action au nom d'un joueur et pour le WebSocket (checklist point 5). Reste :
+  un profil sans mot de passe s'ouvre par son pseudo quand son joueur est hors ligne.
 - Pistes d'allègement du front sans effet visuel : `fetch` à la place d'`axios`, sous-ensemble
   d'icônes Font Awesome.

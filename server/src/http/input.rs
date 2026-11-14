@@ -14,9 +14,39 @@ use serde_json::{Map, Value};
 use crate::db::Q;
 use crate::error::{AppError, AppResult};
 
-/// Entrées fusionnées d'une requête.
+/// Entrées fusionnées d'une requête, et son auteur authentifié.
 #[derive(Debug, Default, Clone)]
-pub struct Input(pub Map<String, Value>);
+pub struct Input(pub Map<String, Value>, pub Caller);
+
+/// Auteur de la requête selon son jeton de profil (`X-Profile-Token`), établi par
+/// le middleware `identify` du routeur avant le service (extension de requête).
+///
+/// Le `player_id` envoyé par le client n'est cru que s'il désigne ce joueur :
+/// `V::player(…, "player_id")` et `Caller::require` le vérifient (checklist point 5).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Caller {
+    /// Pas de jeton.
+    #[default]
+    Anonymous,
+    /// Jeton présent mais mal formé, périmé (mot de passe changé) ou d'un joueur supprimé.
+    Invalid,
+    Player(i64),
+}
+
+impl Caller {
+    /// La requête est bien faite par `player_id` : sinon 401 (pas de jeton valide)
+    /// ou 403 (jeton d'un autre joueur).
+    pub fn require(self, player_id: i64) -> AppResult<()> {
+        match self {
+            Caller::Player(id) if id == player_id => Ok(()),
+            Caller::Player(_) => Err(AppError::forbidden("Tu ne peux agir qu'en ton propre nom.")),
+            Caller::Anonymous | Caller::Invalid => Err(AppError::Status(
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Session expirée : reconnecte-toi depuis l'onglet Connexion.".into(),
+            )),
+        }
+    }
+}
 
 fn normalize(key: &str, v: Value) -> Value {
     match v {
@@ -119,6 +149,7 @@ impl<S: Send + Sync> FromRequest<S> for Input {
     type Rejection = AppError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let caller = req.extensions().get::<Caller>().copied().unwrap_or_default();
         let query = req.uri().query().map(str::to_string);
         let ctype = req.headers().get(CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
         let mut input = Input::default();
@@ -138,6 +169,7 @@ impl<S: Send + Sync> FromRequest<S> for Input {
             }
         }
         input.merge_query(query.as_deref());
+        input.1 = caller;
         Ok(input)
     }
 }
@@ -346,9 +378,17 @@ impl<'a> V<'a> {
         }
     }
 
+    /// Joueur existant désigné par `field`. Pour `player_id` (l'auteur de la
+    /// requête), le jeton doit en plus désigner ce joueur (401 / 403 sinon).
     pub fn player(&mut self, conn: &impl Q, field: &str) -> AppResult<Option<i64>> {
         let id = self.req_int(field);
-        self.exists(conn, field, id, "SELECT 1 FROM players WHERE id = ?1")
+        let id = self.exists(conn, field, id, "SELECT 1 FROM players WHERE id = ?1")?;
+        if field == "player_id" {
+            if let Some(id) = id {
+                self.input.1.require(id)?;
+            }
+        }
+        Ok(id)
     }
 
     pub fn ok(&self) -> bool {
@@ -357,5 +397,28 @@ impl<'a> V<'a> {
 
     pub fn finish(self) -> AppResult<()> {
         if self.errors.is_empty() { Ok(()) } else { Err(AppError::Validation(self.errors)) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    fn status(r: AppResult<()>) -> Option<StatusCode> {
+        match r {
+            Ok(()) => None,
+            Err(AppError::Status(s, _)) => Some(s),
+            Err(e) => panic!("erreur inattendue : {e:?}"),
+        }
+    }
+
+    /// Point 5 : un `player_id` n'est cru que si le jeton désigne ce joueur.
+    #[test]
+    fn caller_must_be_the_player() {
+        assert_eq!(status(Caller::Player(7).require(7)), None);
+        assert_eq!(status(Caller::Player(7).require(8)), Some(StatusCode::FORBIDDEN));
+        assert_eq!(status(Caller::Anonymous.require(7)), Some(StatusCode::UNAUTHORIZED));
+        assert_eq!(status(Caller::Invalid.require(7)), Some(StatusCode::UNAUTHORIZED));
     }
 }

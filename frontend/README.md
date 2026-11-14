@@ -200,8 +200,10 @@ Les anciennes adresses `/characters` et `/characters/list` redirigent vers
 
 ### `useReverb.js` — Singleton WebSocket
 
-Une seule connexion WebSocket (singleton), ouverte avec le `playerId` :
-`/binome/ws?player_id=…`. Le fichier garde son nom et son interface d'origine (Echo) : les
+Une seule connexion WebSocket (singleton), ouverte pour le `playerId` avec le jeton du profil
+connecté (`localStorage.profile.token`) : `/binome/ws?token=…` ; le serveur déduit le joueur du
+jeton. Un 401 de l'API (jeton absent ou révoqué) vide profil et session de jeu et renvoie vers
+la Connexion (`services/api.js`), qui ramène au salon / à la partie en cours. Le fichier garde son nom et son interface d'origine (Echo) : les
 pages n'ont pas changé lors du passage au serveur Rust.
 
 ```js

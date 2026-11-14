@@ -21,7 +21,7 @@ use crate::services::common::Env;
 use crate::services::{admin, catalog, game, history, play, profile, rooms, score, social, Followup, Out};
 use crate::state::AppState;
 use crate::timers;
-use input::Input;
+use input::{Caller, Input};
 
 type Params = Path<HashMap<String, String>>;
 
@@ -96,6 +96,26 @@ fn image_response(mime: &str, bytes: Vec<u8>) -> Response {
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     res
+}
+
+// ─── Identité du joueur ─────────────────────────────────────────────────────
+
+/// Auteur de la requête d'après `X-Profile-Token`, posé en extension pour
+/// `Input` (voir `input::Caller`). Lecture en base seulement si l'en-tête est là.
+async fn identify(State(st): State<AppState>, mut req: Request, next: Next) -> Response {
+    let caller = match profile_token(req.headers()) {
+        None => Caller::Anonymous,
+        Some(token) => {
+            let env = st.env();
+            match st.db.read(move |c| profile::authenticate(c, &env, Some(&token))).await {
+                Ok(Some(p)) => Caller::Player(p.id),
+                Ok(None) => Caller::Invalid,
+                Err(e) => return e.into_response(),
+            }
+        }
+    };
+    req.extensions_mut().insert(caller);
+    next.run(req).await
 }
 
 // ─── Middleware admin ───────────────────────────────────────────────────────
@@ -219,19 +239,17 @@ async fn avatar_show(State(st): State<AppState>, Path(p): Params) -> Response {
         Err(e) => e.into_response(),
     }
 }
-async fn avatar_update(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
+async fn avatar_update(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
     if let Some(r) = st.throttle("avatars", &format!("p:{}", p.get("player").cloned().unwrap_or_default()), 10) {
         return r;
     }
-    let token = profile_token(&headers);
-    st.write(move |tx, env| social::avatar_update(tx, env, id(&p, "player")?, &input, token.as_deref())).await
+    st.write(move |tx, env| social::avatar_update(tx, env, id(&p, "player")?, &input)).await
 }
-async fn avatar_destroy(State(st): State<AppState>, Path(p): Params, headers: axum::http::HeaderMap, input: Input) -> Response {
+async fn avatar_destroy(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
     if let Some(r) = st.throttle("avatars", &format!("p:{}", p.get("player").cloned().unwrap_or_default()), 10) {
         return r;
     }
-    let token = profile_token(&headers);
-    st.write(move |tx, env| social::avatar_destroy(tx, env, id(&p, "player")?, &input, token.as_deref())).await
+    st.write(move |tx, _| social::avatar_destroy(tx, id(&p, "player")?, &input)).await
 }
 async fn character_image(State(st): State<AppState>, Path(p): Params) -> Response {
     match st.db.read(move |c| catalog::character_image(c, id(&p, "character")?)).await {
@@ -675,7 +693,8 @@ pub fn router(state: AppState) -> Router {
         .route("/games/{game}/rounds/{round}/actions/{action}/draw", post(actions_draw))
         .route("/games/{game}/rounds/{round}/actions/{action}/draw/decision", post(actions_decide))
         .merge(admin)
-        .fallback(not_found);
+        .fallback(not_found)
+        .layer(middleware::from_fn_with_state(state.clone(), identify));
 
     let prefix = state.cfg.public_prefix.clone();
     let index = state.cfg.static_dir.as_ref().map(|d| d.join("index.html"));

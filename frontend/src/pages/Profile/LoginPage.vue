@@ -16,6 +16,8 @@ const route = useRoute()
 const router = useRouter()
 
 const pseudo = ref(String(route.query.pseudo ?? ''))
+// Renvoyé ici par api.js après un 401 (jeton absent ou révoqué)
+const expired = route.query.expired === '1'
 const password = ref('')
 const error = ref(null)
 const needsPassword = ref(false)
@@ -70,6 +72,11 @@ async function submit() {
         <div class="board-card__rivet board-card__rivet--tr"></div>
         <div class="board-card__rivet board-card__rivet--bl"></div>
         <div class="board-card__rivet board-card__rivet--br"></div>
+
+        <div v-if="expired" class="arcade-alert mb-3" role="status">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          Ta session a expiré : reconnecte-toi pour reprendre ton salon ou ta partie.
+        </div>
 
         <form @submit.prevent="submit">
           <label class="form-label" for="login-pseudo">Pseudo</label>

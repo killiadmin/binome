@@ -7,12 +7,14 @@ Implémentation : `server/src/realtime/` (hub en mémoire + point d'entrée).
 ## Connexion
 
 ```
-GET /binome/ws?player_id=123        (upgrade WebSocket, même origine que l'API)
+GET /binome/ws?token=<jeton de profil>        (upgrade WebSocket, même origine que l'API)
 ```
 
-- `player_id` facultatif : sans lui, seul le canal public `lobby` est accessible.
+- `token` facultatif : c'est le jeton de profil signé (`X-Profile-Token`) ; le serveur en déduit
+  le joueur. Sans jeton valide, seul le canal public `lobby` est accessible.
+- Depuis le 2026-11-14 (checklist point 5), l'ancien `?player_id=` est **ignoré** : un
+  identifiant fourni par le client ne donne plus accès à `player.{id}`, `room.{id}` ni `game.{id}`.
 - Pas d'appel `/broadcasting/auth` : l'autorisation se fait à l'abonnement, dans le serveur.
-- Même modèle de confiance qu'avant (identifiant non signé, comme l'en-tête `X-Player-Id`).
 
 ## Messages (JSON texte)
 

@@ -26,6 +26,29 @@ api.interceptors.request.use((config) => {
     return config
 })
 
+// 401 : le jeton de profil manque ou n'est plus valide (mot de passe changé
+// depuis un autre appareil, session antérieure aux jetons…). Le serveur refuse
+// alors toute action au nom du joueur : on oublie profil et session de jeu, et
+// on renvoie vers la connexion, qui ramène dans le salon / la partie en cours.
+// Imports dynamiques : profile.js et le routeur dépendent (indirectement) d'api.js.
+let redirecting = false
+function sessionExpired() {
+    if (redirecting) return
+    redirecting = true
+    let pseudo = null
+    try {
+        pseudo = JSON.parse(localStorage.getItem('profile') ?? 'null')?.player?.pseudo ?? null
+    } catch { /* clé illisible */ }
+    localStorage.removeItem('session')
+    Promise.all([import('./profile'), import('../router')])
+        .then(([{ logout }, { default: router }]) => {
+            logout()
+            if (router.currentRoute.value.name === 'Login') return
+            return router.replace({ name: 'Login', query: { ...(pseudo ? { pseudo } : {}), expired: '1' } })
+        })
+        .finally(() => { redirecting = false })
+}
+
 api.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -33,6 +56,7 @@ api.interceptors.response.use(
 
         if (status === 401) {
             console.warn('[API] Non authentifié')
+            sessionExpired()
         }
 
         if (status === 403) {

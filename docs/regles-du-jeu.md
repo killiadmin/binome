@@ -243,9 +243,11 @@ s'il est protégé. L'onglet **Profil** n'apparaît qu'une fois connecté.
   dans la configuration du serveur.
 - **Limites** : 5 mots de passe faux par minute et par profil, 30 tous profils confondus.
 
-Le mot de passe protège le **profil**, pas les actions de jeu : celles-ci restent identifiées
-par le numéro de joueur, comme avant (identité non signée, voir la checklist de mise en
-production, point 5).
+Le jeton du profil (reçu en créant ou en rejoignant un salon, ou en se connectant) prouve aussi
+l'identité pour **toutes les actions de jeu** et le WebSocket : envoyer le numéro d'un autre joueur
+ne suffit plus (refus 403 ; 401 sans jeton valide, le front renvoie alors vers la Connexion).
+Limite : un profil **sans** mot de passe s'ouvre encore par son seul pseudo quand son joueur est
+hors ligne ; seul un mot de passe le protège complètement.
 
 ### Suppression de parties (administration)
 

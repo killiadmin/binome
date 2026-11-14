@@ -1,5 +1,6 @@
-//! Point d'entrée WebSocket : `GET {prefix}/ws?player_id=123` (player_id facultatif :
-//! un visiteur n'a accès qu'au canal public `lobby`).
+//! Point d'entrée WebSocket : `GET {prefix}/ws?token=<jeton de profil>` (facultatif :
+//! sans jeton valide, un visiteur n'a accès qu'au canal public `lobby`). Le joueur
+//! est déduit du jeton, jamais d'un identifiant fourni par le client.
 //!
 //! Protocole (JSON texte) :
 //!   client → { "op": "sub", "ch": "game.12" } | { "op": "unsub", "ch": … } | { "op": "ping" }
@@ -31,11 +32,18 @@ const SILENCE_LIMIT: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize)]
 pub struct WsQuery {
-    player_id: Option<String>,
+    token: Option<String>,
 }
 
 pub async fn upgrade(ws: WebSocketUpgrade, Query(q): Query<WsQuery>, State(state): State<AppState>) -> Response {
-    let player_id = q.player_id.and_then(|v| v.parse::<i64>().ok());
+    // Joueur prouvé par son jeton de profil ; sans jeton valide : visiteur (lobby seul).
+    let player_id = match q.token {
+        Some(token) => {
+            let secret = state.profile_secret.clone();
+            state.db.read(move |c| crate::services::profile::authenticate_with(c, &secret, Some(&token))).await.ok().flatten().map(|p| p.id)
+        }
+        None => None,
+    };
     // Tampons réduits (défaut : 128 Kio chacun par connexion) : les messages de
     // Binome font quelques Ko, et chaque téléphone connecté coûterait sinon ~110 Kio.
     ws.max_message_size(16 * 1024)

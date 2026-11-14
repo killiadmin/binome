@@ -309,6 +309,14 @@
     "$.character.name": "string",
     "$.character.universe": "string"
   },
+  "GET /api/games/:game/me 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "GET /api/games/:game/me 403": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/games/:game/me 404": {
     "$": "object",
     "$.message": "string"
@@ -878,6 +886,10 @@
     "$": "object",
     "$.message": "string"
   },
+  "POST /api/games/:game/reactions 403": {
+    "$": "object",
+    "$.message": "string"
+  },
   "POST /api/games/:game/reactions 404": {
     "$": "object",
     "$.message": "string"
@@ -1098,6 +1110,10 @@
   "POST /api/players/:player/avatar 200": {
     "$": "object",
     "$.avatar_url": "string",
+    "$.message": "string"
+  },
+  "POST /api/players/:player/avatar 401": {
+    "$": "object",
     "$.message": "string"
   },
   "POST /api/players/:player/avatar 403": {

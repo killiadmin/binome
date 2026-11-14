@@ -12,9 +12,34 @@ export class Api {
         this.prefix = prefix
         this.recorder = recorder
         this.adminToken = null
+        // Jetons de profil par joueur, appris des réponses (création / arrivée dans un
+        // salon, connexion, mot de passe) et joints comme le fait le front
+        this.tokens = new Map()
     }
 
-    async call(method, template, { params = {}, query = null, body = null, form = null, headers = {}, expect = null, admin = false, deletion = false, raw = false } = {}) {
+    /** Retient le jeton de profil d'une réponse (`profile_token` ou `token` de session). */
+    learn(data) {
+        if (!data || typeof data !== 'object') return
+        if (typeof data.profile_token === 'string') {
+            const id = data.profile?.id ?? data.player?.id
+            if (id) this.tokens.set(Number(id), data.profile_token)
+        }
+        if (typeof data.token === 'string' && /^\d+\./.test(data.token) && data.player?.id) {
+            this.tokens.set(Number(data.player.id), data.token)
+        }
+    }
+
+    /** Jeton du joueur au nom duquel la requête est faite (`player_id`), s'il est connu. */
+    tokenFor(body, query, form) {
+        const pid = body?.player_id ?? query?.player_id ?? (form && typeof form.get === 'function' ? form.get('player_id') : undefined)
+        return pid === undefined || pid === null ? undefined : this.tokens.get(Number(pid))
+    }
+
+    /**
+     * `auth: false` : aucun jeton automatique (requête anonyme). Un en-tête
+     * `X-Profile-Token` explicite l'emporte toujours (tests de refus).
+     */
+    async call(method, template, { params = {}, query = null, body = null, form = null, headers = {}, expect = null, admin = false, deletion = false, raw = false, auth = true } = {}) {
         const path = template.replace(/:(\w+)/g, (_, name) => {
             if (params[name] === undefined) throw new Error(`Paramètre « ${name} » manquant pour ${template}`)
             return encodeURIComponent(params[name])
@@ -25,6 +50,10 @@ export class Api {
         // Une requête bloquée doit échouer en nommant sa route, pas geler le banc
         const init = { method, headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(30_000) }
         if (admin && this.adminToken) init.headers['X-Characters-Access'] = this.adminToken
+        if (auth && !Object.hasOwn(headers, 'X-Profile-Token')) {
+            const token = this.tokenFor(body, query, form)
+            if (token) init.headers['X-Profile-Token'] = token
+        }
         // Suppression de parties : mot de passe dédié, en plus de l'accès admin
         if (deletion && this.deletePassword) init.headers['X-Delete-Password'] = this.deletePassword
         if (form) {
@@ -61,6 +90,7 @@ export class Api {
                 recorded = rest
             }
             this.recorder?.record(`${routeKey} ${res.status}`, recorded)
+            if (res.ok) this.learn(data)
         }
 
         const expected = expect === null ? null : [].concat(expect)

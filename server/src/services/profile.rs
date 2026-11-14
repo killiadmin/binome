@@ -2,13 +2,16 @@
 //! profil signé, page profil (pseudo, mot de passe, parties).
 //!
 //! Le jeton (`X-Profile-Token`) protège le PROFIL : sa page, sa photo quand il
-//! est protégé, et l'entrée dans un salon sous un pseudo protégé. Les actions de
-//! jeu restent identifiées par `player_id` (modèle hérité, checklist point 5).
+//! est protégé, et l'entrée dans un salon sous un pseudo protégé.
 //!
 //! Jeton : `<player_id>.<HMAC-SHA256(secret, "profile|id|token_version")>` en
 //! hexadécimal. Le secret est généré par le serveur (`app_secrets`) ; poser ou
 //! changer le mot de passe incrémente `token_version`, ce qui invalide tous les
 //! jetons émis jusque-là (ceux d'un inconnu connecté au profil quand il était public).
+//!
+//! Depuis le point 5 de la checklist, ce jeton prouve aussi l'identité du joueur
+//! pour toutes les actions de jeu (`player_id` vérifié par `input::Caller`) et pour
+//! le WebSocket (`?token=`). Il est émis à la création / l'arrivée dans un salon.
 //!
 //! Profil administrateur : pseudo `BINOME_ADMIN_PSEUDO`, ouvert uniquement par le
 //! mot de passe d'administration (jamais par un mot de passe de profil).
@@ -113,10 +116,15 @@ pub fn token(env: &Env, p: &Profile) -> String {
 
 /// Profil désigné par le jeton ; `None` s'il est absent, mal formé ou périmé.
 pub fn authenticate(c: &impl Q, env: &Env, token: Option<&str>) -> AppResult<Option<Profile>> {
+    authenticate_with(c, &env.profile_secret, token)
+}
+
+/// `authenticate` avec le seul secret (WebSocket, hors `Env`).
+pub fn authenticate_with(c: &impl Q, secret: &[u8], token: Option<&str>) -> AppResult<Option<Profile>> {
     let Some((id, mac)) = token.and_then(|t| t.split_once('.')) else { return Ok(None) };
     let Ok(id) = id.parse::<i64>() else { return Ok(None) };
     let Some(p) = by_id(c, id)? else { return Ok(None) };
-    let expected = sign(&env.profile_secret, p.id, p.token_version);
+    let expected = sign(secret, p.id, p.token_version);
     Ok((mac.len() == expected.len() && bool::from(mac.as_bytes().ct_eq(expected.as_bytes()))).then_some(p))
 }
 
