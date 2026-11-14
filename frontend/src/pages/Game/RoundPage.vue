@@ -925,12 +925,21 @@ async function voteCharacter(accepted) {
   }
 }
 
+// Incrémenté à chaque round.started : un event resté en attente (mot partagé,
+// cinématique) n'écrase pas un tour plus récent appliqué entre-temps.
+let roundStartedSeq = 0
+
 async function handleRoundStarted(data) {
   // Le round 1 démarre quand tous ont accepté leur personnage
   votingCharacters.value = false
+  const seq = ++roundStartedSeq
 
   if (data.is_new_round) {
+    // Le mot partagé sur la dernière question du round arrive en même temps que
+    // ce round : on le laisse lire jusqu'au bout avant de lancer la cinématique.
+    await untilCleared(sharedWord)
     await playRoundTransition(data.number)
+    if (seq !== roundStartedSeq || (currentRound.value?.number ?? 0) > data.number) return
   }
 
   currentRound.value = {
@@ -1131,8 +1140,23 @@ function handleCardDrawFinished(data) {
   if (cardDraw.value?.actionId === data.action_id) closeCardDraw()
 }
 
+// Résolue dès que `source` est vide (null / false), tout de suite s'il l'est déjà.
+function untilCleared(source) {
+  if (!source.value) return Promise.resolve()
+  return new Promise(resolve => {
+    const stop = watch(source, value => {
+      if (value) return
+      stop()
+      resolve()
+    })
+  })
+}
+
 // Channel privé : un autre joueur me montre le mot tiré (jamais reçu par la cible)
-function handleCardWordShared(data) {
+async function handleCardWordShared(data) {
+  // Reçu pendant une cinématique de round : on attend qu'elle se termine pour
+  // que le compte à rebours ne s'écoule pas derrière l'animation.
+  await untilCleared(showRoundTransition)
   sharedWord.value = {
     word: data.word,
     asker: data.asker?.pseudo,
