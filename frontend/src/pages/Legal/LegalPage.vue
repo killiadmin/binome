@@ -24,7 +24,7 @@ const UPDATED_AT = '14 novembre 2026'
           <li>On ne te demande ni e-mail ni vrai nom : un pseudo suffit.</li>
           <li>Aucun cookie, aucun traceur, aucune mesure d'audience.</li>
           <li>Tes données ne sont ni vendues ni transmises à qui que ce soit, hormis l'hébergeur du site.</li>
-          <li>Tu peux demander à tout moment qu'on supprime tes données, par e-mail : <ContactEmail />.</li>
+          <li>Tu peux supprimer ton profil à tout moment depuis la page Profil. Un profil inactif pendant 24 mois est effacé automatiquement.</li>
         </ul>
       </section>
 
@@ -106,8 +106,14 @@ const UPDATED_AT = '14 novembre 2026'
           <li>Messages du chat du hall : une heure.</li>
           <li>Salons : supprimés quand plus personne n'y est.</li>
           <li>
-            Profil, photo, historique des parties, idées et emojis : tant que ton profil existe,
-            ou jusqu'à ce que tu en demandes la suppression.
+            Profil, photo, historique des parties, idées et emojis : jusqu'à ce que tu supprimes ton
+            profil, et au plus <strong>24 mois après ta dernière connexion</strong>. Passé ce délai,
+            le profil est effacé automatiquement.
+          </li>
+          <li>
+            Effacer un profil, c'est supprimer son pseudo, sa photo, son mot de passe, ses emojis,
+            ses messages et ses +1. Les parties qu'il a jouées restent dans l'historique des autres
+            joueurs, sous « Joueur supprimé » : plus rien ne permet de savoir qui c'était.
           </li>
         </ul>
       </section>
@@ -131,10 +137,10 @@ const UPDATED_AT = '14 novembre 2026'
           de t'opposer à leur traitement, d'en limiter l'usage et de les récupérer.
         </p>
         <ul>
-          <li>Dans ton profil, tu peux changer de pseudo, retirer ta photo et gérer ton mot de passe.</li>
+          <li>Dans ton profil, tu peux changer de pseudo, retirer ta photo, gérer ton mot de passe et <strong>supprimer ton profil</strong>.</li>
           <li>Dans la boîte à idées, tu peux supprimer tes idées toi-même.</li>
           <li>
-            Pour tout le reste (suppression du profil, copie de tes données…), écris par
+            Pour tout le reste (copie de tes données, profil auquel tu n'as plus accès…), écris par
             e-mail (<ContactEmail />) en indiquant ton pseudo.
             On pourra te demander de prouver que le profil est bien le tien. Réponse sous un mois.
           </li>

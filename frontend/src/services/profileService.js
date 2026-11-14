@@ -32,6 +32,12 @@ export const profileService = {
         return api.delete('/profile/password', { data: { current_password: currentPassword } })
     },
 
+    /** DELETE /api/profile — body: { current_password? } → { message }. Droit à l'effacement :
+     *  le profil est anonymisé (ou supprimé s'il n'a jamais joué), le jeton révoqué. */
+    destroy(currentPassword) {
+        return api.delete('/profile', { data: { current_password: currentPassword || undefined } })
+    },
+
     /** POST /api/profile/password-prompt — la proposition de mot de passe a été vue */
     dismissPasswordPrompt() {
         return api.post('/profile/password-prompt')

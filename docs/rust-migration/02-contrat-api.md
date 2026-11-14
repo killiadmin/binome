@@ -28,7 +28,7 @@
 
 ## Couverture
 
-82 routes ; 82 observées par le banc.
+83 routes ; 83 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -407,12 +407,43 @@ $.binomes[].players[].score                      int
 $.binomes[].universe                             string
 $.created_at                                     date:iso8601
 $.game_stats                                     array
+$.game_stats[]                                   object
+$.game_stats[].avatar_url                        null
+$.game_stats[].best_questions                    int
+$.game_stats[].character_name                    string
+$.game_stats[].eliminations                      int
+$.game_stats[].is_eliminated                     bool
+$.game_stats[].is_winner                         bool
+$.game_stats[].player_pseudo                     string
+$.game_stats[].rounds_survived                   int
+$.game_stats[].score                             int
+$.game_stats[].survived_full_game                bool
 $.id                                             int
 $.room_code                                      string
-$.room_id                                        int
+$.room_id                                        int | null
 $.rounds                                         array
 $.rounds[]                                       object
 $.rounds[].actions                               array
+$.rounds[].actions[]                             object
+$.rounds[].actions[].accusation_confirmed        bool
+$.rounds[].actions[].accusation_correct          bool
+$.rounds[].actions[].answer                      null
+$.rounds[].actions[].answer_corrected_from       null
+$.rounds[].actions[].character_name              string
+$.rounds[].actions[].content                     string
+$.rounds[].actions[].created_at                  date:iso8601
+$.rounds[].actions[].id                          int
+$.rounds[].actions[].is_valid                    bool
+$.rounds[].actions[].player                      object
+$.rounds[].actions[].player.avatar_url           null
+$.rounds[].actions[].player.id                   int
+$.rounds[].actions[].player.pseudo               string
+$.rounds[].actions[].round_id                    int
+$.rounds[].actions[].target_player               object
+$.rounds[].actions[].target_player.avatar_url    null
+$.rounds[].actions[].target_player.id            int
+$.rounds[].actions[].target_player.pseudo        string
+$.rounds[].actions[].type                        string
 $.rounds[].current_player_id                     int
 $.rounds[].id                                    int
 $.rounds[].is_finished                           bool
@@ -594,9 +625,22 @@ $.message                                        string
 
 ### `DELETE /api/admin/players/:player`
 
-Supprimer (`?with_games=1` pour ses parties) — accès : admin
+Effacer : anonymisé s'il a joué (parties gardées sous « Joueur supprimé #000123 »), supprimé sinon ; `?with_games=1` (+ `X-Delete-Password`) supprime aussi ses parties ; `409` si déjà anonymisé — accès : admin
 
-Statuts observés : `200`, `403`, `404`
+Statuts observés : `200`, `403`, `404`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+```
+
+### `DELETE /api/profile`
+
+Effacer son profil (`{ current_password }` s'il est protégé) : même effacement que l'admin, jeton révoqué — accès : profil
+
+Statuts observés : `200`, `401`, `422`
 
 Réponse `200` :
 
@@ -672,7 +716,7 @@ $.reaction.url                                   null
 
 Supprimer — accès : admin
 
-Statuts observés : `200`
+Statuts observés : `200`, `404`
 
 Réponse `200` :
 

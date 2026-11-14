@@ -277,28 +277,30 @@ onMounted(loadPlayers)
         <p class="text-center">
           Supprimer <strong>{{ confirmTarget.pseudo }}</strong> ?
           <template v-if="confirmTarget.room_code">Ce joueur sera retiré du salon {{ confirmTarget.room_code }}.</template>
-          Sa photo de profil est supprimée, ses emojis restent. Le pseudo redevient libre.
+          Sa photo, ses emojis, ses messages et ses +1 sont effacés. Le pseudo redevient libre.
         </p>
         <template v-if="confirmTarget.games_count > 0">
           <p class="text-center mb-2">
             Ce joueur a joué <strong>{{ confirmTarget.games_count }} partie{{ confirmTarget.games_count > 1 ? 's' : '' }}</strong> :
-            elles y font référence et doivent être supprimées en même temps — pour
-            <strong>tous</strong> leurs joueurs (historique et classement compris).
+            {{ confirmTarget.games_count > 1 ? 'elles restent' : 'elle reste' }} dans l'historique des autres joueurs, sous « Joueur supprimé ».
           </p>
           <label class="confirm-check">
             <input v-model="withGames" type="checkbox" />
-            Supprimer aussi ses {{ confirmTarget.games_count }} partie{{ confirmTarget.games_count > 1 ? 's' : '' }}
+            <span>
+              Supprimer aussi {{ confirmTarget.games_count > 1 ? `ses ${confirmTarget.games_count} parties` : 'sa partie' }}
+              pour <strong>tous</strong> les joueurs (historique et classement compris)
+            </span>
           </label>
           <label v-if="withGames" class="delete-password">
             Mot de passe de suppression
             <input v-model="deletePassword" type="password" class="form-control" autocomplete="off" :disabled="deleting" />
           </label>
-          <p v-if="error && showConfirm" class="text-center text-danger small mb-0">{{ error }}</p>
         </template>
+        <p v-if="error && showConfirm" class="text-center text-danger small mb-0">{{ error }}</p>
       </template>
       <div class="text-center mt-3 btn-modal">
         <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm"
-                :disabled="deleting || (confirmTarget?.games_count > 0 && !withGames) || (withGames && !deletePassword)" @click="confirmDelete">
+                :disabled="deleting || (withGames && !deletePassword)" @click="confirmDelete">
           <i class="fa-solid fa-trash"></i> {{ deleting ? 'Suppression…' : 'Supprimer' }}
         </button>
         <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" :disabled="deleting" @click="showConfirm = false">

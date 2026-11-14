@@ -4,7 +4,8 @@
 //! - `list-characters`   : tout le catalogue, refusés compris (avant de générer un lot) ;
 //! - `count-pending`     : nombre de binômes en attente de validation.
 //!
-//! Et `prune-rooms` : nettoyage des adhésions de salon mortes.
+//! Et `prune-rooms` : nettoyage des adhésions de salon mortes ; `prune-players` :
+//! profils inactifs depuis 24 mois à anonymiser (le serveur le fait aussi chaque jour).
 
 use std::fs;
 use std::path::Path;
@@ -293,6 +294,33 @@ pub fn prune_rooms(db: &Db, apply: bool) -> AppResult<String> {
         }
         tx.commit()?;
         lines.push(format!("Supprimé : {} adhésion(s), {deleted_rooms} salon(s).", dead.len()));
+        Ok(lines.join("\n"))
+    })
+}
+
+// ─── Profils inactifs (durée de conservation) ───────────────────────────────
+
+/// `prune-players [--apply]` : profils sans activité depuis 24 mois
+/// (`profile::prune_inactive`). Hors serveur : les events (départs de salon) ne sont
+/// publiés à personne, sans conséquence pour des joueurs absents depuis deux ans.
+pub fn prune_players(db: &Db, admin_pseudo: Option<String>, apply: bool) -> AppResult<String> {
+    let env = crate::services::common::Env {
+        prefix: String::new(),
+        hub: crate::realtime::hub::Hub::new(),
+        profile_secret: std::sync::Arc::new(vec![]),
+        admin_pseudo,
+    };
+    db.with_writer(|conn| {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (mut lines, _events) = crate::services::profile::prune_inactive(&tx, &env, apply)?;
+        if apply {
+            let broken: i64 = tx.one("SELECT COUNT(*) FROM pragma_foreign_key_check", [])?;
+            if broken > 0 {
+                return Err(AppError::Internal(format!("{broken} référence(s) cassée(s) : purge annulée")));
+            }
+            tx.commit()?;
+            lines.push("Purge appliquée.".into());
+        }
         Ok(lines.join("\n"))
     })
 }

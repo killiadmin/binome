@@ -125,6 +125,39 @@ async function savePassword() {
   }
 }
 
+// ─── Suppression du profil (droit à l'effacement) ────────────────────────────
+// Le serveur anonymise le profil (ses parties restent dans l'historique des
+// autres sous « Joueur supprimé ») ou le supprime s'il n'a jamais joué.
+const eraseOpen = ref(false)
+const erasePassword = ref('')
+const eraseError = ref(null)
+const erasing = ref(false)
+const erasedMessage = ref(null)
+
+function openErase() {
+  erasePassword.value = ''
+  eraseError.value = null
+  eraseOpen.value = true
+}
+
+async function confirmErase() {
+  eraseError.value = null
+  erasing.value = true
+  try {
+    const {data} = await profileService.destroy(erasePassword.value)
+    erasedMessage.value = data.message
+    current.value = null
+    logout()
+    resetEcho()
+    // Les sections du profil disparaissent : le message est en haut de page
+    window.scrollTo({top: 0, behavior: 'instant'})
+  } catch (e) {
+    eraseError.value = firstError(e)
+  } finally {
+    erasing.value = false
+  }
+}
+
 // ─── Déconnexion ──────────────────────────────────────────────────────────────
 function handleLogout() {
   logout()
@@ -331,6 +364,49 @@ function gameStatus(g) {
           </li>
         </ul>
       </section>
+
+      <!-- Suppression du profil -->
+      <section v-if="player && !player.is_admin" class="board-card profile-card">
+        <h2 class="board-card__title">Supprimer mon profil</h2>
+        <p class="text-center small" :class="{ 'mb-0': !eraseOpen }">
+          Ton pseudo, ta photo, ton mot de passe, tes emojis, tes messages et tes +1 sont effacés.
+          Tes parties restent dans l'historique des autres joueurs, sous « Joueur supprimé ».
+          <router-link :to="{ name: 'Legal' }">Tes données</router-link>
+        </p>
+        <div v-if="!eraseOpen" class="pwd-actions">
+          <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" @click="openErase">
+            <i class="fa-solid fa-user-slash"></i> Supprimer mon profil
+          </button>
+        </div>
+        <form v-else class="pwd-form" @submit.prevent="confirmErase">
+          <p class="text-center fw-bold mb-0">C'est définitif : ton profil ne pourra pas être récupéré.</p>
+          <BFormInput
+              v-if="player.has_password"
+              v-model="erasePassword"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Ton mot de passe"
+          />
+          <p v-if="eraseError" class="text-danger small mb-0" role="alert">{{ eraseError }}</p>
+          <div class="pwd-actions">
+            <button
+                type="submit"
+                class="cabinet-btn cabinet-btn--danger cabinet-btn--sm"
+                :disabled="erasing || (player.has_password && !erasePassword)"
+            >
+              {{ erasing ? 'Suppression…' : 'Supprimer définitivement' }}
+            </button>
+            <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" :disabled="erasing" @click="eraseOpen = false">
+              Annuler
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section v-if="erasedMessage" class="board-card profile-card text-center" role="status">
+        <p class="mb-3">{{ erasedMessage }}</p>
+        <router-link :to="{ name: 'Home' }" class="cabinet-btn cabinet-btn--sm">Retour à l'accueil</router-link>
+      </section>
     </div>
 
     <AvatarEditor
@@ -436,6 +512,13 @@ function gameStatus(g) {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+/* « ⏳ En attente de validation » mesure 250 px en police pixel : à 320 px, elle
+   élargissait la page (défilement horizontal). Elle passe à la ligne. */
+.identity__chips .pixel-chip {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .identity__links {

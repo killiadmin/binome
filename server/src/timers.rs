@@ -53,3 +53,26 @@ pub async fn rearm(state: &AppState) {
         schedule_card_expiry(state.clone(), id, &deadline);
     }
 }
+
+/// Purge quotidienne des profils inactifs depuis 24 mois (`profile::prune_inactive`,
+/// durée de conservation annoncée sur la page de confidentialité) : une première
+/// fois une minute après le démarrage, puis toutes les 24 h.
+pub fn schedule_inactive_purge(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        loop {
+            let env = state.env();
+            let result = state.db.write(move |tx| crate::services::profile::prune_inactive(tx, &env, true)).await;
+            match result {
+                Ok((lines, events)) => {
+                    state.publish(&events);
+                    if lines.len() > 1 {
+                        tracing::info!("{}", lines.join("\n"));
+                    }
+                }
+                Err(e) => tracing::error!("purge des profils inactifs : {e:?}"),
+            }
+            tokio::time::sleep(Duration::from_secs(24 * 3600)).await;
+        }
+    });
+}

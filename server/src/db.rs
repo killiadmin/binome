@@ -30,6 +30,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (6, include_str!("../migrations/0006_controles_admin.sql")),
     (7, include_str!("../migrations/0007_administrateurs.sql")),
     (8, include_str!("../migrations/0008_boite_a_idees.sql")),
+    (9, include_str!("../migrations/0009_effacement.sql")),
 ];
 const READERS: usize = 4;
 
@@ -292,7 +293,10 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 8);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 9);
+            // Migration 9 : activité initialisée à la migration, aucun profil anonymisé
+            assert!(c.one::<Option<String>>("SELECT last_seen_at FROM players WHERE id = 1", [])?.is_some());
+            assert_eq!(c.one::<Option<String>>("SELECT deleted_at FROM players WHERE id = 1", [])?, None);
             // Migration 8 : boîte à idées vide
             assert_eq!(c.one::<i64>("SELECT COUNT(*) FROM ideas", [])? + c.one::<i64>("SELECT COUNT(*) FROM idea_votes", [])?, 0);
             // Migration 7 : aucun administrateur désigné
@@ -316,7 +320,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 8"));
+        assert!(db.check().unwrap().contains("version du schéma : 9"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

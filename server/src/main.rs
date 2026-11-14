@@ -12,6 +12,8 @@
 //!   binome backup <fichier.sqlite>        copie cohérente de la base, serveur en marche
 //!   binome check                          contrôle d'intégrité de la base (BINOME_DATABASE)
 //!   binome prune-rooms [--apply]          adhésions de salon mortes (essai à blanc sans --apply)
+//!   binome prune-players [--apply]        profils inactifs depuis 24 mois à anonymiser (essai à
+//!                                         blanc sans --apply ; le serveur le fait chaque jour)
 
 mod clock;
 mod config;
@@ -61,6 +63,11 @@ fn main() {
         Some("prune-rooms") => {
             let apply = args.iter().any(|a| a == "--apply");
             run_tool(&cfg, |db| tools::prune_rooms(db, apply))
+        }
+        Some("prune-players") => {
+            let apply = args.iter().any(|a| a == "--apply");
+            let admin_pseudo = cfg.admin_pseudo.clone();
+            run_tool(&cfg, |db| tools::prune_players(db, admin_pseudo, apply))
         }
         Some("backup") => match args.get(1) {
             Some(file) => run_tool(&cfg, |db| {
@@ -161,8 +168,10 @@ fn serve(cfg: Config) -> i32 {
             hub: realtime::hub::Hub::new(),
             cfg: Arc::new(cfg.clone()),
             limiter: Arc::new(ratelimit::RateLimiter::default()),
+            last_seen: Arc::default(),
         };
         timers::rearm(&state).await;
+        timers::schedule_inactive_purge(state.clone());
 
         let listener = match tokio::net::TcpListener::bind(cfg.bind).await {
             Ok(l) => l,

@@ -727,5 +727,5 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     const stillRanked = (await api.get('/history/leaderboard', { headers: asHost(), expect: 200 })).data.leaderboard.some((r) => r.pseudo === host.pseudo)
     ctx.check(stillRanked, 'classement : les points de la partie sont conservés')
     for (const b of everyoneInRoom) b.rt?.close()
-    return { gameId, roomId: room.id }
+    return { gameId, roomId: room.id, players: bots.map((b) => ({ id: b.id, pseudo: b.pseudo })) }
 }

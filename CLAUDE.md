@@ -32,6 +32,7 @@ docker compose up -d --build               # one container, http://localhost:808
 docker compose -f docker-compose.yml -f docker-compose.https.yml up -d   # VPS, HTTPS (BINOME_DOMAIN)
 docker exec binome /binome backup /data/x.sqlite ; docker exec binome /binome check
 docker exec binome /binome prune-rooms [--apply]   # dead room memberships (dry run without --apply)
+docker exec binome /binome prune-players [--apply] # profiles inactive 24 months → anonymized (server also runs it daily)
 docker exec binome /binome list-characters | count-pending | import-characters /import/<lot>.json
 ```
 
@@ -103,6 +104,15 @@ remains. Details in `docs/regles-du-jeu.md`.
   binomes (`disabled_binomes`, universe + level) — the draw uses `controls::PLAYABLE_CHARACTER`.
   Profiles are validated by hand (`players.validated_at`, tab /admin/players): history routes and
   image emojis require a validated profile (`controls::require_validated`); admin always is.
+- Erasure (GDPR, migration 9, `profile::anonymize`): a player who played cannot be deleted
+  without destroying others' games (`rounds.current_player_id` / `actions.player_id` have no
+  ON DELETE), so they are anonymized: pseudo → `Joueur supprimé #000123` (23 chars, untypeable),
+  password/validation/admin role cleared, `token_version` bumped, `deleted_at` set; avatar,
+  custom emojis, lobby messages and idea votes deleted; `game_stats` / `ideas.author_name`
+  renamed. A player with no game rows is deleted outright. Used by `DELETE /profile` (self,
+  password required if set), `DELETE /admin/players/{id}` (default) and the daily purge of
+  profiles inactive for 24 months (`players.last_seen_at`, written at most once a day per player
+  by the `identify` middleware and at login). Keep `LegalPage.vue` in line with this behaviour.
 - Deleting games (`DELETE /admin/games/{id}`, or a player `?with_games=1`) also requires the
   `X-Delete-Password` header, checked against `BINOME_DELETE_PASSWORD_HASH` (PBKDF2; unset =
   disabled). Only the owner knows these passwords (admin and delete) — never generate or store them yourself.

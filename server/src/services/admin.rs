@@ -30,7 +30,7 @@ pub enum AdminRole {
     Delegate(i64),
 }
 
-fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
+pub(crate) fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
     Ok(c
         .all(
             "SELECT bp.player_id FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id JOIN games g ON g.id = b.game_id
@@ -45,7 +45,8 @@ fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
 /// GET /admin/players
 pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let players = c.all(
-        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at, admin_granted_at IS NOT NULL FROM players ORDER BY pseudo, id",
+        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at, admin_granted_at IS NOT NULL FROM players
+         WHERE deleted_at IS NULL ORDER BY pseudo, id",
         [],
         |r| {
             Ok((
@@ -115,7 +116,7 @@ fn blocked_by_game(c: &impl Q, p: &Player) -> AppResult<()> {
     Ok(())
 }
 
-fn rooms_of(c: &impl Q, player_id: i64) -> AppResult<Vec<Room>> {
+pub(crate) fn rooms_of(c: &impl Q, player_id: i64) -> AppResult<Vec<Room>> {
     let ids: Vec<i64> = c.all("SELECT room_id FROM room_player WHERE player_id = ?1 ORDER BY id", [player_id], |r| r.get(0))?;
     ids.into_iter().filter_map(|id| room(c, id).transpose()).collect()
 }
@@ -141,13 +142,33 @@ pub fn with_games(input: &Input) -> bool {
 }
 
 /// DELETE /admin/players/{player}[?with_games=1]
+///
+/// Par défaut, le joueur est effacé comme s'il le demandait lui-même
+/// (`profile::anonymize`) : ses parties restent dans l'historique des autres sous
+/// « Joueur supprimé ». Avec `?with_games=1` (et le mot de passe de suppression),
+/// ses parties sont supprimées pour tous leurs joueurs, puis le joueur.
 pub fn destroy_player(tx: &Transaction, env: &Env, role: AdminRole, player_id: i64, input: &Input) -> AppResult<Out> {
     let p = player_or_404(tx, player_id)?;
-    if matches!(role, AdminRole::Delegate(_)) && profile::by_id(tx, p.id)?.is_some_and(|t| t.admin_role(env).is_some()) {
+    let target = profile::by_id(tx, p.id)?.ok_or(AppError::NotFound)?;
+    if target.is_admin(env) {
+        return Err(AppError::forbidden("Le profil propriétaire ne peut pas être supprimé."));
+    }
+    if matches!(role, AdminRole::Delegate(_)) && target.admin_role(env).is_some() {
         return Err(AppError::forbidden("Seul le propriétaire peut supprimer un administrateur."));
     }
     blocked_by_game(tx, &p)?;
-    let with_games = with_games(input);
+    let mut events = vec![];
+    if !with_games(input) {
+        if target.deleted {
+            return Err(AppError::rule(format!("{} est déjà anonymisé.", p.pseudo)));
+        }
+        let msg = if profile::anonymize(tx, env, &target, &mut events)? {
+            format!("{} a été supprimé.", p.pseudo)
+        } else {
+            format!("{} a été anonymisé : ses parties restent dans l'historique sous « Joueur supprimé ».", p.pseudo)
+        };
+        return Ok(Out::message(&msg).with(events));
+    }
     let game_ids: Vec<i64> = tx.all(
         "SELECT b.game_id FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id WHERE bp.player_id = ?1
          UNION SELECT r.game_id FROM actions a JOIN rounds r ON r.id = a.round_id WHERE a.player_id = ?1 OR a.target_player_id = ?1
@@ -155,23 +176,12 @@ pub fn destroy_player(tx: &Transaction, env: &Env, role: AdminRole, player_id: i
         [p.id],
         |r| r.get(0),
     )?;
-    if !game_ids.is_empty() && !with_games {
-        let n = game_ids.len();
-        return Ok(Out::ok(json!({
-            "message": format!("{} a joué {n} partie(s) : supprime-les aussi pour pouvoir supprimer le joueur.", p.pseudo),
-            "games_count": n,
-        }))
-        .status(axum::http::StatusCode::CONFLICT));
-    }
-    let mut events = vec![];
-    for r in rooms_of(tx, p.id)? {
-        remove_player(tx, env, &r, p.id, &mut events)?;
-    }
     for g in &game_ids {
         tx.run("DELETE FROM games WHERE id = ?1", [g])?;
     }
-    tx.run("DELETE FROM player_avatars WHERE pseudo = ?1", [&p.pseudo])?;
-    tx.run("DELETE FROM players WHERE id = ?1", [p.id])?;
+    // Ses parties parties, plus rien ne retient la ligne : anonymize la supprime
+    // (salons, photo, emojis, messages, votes, statistiques restantes)
+    profile::anonymize(tx, env, &target, &mut events)?;
     let msg = if game_ids.is_empty() {
         format!("{} a été supprimé.", p.pseudo)
     } else {

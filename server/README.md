@@ -31,6 +31,7 @@ binome count-pending                           # binômes en attente de validati
 binome backup <fichier.sqlite>                 # copie cohérente, serveur en marche
 binome check                                   # intégrité, version du schéma, volumes (BINOME_DATABASE)
 binome prune-rooms [--apply]                   # adhésions de salon mortes (partie finie, hall inactif > 12 h) ; essai à blanc sans --apply
+binome prune-players [--apply]                 # profils sans activité depuis 24 mois à anonymiser ; essai à blanc sans --apply (le serveur le fait chaque jour)
 binome hash-password [--admin] [--iterations N]  # empreinte du mot de passe de suppression,
                                                # ou d'administration avec --admin (lu sur stdin)
 ```

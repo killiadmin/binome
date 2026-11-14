@@ -31,7 +31,7 @@ use crate::db::Q;
 use crate::error::{AppError, AppResult};
 use crate::http::input::{Input, V};
 use crate::services::common::*;
-use crate::services::Out;
+use crate::services::{Events, Out};
 use crate::support::text::ci_key;
 
 pub const PASSWORD_MIN: usize = 6;
@@ -78,9 +78,12 @@ pub struct Profile {
     pub validated: bool,
     /// Désigné administrateur par le propriétaire (`admin_granted_at`, migration 7).
     pub admin_granted: bool,
+    /// Profil anonymisé (`deleted_at`, migration 9) : plus aucun jeton ne l'ouvre.
+    pub deleted: bool,
 }
 
-const COLS: &str = "id, pseudo, password_hash, password_prompted, token_version, validated_at IS NOT NULL, admin_granted_at IS NOT NULL";
+const COLS: &str =
+    "id, pseudo, password_hash, password_prompted, token_version, validated_at IS NOT NULL, admin_granted_at IS NOT NULL, deleted_at IS NOT NULL";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Profile> {
     Ok(Profile {
@@ -91,6 +94,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Profile> {
         token_version: r.get(4)?,
         validated: r.get(5)?,
         admin_granted: r.get(6)?,
+        deleted: r.get(7)?,
     })
 }
 
@@ -158,7 +162,7 @@ pub fn authenticate(c: &impl Q, env: &Env, token: Option<&str>) -> AppResult<Opt
 pub fn authenticate_with(c: &impl Q, secret: &[u8], token: Option<&str>) -> AppResult<Option<Profile>> {
     let Some((id, mac)) = token.and_then(|t| t.split_once('.')) else { return Ok(None) };
     let Ok(id) = id.parse::<i64>() else { return Ok(None) };
-    let Some(p) = by_id(c, id)? else { return Ok(None) };
+    let Some(p) = by_id(c, id)?.filter(|p| !p.deleted) else { return Ok(None) };
     let expected = sign(secret, p.id, p.token_version);
     Ok((mac.len() == expected.len() && bool::from(mac.as_bytes().ct_eq(expected.as_bytes()))).then_some(p))
 }
@@ -351,6 +355,7 @@ pub fn login(tx: &Transaction, env: &Env, pseudo: &str, verified: Option<&str>, 
         // Profil public : pas de prise de contrôle d'un joueur connecté ailleurs
         crate::services::rooms::pseudo_in_use(tx, env, &p.pseudo)?;
     }
+    tx.run("UPDATE players SET last_seen_at = ?1 WHERE id = ?2", rusqlite::params![now_db(), p.id])?;
     let mut body = session_body(tx, env, &p, "Connecté.")?;
     body["current"] = current(tx, p.id)?;
     Ok(Out::ok(body))
@@ -454,6 +459,138 @@ pub fn dismiss_prompt(tx: &Transaction, env: &Env, token: Option<&str>) -> AppRe
     Ok(Out::ok(json!({ "player": profile_json(tx, env, &p)? })))
 }
 
+// ─── Effacement (RGPD, migration 9) ─────────────────────────────────────────
+//
+// Un joueur qui a joué ne peut pas être supprimé sans détruire les parties des
+// autres (`rounds.current_player_id`, `actions.player_id` sans ON DELETE) : on
+// l'anonymise. Sa ligne reste, sous un pseudo impossible à saisir, et ses parties
+// restent dans l'historique des autres joueurs. Sans partie, la ligne est supprimée.
+
+/// Durée de conservation d'un profil sans activité : 24 mois (décision du 2026-11-14).
+pub const INACTIVE_DAYS: i64 = 730;
+
+/// Pseudo d'un profil anonymisé : 23 caractères, au-delà des 20 qu'accepte toute
+/// saisie de pseudo (connexion, salons, renommage) — personne ne peut le reprendre.
+pub fn anonymized_pseudo(id: i64) -> String {
+    format!("Joueur supprimé #{id:06}")
+}
+
+/// Le joueur figure-t-il dans une partie (place, action, tour) ?
+fn has_game_rows(c: &impl Q, id: i64) -> AppResult<bool> {
+    c.exists(
+        "SELECT 1 FROM binome_player WHERE player_id = ?1
+         UNION ALL SELECT 1 FROM actions WHERE player_id = ?1 OR target_player_id = ?1
+         UNION ALL SELECT 1 FROM rounds WHERE current_player_id = ?1",
+        [id],
+    )
+}
+
+/// Anonymise le profil `p` (déjà relu dans la transaction) : salons quittés,
+/// photo, emojis créés, messages du hall et votes d'idées supprimés ; pseudo
+/// remplacé dans les statistiques et les idées ; mot de passe, validation et rôle
+/// d'administrateur retirés ; jetons révoqués. Supprime la ligne s'il n'a jamais
+/// joué. Renvoie `true` si la ligne a été supprimée.
+pub fn anonymize(tx: &Transaction, env: &Env, p: &Profile, events: &mut Events) -> AppResult<bool> {
+    let ghost = anonymized_pseudo(p.id);
+    for r in crate::services::admin::rooms_of(tx, p.id)? {
+        crate::services::rooms::remove_player(tx, env, &r, p.id, events)?;
+    }
+    tx.run("DELETE FROM player_avatars WHERE pseudo = ?1", [&p.pseudo])?;
+    tx.run("DELETE FROM custom_reactions WHERE created_by_pseudo = ?1", [&p.pseudo])?;
+    tx.run("DELETE FROM chat_messages WHERE player_id = ?1", [p.id])?;
+    tx.run("DELETE FROM idea_votes WHERE player_id = ?1", [p.id])?;
+    tx.run("UPDATE ideas SET author_name = ?1 WHERE player_id = ?2", rusqlite::params![ghost, p.id])?;
+    tx.run("UPDATE game_stats SET player_pseudo = ?1 WHERE player_pseudo = ?2", rusqlite::params![ghost, p.pseudo])?;
+    if !has_game_rows(tx, p.id)? {
+        // Rien ne le référence plus sans cascade : la ligne part (idées : player_id → NULL)
+        tx.run("DELETE FROM players WHERE id = ?1", [p.id])?;
+        return Ok(true);
+    }
+    let now = now_db();
+    tx.run(
+        "UPDATE players SET pseudo = ?1, password_hash = NULL, password_prompted = 1, token_version = token_version + 1,
+                validated_at = NULL, admin_granted_at = NULL, deleted_at = ?2, updated_at = ?2
+         WHERE id = ?3",
+        rusqlite::params![ghost, now, p.id],
+    )?;
+    Ok(false)
+}
+
+/// Joueur dans une partie en cours : on ne l'efface pas sous les pieds des autres.
+fn in_progress_game(c: &impl Q, id: i64) -> AppResult<bool> {
+    Ok(crate::services::admin::players_in_progress_games(c)?.contains(&id))
+}
+
+/// DELETE /profile — le joueur efface son profil (mot de passe déjà vérifié hors
+/// transaction s'il y en a un). `seen` : le profil lu avant la vérification ; s'il
+/// a changé entre-temps (mot de passe posé ou changé ailleurs), on refuse.
+pub fn erase_self(tx: &Transaction, env: &Env, seen: &Profile) -> AppResult<Out> {
+    let p = by_id(tx, seen.id)?.filter(|p| !p.deleted).ok_or_else(|| AppError::Status(StatusCode::UNAUTHORIZED, "Connecte-toi à ton profil.".into()))?;
+    if p.token_version != seen.token_version || p.password_hash != seen.password_hash {
+        return Err(AppError::rule("Ton profil a changé entre-temps : recharge la page et réessaie."));
+    }
+    if p.is_admin(env) {
+        return Err(AppError::forbidden("Le profil propriétaire ne peut pas être supprimé."));
+    }
+    if in_progress_game(tx, p.id)? {
+        return Err(AppError::rule("Tu es dans une partie en cours : termine-la ou quitte-la avant de supprimer ton profil."));
+    }
+    let mut events = vec![];
+    anonymize(tx, env, &p, &mut events)?;
+    Ok(Out::message("Ton profil a été supprimé.").with(events))
+}
+
+/// Profils sans activité depuis [`INACTIVE_DAYS`] jours, à anonymiser : ni le
+/// propriétaire, ni un administrateur désigné, ni un joueur en partie.
+pub fn inactive(c: &impl Q, env: &Env) -> AppResult<Vec<(Profile, String)>> {
+    let cutoff = clock::in_seconds_db(-INACTIVE_DAYS * 86_400);
+    let rows: Vec<(i64, String)> = c.all(
+        "SELECT id, COALESCE(last_seen_at, created_at) AS seen FROM players
+         WHERE deleted_at IS NULL AND admin_granted_at IS NULL
+           AND COALESCE(last_seen_at, created_at) IS NOT NULL AND COALESCE(last_seen_at, created_at) < ?1
+         ORDER BY seen, id",
+        [&cutoff],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let busy = crate::services::admin::players_in_progress_games(c)?;
+    let mut out = vec![];
+    for (id, seen) in rows {
+        if busy.contains(&id) {
+            continue;
+        }
+        if let Some(p) = by_id(c, id)?.filter(|p| !p.is_admin(env)) {
+            out.push((p, seen));
+        }
+    }
+    Ok(out)
+}
+
+/// Purge des profils inactifs (minuterie quotidienne et `binome prune-players`).
+/// Sans `apply`, simple liste. Renvoie le compte rendu et les events à publier.
+pub fn prune_inactive(tx: &Transaction, env: &Env, apply: bool) -> AppResult<(Vec<String>, Events)> {
+    let victims = inactive(tx, env)?;
+    let mut lines = vec![format!(
+        "Profils sans activité depuis plus de {} mois : {}",
+        INACTIVE_DAYS * 12 / 365,
+        victims.len()
+    )];
+    let mut events = vec![];
+    for (p, seen) in &victims {
+        let fate = if apply {
+            if anonymize(tx, env, p, &mut events)? { "supprimé (aucune partie)" } else { "anonymisé" }
+        } else if has_game_rows(tx, p.id)? {
+            "à anonymiser"
+        } else {
+            "à supprimer (aucune partie)"
+        };
+        lines.push(format!("  #{} {} (dernière activité {seen}) : {fate}", p.id, p.pseudo));
+    }
+    if !apply && !victims.is_empty() {
+        lines.push("Essai à blanc : rien n'est modifié. Relancer avec --apply pour anonymiser.".into());
+    }
+    Ok((lines, events))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +651,7 @@ mod tests {
             token_version: 0,
             validated: false,
             admin_granted: granted,
+            deleted: false,
         };
         assert_eq!(p("pAtrón", false, false).admin_role(&env), Some("owner"));
         assert_eq!(p("Ami", true, true).admin_role(&env), Some("admin"));
@@ -521,6 +659,142 @@ mod tests {
         assert_eq!(p("Ami", true, false).admin_role(&env), None);
         assert!(p("Ami", true, true).is_validated(&env));
         assert!(!p("Ami", true, false).is_validated(&env));
+    }
+
+    fn temp_db(tag: &str) -> (std::path::PathBuf, crate::db::Db) {
+        let dir = std::env::temp_dir().join(format!("binome-erase-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir.join("t.sqlite")).unwrap();
+        (dir, db)
+    }
+
+    fn test_env(admin: Option<&str>) -> Env {
+        Env {
+            prefix: String::new(),
+            hub: crate::realtime::hub::Hub::new(),
+            profile_secret: Arc::new(b"secret".to_vec()),
+            admin_pseudo: admin.map(str::to_string),
+        }
+    }
+
+    /// Effacement : Alice a joué (ligne anonymisée, parties intactes), Carl jamais
+    /// (ligne supprimée). Photo, emojis, messages, votes partent ; statistiques et
+    /// idées passent sous le pseudo anonyme ; jeton révoqué ; pseudo libre.
+    #[test]
+    fn erase_anonymizes_players_who_played_and_deletes_the_others() {
+        let (dir, db) = temp_db("self");
+        let env = test_env(Some("Patron"));
+        db.with_writer(|c| {
+            c.execute_batch(
+                "INSERT INTO players (id, pseudo, password_hash, validated_at, admin_granted_at) VALUES
+                    (1, 'Alice', 'h', '2026-01-01 00:00:00', '2026-01-01 00:00:00'), (2, 'Bob', NULL, NULL, NULL), (3, 'Carl', NULL, NULL, NULL);
+                 INSERT INTO rooms (id, code, created_by) VALUES (7, 'ABCDEF', 1);
+                 INSERT INTO room_player (room_id, player_id) VALUES (7, 1), (7, 2);
+                 INSERT INTO games (id, room_id, status) VALUES (41, 7, 'finished');
+                 INSERT INTO rounds (id, game_id, number, current_player_id) VALUES (5, 41, 1, 1);
+                 INSERT INTO actions (round_id, player_id, target_player_id, type, content, is_valid) VALUES (5, 1, 2, 'question', 'Es-tu un chat ?', 1);
+                 INSERT INTO game_stats (game_id, player_pseudo, character_name, score) VALUES (41, 'alice', 'X', 7), (41, 'Bob', 'Y', 3);
+                 INSERT INTO player_avatars (pseudo, image) VALUES ('Alice', 'data:a'), ('Carl', 'data:c');
+                 INSERT INTO custom_reactions (name, image, created_by_pseudo) VALUES ('Alice choquée', 'data:r', 'ALICE'), ('Bob rit', 'data:b', 'Bob');
+                 INSERT INTO chat_messages (player_id, author_name, author_key, body) VALUES (1, 'Alice', 'p:1', 'salut'), (3, 'Carl', 'p:3', 'yo'), (2, 'Bob', 'p:2', 'hey');
+                 INSERT INTO ideas (id, player_id, author_name, body) VALUES (1, 1, 'Alice', 'idée A'), (2, 3, 'Carl', 'idée C'), (3, 2, 'Bob', 'idée B');
+                 INSERT INTO idea_votes (idea_id, player_id) VALUES (3, 1), (3, 3), (1, 2);",
+            )?;
+            let tx = c.transaction()?;
+            let alice = by_id(&tx, 1)?.unwrap();
+            let token_before = token(&env, &alice);
+            let mut events = vec![];
+            assert!(!anonymize(&tx, &env, &alice, &mut events)?, "Alice a joué : ligne gardée");
+            let ghost = anonymized_pseudo(1);
+            assert!(ghost.chars().count() > 20, "pseudo anonyme impossible à saisir");
+            let a = by_id(&tx, 1)?.unwrap();
+            assert_eq!(a.pseudo, ghost);
+            assert!(a.deleted && a.password_hash.is_none() && !a.validated && !a.admin_granted);
+            assert!(authenticate(&tx, &env, Some(&token_before))?.is_none(), "ancien jeton révoqué");
+            assert!(authenticate(&tx, &env, Some(&token(&env, &a)))?.is_none(), "aucun jeton n'ouvre un profil anonymisé");
+            assert!(by_pseudo(&tx, "Alice")?.is_none(), "pseudo libéré");
+            // Parties intactes, sous le pseudo anonyme
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM actions WHERE player_id = 1", [])?, 1);
+            assert_eq!(tx.one::<String>("SELECT player_pseudo FROM game_stats WHERE score = 7", [])?, ghost);
+            assert_eq!(tx.one::<String>("SELECT player_pseudo FROM game_stats WHERE score = 3", [])?, "Bob");
+            // Ses traces personnelles parties, celles des autres intactes
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM player_avatars WHERE pseudo = 'Alice'", [])?, 0);
+            assert_eq!(tx.one::<String>("SELECT group_concat(name) FROM custom_reactions", [])?, "Bob rit");
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM chat_messages WHERE player_id = 1", [])?, 0);
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM idea_votes WHERE player_id = 1", [])?, 0);
+            assert_eq!(tx.one::<String>("SELECT author_name FROM ideas WHERE id = 1", [])?, ghost);
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM room_player WHERE player_id = 1", [])?, 0, "salon quitté");
+            assert_eq!(tx.one::<i64>("SELECT created_by FROM rooms WHERE id = 7", [])?, 2, "l'hôte passe à Bob");
+
+            // Carl n'a jamais joué : sa ligne part
+            let carl = by_id(&tx, 3)?.unwrap();
+            assert!(anonymize(&tx, &env, &carl, &mut events)?);
+            assert!(by_id(&tx, 3)?.is_none());
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM player_avatars", [])?, 0);
+            assert_eq!(tx.one::<Option<i64>>("SELECT player_id FROM ideas WHERE id = 2", [])?, None);
+            assert_eq!(tx.one::<String>("SELECT author_name FROM ideas WHERE id = 2", [])?, anonymized_pseudo(3));
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM pragma_foreign_key_check", [])?, 0);
+
+            // Le propriétaire ne s'efface pas
+            tx.execute("INSERT INTO players (id, pseudo) VALUES (9, 'Patron')", [])?;
+            let owner = by_id(&tx, 9)?.unwrap();
+            assert!(erase_self(&tx, &env, &owner).is_err());
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Purge : seuls les profils inactifs depuis plus de 24 mois, hors propriétaire,
+    /// administrateurs désignés, joueurs en partie et profils déjà anonymisés.
+    #[test]
+    fn prune_selects_only_long_inactive_ordinary_players() {
+        let (dir, db) = temp_db("prune");
+        let env = test_env(Some("Patron"));
+        db.with_writer(|c| {
+            let ago = |days: i64| clock::in_seconds_db(-days * 86_400);
+            let old = ago(INACTIVE_DAYS + 1);
+            c.execute_batch(
+                "INSERT INTO cosmos (id, name, slug) VALUES (1, 'C', 'c');
+                 INSERT INTO universes (id, name, slug, cosmos_id) VALUES (1, 'U', 'u', 1);
+                 INSERT INTO characters (id, universe_id, name, slug, forbidden_words) VALUES (1, 1, 'P', 'p', '[]');",
+            )?;
+            for (id, pseudo, seen, extra) in [
+                (1, "Vieux", old.as_str(), ""),
+                (2, "Recent", ago(INACTIVE_DAYS - 1).as_str(), ""),
+                (3, "Patron", old.as_str(), ""),
+                (4, "Adjoint", old.as_str(), "admin"),
+                (5, "EnJeu", old.as_str(), ""),
+                (6, "Parti", old.as_str(), "deleted"),
+            ] {
+                c.execute(
+                    "INSERT INTO players (id, pseudo, last_seen_at, admin_granted_at, deleted_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![id, pseudo, seen, (extra == "admin").then_some(seen), (extra == "deleted").then_some(seen)],
+                )?;
+            }
+            // Ancien profil sans last_seen_at : sa date de création compte
+            c.execute("INSERT INTO players (id, pseudo, created_at) VALUES (7, 'Ancien', ?1)", [&old])?;
+            c.execute_batch(
+                "INSERT INTO rooms (id, code, created_by) VALUES (8, 'GHIJKL', 5);
+                 INSERT INTO games (id, room_id, status) VALUES (50, 8, 'in_progress');
+                 INSERT INTO binomes (id, game_id, universe_id) VALUES (1, 50, 1);
+                 INSERT INTO binome_player (binome_id, player_id, character_id) VALUES (1, 5, 1);",
+            )?;
+            let tx = c.transaction()?;
+            let ids: Vec<i64> = inactive(&tx, &env)?.into_iter().map(|(p, _)| p.id).collect();
+            assert_eq!(ids, vec![1, 7]);
+            let (dry, _) = prune_inactive(&tx, &env, false)?;
+            assert!(dry.iter().any(|l| l.contains("Essai à blanc")));
+            assert!(by_id(&tx, 1)?.is_some(), "essai à blanc : rien ne bouge");
+            prune_inactive(&tx, &env, true)?;
+            assert!(by_id(&tx, 1)?.is_none() && by_id(&tx, 7)?.is_none(), "sans partie : lignes supprimées");
+            assert_eq!(tx.one::<i64>("SELECT COUNT(*) FROM players", [])?, 5);
+            assert!(inactive(&tx, &env)?.is_empty());
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

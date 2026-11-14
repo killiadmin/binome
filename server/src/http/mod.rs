@@ -32,7 +32,7 @@ fn id(p: &HashMap<String, String>, name: &str) -> AppResult<i64> {
 }
 
 impl AppState {
-    fn env(&self) -> Env {
+    pub(crate) fn env(&self) -> Env {
         Env {
             prefix: self.prefix(),
             hub: self.hub.clone(),
@@ -74,6 +74,29 @@ impl AppState {
         }
     }
 
+    /// Activité du joueur (`players.last_seen_at`, durée de conservation) : écrite
+    /// au plus une fois par jour et par joueur, en tâche de fond.
+    fn touch(&self, player_id: i64) {
+        let today = crate::clock::now().unix_timestamp().div_euclid(86_400);
+        {
+            let mut seen = self.last_seen.lock().unwrap_or_else(|p| p.into_inner());
+            if seen.get(&player_id) == Some(&today) {
+                return;
+            }
+            seen.insert(player_id, today);
+        }
+        let db = self.db.clone();
+        tokio::spawn(async move {
+            let now = crate::clock::now_db();
+            let r = db
+                .write(move |tx| crate::db::Q::run(tx, "UPDATE players SET last_seen_at = ?1 WHERE id = ?2 AND deleted_at IS NULL", rusqlite::params![now, player_id]))
+                .await;
+            if let Err(e) = r {
+                tracing::warn!("activité du joueur {player_id} non enregistrée : {e:?}");
+            }
+        });
+    }
+
     /// Limite de débit ; `None` si autorisé.
     fn throttle(&self, bucket: &str, key: &str, per_minute: usize) -> Option<Response> {
         (!self.limiter.hit(bucket, key, per_minute)).then(|| AppError::TooManyRequests.into_response())
@@ -109,7 +132,10 @@ async fn identify(State(st): State<AppState>, mut req: Request, next: Next) -> R
         Some(token) => {
             let env = st.env();
             match st.db.read(move |c| profile::authenticate(c, &env, Some(&token))).await {
-                Ok(Some(p)) => Caller::Player(p.id),
+                Ok(Some(p)) => {
+                    st.touch(p.id);
+                    Caller::Player(p.id)
+                }
                 Ok(None) => Caller::Invalid,
                 Err(e) => return e.into_response(),
             }
@@ -426,6 +452,29 @@ async fn profile_show(State(st): State<AppState>, headers: axum::http::HeaderMap
 async fn profile_rename(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
     let token = profile_token(&headers);
     st.write(move |tx, env| profile::rename(tx, env, token.as_deref(), &input)).await
+}
+/// DELETE /profile — le joueur efface son profil (droit à l'effacement) : son
+/// mot de passe est exigé s'il en a un. Voir `profile::anonymize`.
+async fn profile_destroy(State(st): State<AppState>, headers: axum::http::HeaderMap, input: Input) -> Response {
+    let token = profile_token(&headers);
+    let env = st.env();
+    let seen = match st.db.read(move |c| profile::require(c, &env, token.as_deref())).await {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    if seen.is_admin(&st.env()) {
+        return AppError::forbidden("Le profil propriétaire ne peut pas être supprimé.").into_response();
+    }
+    if let Some(stored) = seen.password_hash.clone() {
+        let (_, current) = match profile::password_input(&input, false, true) {
+            Ok(x) => x,
+            Err(e) => return e.into_response(),
+        };
+        if let Err(r) = check_password(&st, &format!("p:{}", seen.id), 5, "current_password", current, stored).await {
+            return r;
+        }
+    }
+    st.write(move |tx, env| profile::erase_self(tx, env, &seen)).await
 }
 async fn profile_prompt(State(st): State<AppState>, headers: axum::http::HeaderMap) -> Response {
     let token = profile_token(&headers);
@@ -757,7 +806,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/access/characters", post(access_login))
         .route("/csp-report", post(security::report))
-        .route("/profile", get(profile_show).patch(profile_rename))
+        .route("/profile", get(profile_show).patch(profile_rename).delete(profile_destroy))
         .route("/profile/login", post(profile_login))
         .route("/profile/password", axum::routing::put(profile_password_set).delete(profile_password_remove))
         .route("/profile/password-prompt", post(profile_prompt))
