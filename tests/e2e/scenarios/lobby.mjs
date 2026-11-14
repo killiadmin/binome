@@ -98,8 +98,10 @@ export async function lobby(ctx) {
     ctx.check(anonymous.every((x) => x.emoji !== null), 'GET /reactions sans profil validé : pas d\'emojis personnalisés')
     const firstImage = list.findIndex((x) => x.emoji === null)
     ctx.check(firstImage === -1 || list.slice(firstImage).every((x) => x.emoji === null), 'GET /reactions : Unicode d\'abord, puis images')
-    const image = await api.get('/reactions/:reaction/image', { params: { reaction: r.data.reaction.id }, raw: true, expect: 200 })
+    const signed = Object.fromEntries(new URL(r.data.reaction.url, 'http://x').searchParams)
+    const image = await api.get('/reactions/:reaction/image', { params: { reaction: r.data.reaction.id }, query: signed, raw: true, expect: 200 })
     ctx.check(image.data.contentType.startsWith('image/jpeg'), 'image d\'emoji servie en JPEG')
+    await ctx.refused(404, 'GET', '/reactions/:reaction/image', { params: { reaction: r.data.reaction.id }, raw: true }, 'image d\'emoji sans signature')
 
     for (const b of trio) await api.delete('/rooms/:room/leave', { params: { room: tc.data.room.id }, body: { player_id: b.id }, expect: 200 })
 }

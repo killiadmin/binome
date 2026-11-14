@@ -913,9 +913,9 @@ $.reaction.url                                   string
 
 ### `GET /api/reactions/:reaction/image`
 
-Image d'emoji (cache 1 an) — accès : public
+Image d'emoji (cache 1 an) ; URL signée `?v=&s=` (sur la création), `404` sans signature valide — accès : URL signée
 
-Statuts observés : `200`
+Statuts observés : `200`, `404`
 
 Réponse `200` (binaire) :
 
@@ -1129,9 +1129,9 @@ $.message.is_anonymous                           bool
 
 ### `GET /api/avatars/:avatar`
 
-Photo JPEG (`?v=`, cache 1 an) — accès : public
+Photo JPEG (cache 1 an) ; URL signée `?v=&s=` (sur la dernière modification), `404` sans signature valide ou après changement — accès : URL signée
 
-Statuts observés : `200`
+Statuts observés : `200`, `404`
 
 Réponse `200` (binaire) :
 

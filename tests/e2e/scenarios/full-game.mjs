@@ -88,9 +88,14 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         const av = await api.post('/players/:player/avatar', { params: { player: host.id }, body: { player_id: host.id, image: jpegDataUri('square-64.jpg') }, expect: 200 })
         const [avEv] = await everyone(bots, roomCh, 'player.avatar.updated', { pred: (d) => d.player_id === host.id, since: mk })
         ctx.check(avEv.data.avatar_url === av.data.avatar_url && av.data.avatar_url.startsWith('/binome/api/avatars/'), 'avatar : URL versionnée préfixée /binome diffusée')
-        const avatarId = av.data.avatar_url.match(/avatars\/(\d+)/)[1]
-        const img = await api.get('/avatars/:avatar', { params: { avatar: avatarId }, query: { v: '1' }, raw: true, expect: 200 })
+        // URL signée (checklist 7 D) : sans sa signature, ni la photo ni ses voisines ne sortent
+        const avatarId = Number(av.data.avatar_url.match(/avatars\/(\d+)/)[1])
+        const signed = Object.fromEntries(new URL(av.data.avatar_url, 'http://x').searchParams)
+        const img = await api.get('/avatars/:avatar', { params: { avatar: avatarId }, query: signed, raw: true, expect: 200 })
         ctx.check(img.data.contentType.startsWith('image/jpeg') && /immutable/.test(img.data.cacheControl ?? ''), 'avatar servi en image/jpeg, cache immutable')
+        await ctx.refused(404, 'GET', '/avatars/:avatar', { params: { avatar: avatarId }, query: { v: signed.v }, raw: true }, 'avatar sans signature')
+        await ctx.refused(404, 'GET', '/avatars/:avatar', { params: { avatar: avatarId }, query: { ...signed, s: '0'.repeat(32) }, raw: true }, 'avatar avec une fausse signature')
+        await ctx.refused(404, 'GET', '/avatars/:avatar', { params: { avatar: avatarId - 1 }, query: signed, raw: true }, 'signature d\'un autre avatar (id voisin)')
         await ctx.refused(422, 'POST', '/players/:player/avatar', { params: { player: host.id }, body: { player_id: host.id, image: jpegDataUri('rect-80x40.jpg') } }, 'avatar non carré')
         await ctx.refused(403, 'POST', '/players/:player/avatar', { params: { player: host.id }, body: { player_id: guests[0].id, image: jpegDataUri('square-64.jpg') } }, 'avatar d\'un autre joueur')
         const roomView = (await api.get('/rooms/:room', { params: { room: room.id }, expect: 200 })).data.room

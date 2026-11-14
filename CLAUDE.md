@@ -75,6 +75,10 @@ remains. Details in `docs/regles-du-jeu.md`.
   restoring a session or changing player.
 - Pseudos are case/accent-insensitive via the SQLite collation `BINOME_CI` registered by the
   binary — the stock `sqlite3` CLI cannot check or query those columns; use `binome check`.
+- Personal images are served only through signed URLs (`common::image_sig`, checklist 7 D):
+  `?v=…&s=HMAC(profile secret, kind|id|date)` — avatars signed on their last change (a new or
+  removed photo kills old URLs), custom emojis on their creation (renaming keeps URLs valid).
+  Missing/bad signature → 404. Always build these URLs with `avatar_url` / `reaction_url`.
 - API security invariant: `GET /games/{game}` never returns characters; `GET /games/{game}/me`
   returns a character only to the requesting player; characters otherwise only in `game.ended`,
   to eliminated players via `GET /games/{game}/reveal` (host option), and in finished-game history.
