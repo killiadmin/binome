@@ -235,8 +235,8 @@ onUnmounted(() => {
     <div v-show="!collapsed" class="lobby-chat__body">
       <p class="lobby-chat__hint">
         <i class="fa-solid fa-circle-info"></i>
-        Tout le monde te lit ici. Colle le code de ton salon pour recruter —
-        il deviendra copiable en un clic.
+        Tout le monde te lit ici, et les messages s'effacent au bout d'une heure. Colle le code de
+        ton salon pour recruter : il deviendra copiable en un clic.
       </p>
 
       <div ref="scroller" class="lobby-chat__stream">

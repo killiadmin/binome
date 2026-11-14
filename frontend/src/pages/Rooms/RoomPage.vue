@@ -871,6 +871,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
           <p v-if="!isLoggedIn" class="pseudo-hint">
             Déjà un profil protégé ? <router-link :to="{ name: 'Login' }">Connecte-toi</router-link>
           </p>
+          <p class="pseudo-hint pseudo-hint--privacy">
+            Pseudo visible des joueurs et gardé dans l'historique ·
+            <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
+          </p>
         </div>
         <div class="text-center">
           <button type="button" class="cabinet-btn cabinet-btn--sm" @click="handleCreateGame">Créer</button>
@@ -897,6 +901,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
           <p v-if="isLoggedIn" class="pseudo-hint">Pseudo de ton profil.</p>
           <p v-else class="pseudo-hint">
             Déjà un profil protégé ? <router-link :to="{ name: 'Login' }">Connecte-toi</router-link>
+          </p>
+          <p class="pseudo-hint pseudo-hint--privacy">
+            Pseudo visible des joueurs et gardé dans l'historique ·
+            <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
           </p>
         </div>
         <div class="mb-3">
@@ -939,6 +947,12 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   opacity: 0.8;
+}
+
+.pseudo-hint--privacy {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 
 .login-link {

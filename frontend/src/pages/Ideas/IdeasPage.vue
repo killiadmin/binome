@@ -184,6 +184,10 @@ onMounted(load)
           <i class="fa-solid fa-paper-plane"></i> {{ posting ? 'Envoi…' : 'Publier' }}
         </button>
       </div>
+      <p class="composer__privacy muted">
+        Ton idée est publique et signée de ton pseudo. Tu peux la supprimer à tout moment.
+        <router-link :to="{ name: 'Legal' }">Tes données</router-link>
+      </p>
       <p v-if="postError" class="alert-line" role="alert">{{ postError }}</p>
       <p v-else-if="postDone" class="ok-line" role="status">Idée publiée, merci !</p>
     </form>
@@ -337,6 +341,8 @@ onMounted(load)
 }
 .composer__bar .muted { min-width: 0; font-size: 0.78rem; }
 .composer__bar .cabinet-btn { margin: 0.35rem 0 0.35rem auto; }
+.composer__privacy { margin: 0.1rem 0 0; font-size: 0.75rem; }
+.composer__privacy a { color: var(--arcade-gold); font-weight: 700; }
 
 .locked {
   text-align: center;

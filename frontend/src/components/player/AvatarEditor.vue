@@ -87,8 +87,9 @@ watch(show, (open) => {
           <PlayerAvatar :pseudo="player?.pseudo" :url="player?.avatar_url" :letters="1" />
         </div>
         <p class="avatar-editor__hint">
-          Ta photo remplace ton initiale partout dans le jeu.
-          Elle est liée à ton pseudo : tu la retrouveras à ta prochaine partie.
+          Ta photo remplace ton initiale partout dans le jeu et te suit d'une partie à l'autre.
+          Visible de tous, même sans connexion ; tu peux la retirer quand tu veux.
+          <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
         </p>
 
         <div v-if="error" class="avatar-editor__error" role="alert">
@@ -154,6 +155,12 @@ watch(show, (open) => {
   margin: 0;
   font-size: 0.85rem;
   color: #6c6259;
+}
+
+.avatar-editor__hint a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 .avatar-editor__error {

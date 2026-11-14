@@ -89,7 +89,9 @@ watch(show, (open) => {
         </div>
         <p class="reaction-editor__hint">
           {{ admin ? 'Prends une photo' : 'Prends-toi en photo' }} ou choisis une image :
-          elle rejoindra la barre de réactions de tous les joueurs.
+          elle rejoindra la barre de réactions de tous les joueurs. Ne prends personne en photo
+          sans son accord.
+          <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
         </p>
 
         <div v-if="error" class="reaction-editor__error" role="alert">
@@ -163,6 +165,12 @@ watch(show, (open) => {
   margin: 0;
   font-size: 0.85rem;
   color: #6c6259;
+}
+
+.reaction-editor__hint a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 .reaction-editor__error {

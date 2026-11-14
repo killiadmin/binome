@@ -114,7 +114,8 @@ async function submit() {
 
         <p class="login-hint">
           Nouveau pseudo ? Ton profil est créé à la connexion. Il est public tant que tu ne
-          le protèges pas par un mot de passe.
+          le protèges pas par un mot de passe. Aucun e-mail demandé.
+          <router-link :to="{ name: 'Legal' }">Tes données</router-link>
         </p>
       </div>
     </div>

@@ -38,6 +38,14 @@ const routes = [
         component: () => import("./pages/Ideas/IdeasPage.vue"),
     },
     {
+        // Mentions légales + confidentialité : publique, liée depuis le footer
+        // et depuis chaque formulaire qui collecte une donnée personnelle.
+        path: "/confidentialite",
+        name: "Legal",
+        alias: "/mentions-legales",
+        component: () => import("./pages/Legal/LegalPage.vue"),
+    },
+    {
         path: "/connexion",
         name: "Login",
         component: () => import("./pages/Profile/LoginPage.vue"),
