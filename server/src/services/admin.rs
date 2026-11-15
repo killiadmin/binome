@@ -17,7 +17,9 @@ use crate::http::input::Input;
 use crate::http::input::V;
 use crate::services::common::*;
 use crate::services::profile;
-use crate::services::rooms::remove_player;
+use crate::realtime::hub::Event;
+use crate::services::play;
+use crate::services::rooms::{remove_player, room_channel};
 use crate::services::Out;
 use crate::support::text::ci_key;
 
@@ -224,4 +226,39 @@ pub fn destroy_game(tx: &Transaction, game_id: i64) -> AppResult<Out> {
         Ok(_) => Ok(Out::message("Partie supprimée.")),
         Err(_) => Err(AppError::rule("Impossible de supprimer cette partie.")),
     }
+}
+
+/// POST /admin/games/{game}/end — l'administrateur clôt une partie bloquée
+/// (joueurs partis…). Comme une fin normale : rounds fermés, stats du moment
+/// enregistrées (sans gagnant, donc sans bonus de victoire), `game.ended` avec
+/// `ended_by_admin`. Puis le salon est vidé : tous ses membres en sont retirés
+/// (salon supprimé, la partie reste dans l'historique) et `player.left` sans
+/// joueur renvoie à l'accueil ceux qui étaient encore dans le salon.
+pub fn end_game(tx: &Transaction, game_id: i64) -> AppResult<Out> {
+    let g = game_or_404(tx, game_id)?;
+    if !g.in_progress() {
+        return Err(AppError::rule("Cette partie n'est pas en cours."));
+    }
+    // Tirage de carte encore ouvert : clos, sa minuterie n'aura plus d'effet
+    tx.run(
+        "UPDATE actions SET card_draw_status = 'expired', updated_at = ?1
+         WHERE card_draw_status IN ('pending', 'drawn') AND round_id IN (SELECT id FROM rounds WHERE game_id = ?2)",
+        (clock::now_db(), g.id),
+    )?;
+    let mut events = vec![];
+    play::end_game(tx, g.id, &[], true, &mut events)?;
+
+    let mut removed = 0;
+    if let Some(room) = game_room(tx, &g)? {
+        removed = tx.one::<i64>("SELECT COUNT(*) FROM room_player WHERE room_id = ?1", [room.id])?;
+        // Cascade : room_player ; games.room_id passe à NULL (migration 2)
+        tx.run("DELETE FROM rooms WHERE id = ?1", [room.id])?;
+        events.push(Event::on(room_channel(room.id), "player.left", json!({ "players": [], "new_host_id": null })));
+    }
+    let msg = match removed {
+        0 => format!("Partie #{} terminée.", g.id),
+        1 => format!("Partie #{} terminée : le joueur a été retiré du salon.", g.id),
+        n => format!("Partie #{} terminée : les {n} joueurs ont été retirés du salon.", g.id),
+    };
+    Ok(Out::ok(json!({ "message": msg, "game_id": g.id, "removed_players": removed })).with(events))
 }

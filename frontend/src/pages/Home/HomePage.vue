@@ -1,6 +1,4 @@
 <script>
-import { ref, onMounted } from "vue";
-import { api } from "../../services/api.js";
 import logo192 from "../../assets/logo/binome-logo-192.webp";
 import logo320 from "../../assets/logo/binome-logo-320.webp";
 import logo640 from "../../assets/logo/binome-logo-640.webp";
@@ -8,20 +6,9 @@ import logo640 from "../../assets/logo/binome-logo-640.webp";
 export default {
   name: "HomePage",
   setup() {
-    const message = ref("");
-
-    onMounted(async () => {
-      try {
-        const response = await api.get("/welcome");
-        message.value = response.data.message;
-      } catch (error) {
-        console.error("Erreur API", error);
-      }
-    });
-
     const logoSrcset = `${logo192} 192w, ${logo320} 320w, ${logo640} 640w`;
 
-    return { message, logo320, logoSrcset };
+    return { logo320, logoSrcset };
   }
 };
 </script>

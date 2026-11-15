@@ -121,6 +121,10 @@ remains. Details in `docs/regles-du-jeu.md`.
   password required if set), `DELETE /admin/players/{id}` (default) and the daily purge of
   profiles inactive for 24 months (`players.last_seen_at`, written at most once a day per player
   by the `identify` middleware and at login). Keep `LegalPage.vue` in line with this behaviour.
+- Admin end of game (migration 11, `admin::end_game`, button on /admin/games): `POST
+  /admin/games/{id}/end` closes an in-progress game through `play::end_game` with no winner
+  (stats kept, `game.ended` with `ended_by_admin`, `games.ended_by_admin_at`), then deletes its
+  room (all members out, `player.left` with an empty list).
 - Deleting games (`DELETE /admin/games/{id}`, or a player `?with_games=1`) also requires the
   `X-Delete-Password` header, checked against `BINOME_DELETE_PASSWORD_HASH` (PBKDF2; unset =
   disabled). Only the owner knows these passwords (admin and delete) — never generate or store them yourself.

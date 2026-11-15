@@ -31,6 +31,11 @@ const confirmTarget = ref(null)
 const deletePassword = ref('')
 const deleting = ref(false)
 
+// Fin de partie décidée par l'admin
+const showEndConfirm = ref(false)
+const endTarget = ref(null)
+const ending = ref(false)
+
 const filteredGames = computed(() =>
   games.value.filter((g) => statusFilter[g.status] ?? true)
 )
@@ -100,6 +105,36 @@ async function confirmDelete() {
   }
 }
 
+// ─── FIN DE PARTIE ────────────────────────────────────────────────────────────
+
+function askEnd(game) {
+  endTarget.value = game
+  error.value = null
+  showEndConfirm.value = true
+}
+
+async function confirmEnd() {
+  if (!endTarget.value || ending.value) return
+  ending.value = true
+  error.value = null
+  const id = endTarget.value.id
+  try {
+    const { data } = await adminService.endGame(id)
+    // Stats enregistrées, salon supprimé : on relit la liste et le détail
+    delete details[id]
+    if (expanded.value === id) expanded.value = null
+    showEndConfirm.value = false
+    endTarget.value = null
+    await loadGames()
+    success.value = data.message
+    setTimeout(() => (success.value = null), 4000)
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Impossible de terminer la partie.'
+  } finally {
+    ending.value = false
+  }
+}
+
 // ─── HELPERS D'AFFICHAGE ──────────────────────────────────────────────────────
 
 function fmtDate(iso) {
@@ -134,7 +169,8 @@ onMounted(loadGames)
     <h1 class="page-title">Parties</h1>
     <p class="page-subtitle">
       Régler ce que les hôtes peuvent choisir, puis consulter et supprimer les
-      parties enregistrées. Supprimer une partie libère les personnages qu'elle utilisait.
+      parties enregistrées. Une partie bloquée (joueurs partis…) peut être terminée :
+      ses statistiques sont gardées. Supprimer une partie libère les personnages qu'elle utilisait.
     </p>
 
     <AdminGameControls />
@@ -169,6 +205,7 @@ onMounted(loadGames)
           <div class="game-head">
             <span class="badge" :class="`badge--${game.status}`">{{ STATUS_LABEL[game.status] || game.status }}</span>
             <span class="game-code">#{{ game.id }} · salon {{ game.room_code || '—' }}</span>
+            <span v-if="game.ended_by_admin" class="tag tag--admin-end">arrêtée par l'admin</span>
           </div>
           <div class="game-meta">
             <span><i class="fa-solid fa-users"></i> {{ game.players_count }}</span>
@@ -180,6 +217,9 @@ onMounted(loadGames)
             <button type="button" class="cabinet-btn cabinet-btn--sm" @click="toggleDetail(game)">
               <i class="fa-solid" :class="expanded === game.id ? 'fa-chevron-up' : 'fa-eye'"></i>
               {{ expanded === game.id ? 'Masquer' : 'Voir' }}
+            </button>
+            <button v-if="game.status === 'in_progress'" type="button" class="cabinet-btn cabinet-btn--warning cabinet-btn--sm" @click="askEnd(game)">
+              <i class="fa-solid fa-flag-checkered"></i> Fin de partie
             </button>
             <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" @click="askDelete(game)">
               <i class="fa-solid fa-trash"></i> Supprimer
@@ -246,6 +286,30 @@ onMounted(loadGames)
         </div>
       </li>
     </ul>
+
+    <BModal v-model="showEndConfirm" title="Fin de partie" no-footer class="arcade-modal">
+      <template v-if="endTarget">
+        <p class="text-center">
+          Terminer la partie <strong>#{{ endTarget.id }}</strong> (salon
+          {{ endTarget.room_code || '—' }}, {{ endTarget.players_count }} joueurs) ?
+        </p>
+        <ul class="end-consequences">
+          <li>les statistiques du moment sont enregistrées, <strong>sans gagnant</strong> ;</li>
+          <li>les joueurs voient la fin de partie et son récapitulatif ;</li>
+          <li>tous les membres sont retirés du salon, qui est fermé.</li>
+        </ul>
+        <p class="text-center small muted mb-0">La partie reste dans l'historique. Cette action est irréversible.</p>
+      </template>
+      <p v-if="error && showEndConfirm" class="text-center text-danger small mb-0 mt-2">{{ error }}</p>
+      <div class="text-center mt-3 btn-modal">
+        <button type="button" class="cabinet-btn cabinet-btn--warning cabinet-btn--sm" :disabled="ending" @click="confirmEnd">
+          <i class="fa-solid fa-flag-checkered"></i> {{ ending ? 'Fin en cours…' : 'Terminer la partie' }}
+        </button>
+        <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" :disabled="ending" @click="showEndConfirm = false">
+          Annuler
+        </button>
+      </div>
+    </BModal>
 
     <BModal v-model="showConfirm" title="Supprimer la partie" no-footer class="arcade-modal">
       <p v-if="confirmTarget" class="text-center">
@@ -407,7 +471,24 @@ onMounted(loadGames)
 
 .game-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* Fin de partie : action forte mais non destructive (or, pas rouge) */
+.cabinet-btn--warning {
+  background: var(--arcade-gold);
+  border-color: #a8740a;
+  color: #2b1b00;
+  box-shadow: 0 4px 0 #a8740a, 0 6px 10px rgba(0, 0, 0, 0.3);
+}
+.cabinet-btn--warning:hover { color: #2b1b00; }
+
+.end-consequences {
+  max-width: 420px;
+  margin: 0.5rem auto 0.75rem;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
 }
 
 .game-detail {
@@ -456,6 +537,7 @@ onMounted(loadGames)
 .tag--discovered { background: var(--arcade-success); color: #fff; }
 .tag--eliminated { background: var(--arcade-danger); color: #fff; }
 .tag--orphan { background: var(--arcade-blue-grey); color: #fff; }
+.tag--admin-end { background: var(--arcade-gold); color: var(--arcade-dark); }
 
 .round { margin-bottom: 0.6rem; }
 .round-label { font-weight: 700; font-size: 0.85rem; }

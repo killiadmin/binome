@@ -303,6 +303,7 @@ pub fn recap(c: &impl Q, env: &Env, game_id: i64) -> AppResult<Out> {
     };
     let avatars = avatar_urls(c, env, seated.iter().map(|s| s.pseudo.as_str()))?;
     let stats = game_stats(c, g.id)?;
+    let ended_by_admin: bool = c.one("SELECT ended_by_admin_at IS NOT NULL FROM games WHERE id = ?1", [g.id])?;
 
     let mut binomes: Vec<(i64, Vec<&Seat>)> = vec![];
     for s in &seated {
@@ -367,6 +368,7 @@ pub fn recap(c: &impl Q, env: &Env, game_id: i64) -> AppResult<Out> {
         "questions_count": questions.len(),
         "accusations_count": accusations.len(),
         "winners": stats.iter().filter(|s| s.is_winner).map(|s| s.player_pseudo.clone()).collect::<Vec<_>>(),
+        "ended_by_admin": ended_by_admin,
         "stats": by_score_desc(stats).iter().map(Stat::event_json).collect::<Vec<_>>(),
         "binomes": binomes_json,
         "exclusions": exclusions,

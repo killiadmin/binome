@@ -173,6 +173,22 @@ est bien hors ligne : connecté → `409`. Les mises à jour sont **conditionnel
 répond pile au moment où l'hôte passe son tour, un seul des deux l'emporte et le round n'avance
 qu'une fois (implémentation : `server/src/services/play.rs`).
 
+### Fin de partie décidée par l'administrateur
+
+Quand une partie ne peut plus aboutir (joueurs partis, hôte absent…), un administrateur la
+termine depuis l'onglet **Parties** (bouton « Fin de partie », `POST /admin/games/{game}/end`,
+partie `in_progress` seulement, vote des personnages compris ; sinon `409`) :
+
+- la partie se clôt **comme une fin normale** : rounds fermés, tirage de carte ouvert expiré,
+  statistiques du moment enregistrées dans `game_stats`, `game.ended` diffusé (personnages
+  révélés, récap disponible) — mais **sans gagnant**, donc sans bonus de victoire ;
+- elle est marquée `games.ended_by_admin_at` (migration 11), exposé en `ended_by_admin` dans
+  `game.ended`, le récap et les listes de parties : l'écran de fin affiche « Partie arrêtée »
+  au lieu de victoire / défaite, l'historique « Arrêtée par un administrateur » ;
+- **tous les membres du salon** (joueurs et spectateurs) en sont retirés et le salon est
+  supprimé ; `player.left` avec une liste vide renvoie à l'accueil ceux qui étaient restés
+  dans le salon. La partie, elle, reste dans l'historique (`room_id` à null, code gardé).
+
 ### Spectateurs
 
 Un joueur qui rejoint un salon dont la partie est déjà lancée n'a pas de personnage.

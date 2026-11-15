@@ -33,6 +33,7 @@ const ROUTES = {
     'GET /api/admin/games': ['Toutes les parties', 'admin'],
     'GET /api/admin/games/:game': ['Détail complet, personnages révélés', 'admin'],
     'DELETE /api/admin/games/:game': ['Supprimer une partie (cascade)', 'admin'],
+    'POST /api/admin/games/:game/end': ['Terminer une partie en cours : stats sans gagnant, `game.ended` (`ended_by_admin`), salon vidé et fermé (`player.left` sans joueur)', 'admin'],
     'GET /api/admin/players': ['Joueurs + stats + salon + `in_game` + `has_password` / `is_validated` / `admin_role`', 'admin'],
     'PATCH /api/admin/players/:player/admin': ['`{ admin }` : désigner / retirer un administrateur (propriétaire seulement, profil avec mot de passe)', 'admin'],
     'PATCH /api/admin/players/:player/validation': ['`{ validated }` : valider un profil (historique, emojis image)', 'admin'],
@@ -99,7 +100,7 @@ const ROUTES = {
 const EVENTS = {
     'player.joined': ['`room.{id}`', 'Un joueur rejoint le salon'],
     'player.ready': ['`room.{id}`', 'Bascule prêt'],
-    'player.left': ['`room.{id}`', 'Départ (+ `new_host_id` si l\'hôte part)'],
+    'player.left': ['`room.{id}`', 'Départ (+ `new_host_id` si l\'hôte part) ; liste vide = salon fermé par l\'admin'],
     'room.settings.updated': ['`room.{id}`', 'L\'hôte change les réglages'],
     'game.started': ['`room.{id}` + `game.{id}`', 'Lancement'],
     'player.avatar.updated': ['`room.{id}` de chaque salon du joueur + `game.{id}` en cours', 'Photo modifiée / retirée'],
@@ -118,7 +119,7 @@ const EVENTS = {
     'turn.skipped': ['`game.{id}`', 'Tour passé par l\'hôte (`reason`: `turn` | `accusation` | `draw`)'],
     'question.voted': ['`game.{id}`', 'Vote meilleure question (tous les votes du round)'],
     'reaction.sent': ['`game.{id}`', 'Réaction rapide (rien n\'est stocké)'],
-    'game.ended': ['`game.{id}`', 'Fin de partie : gagnants, stats, révélation complète'],
+    'game.ended': ['`game.{id}`', 'Fin de partie : gagnants, stats, révélation complète ; `ended_by_admin` si arrêtée depuis l\'administration (aucun gagnant)'],
     'chat.message': ['`lobby` (public)', 'Message du chat du hall'],
 }
 

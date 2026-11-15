@@ -17,6 +17,7 @@ import { controls } from './scenarios/controls.mjs'
 import { admins } from './scenarios/admins.mjs'
 import { ideas } from './scenarios/ideas.mjs'
 import { erasure } from './scenarios/erasure.mjs'
+import { adminEnd } from './scenarios/admin-end.mjs'
 
 const args = process.argv.slice(2)
 const opt = (name, fallback = null) => {
@@ -41,6 +42,7 @@ const SCENARIOS = {
     admins: (ctx) => admins(ctx),
     ideas: (ctx) => ideas(ctx),
     erasure: (ctx) => erasure(ctx),
+    adminEnd: (ctx) => adminEnd(ctx),
 }
 const selected = (opt('only') ?? Object.keys(SCENARIOS).join(',')).split(',')
 

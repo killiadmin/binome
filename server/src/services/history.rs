@@ -27,7 +27,8 @@ pub fn list_games(c: &impl Q, finished_only: bool) -> AppResult<Out> {
             "SELECT g.id, g.room_id, g.room_code, g.status, g.created_at, g.updated_at,
                     (SELECT COUNT(*) FROM binomes b WHERE b.game_id = g.id),
                     (SELECT COUNT(*) FROM rounds rd WHERE rd.game_id = g.id),
-                    (SELECT COUNT(*) FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id WHERE b.game_id = g.id)
+                    (SELECT COUNT(*) FROM binome_player bp JOIN binomes b ON b.id = bp.binome_id WHERE b.game_id = g.id),
+                    g.ended_by_admin_at IS NOT NULL
              FROM games g {filter}
              ORDER BY g.created_at DESC, g.id DESC"
         ),
@@ -44,11 +45,12 @@ pub fn list_games(c: &impl Q, finished_only: bool) -> AppResult<Out> {
                 r.get::<_, i64>(6)?,
                 r.get::<_, i64>(7)?,
                 r.get::<_, i64>(8)?,
+                r.get::<_, bool>(9)?,
             ))
         },
     )?;
     let mut out = vec![];
-    for (id, room_id, code, status, created, updated, binomes, rounds, players) in games {
+    for (id, room_id, code, status, created, updated, binomes, rounds, players, ended_by_admin) in games {
         let winners: Vec<String> = c.all("SELECT player_pseudo FROM game_stats WHERE game_id = ?1 AND is_winner = 1 ORDER BY id", [id], |r| r.get(0))?;
         out.push(json!({
             "id": id,
@@ -61,6 +63,8 @@ pub fn list_games(c: &impl Q, finished_only: bool) -> AppResult<Out> {
             "binomes_discovered_count": 0,
             "rounds_count": rounds,
             "winners": winners,
+            // Arrêtée depuis l'administration (migration 11) : pas de gagnant
+            "ended_by_admin": ended_by_admin,
             "created_at": clock::iso(created.as_deref()),
             "updated_at": clock::iso(updated.as_deref()),
         }));

@@ -1280,7 +1280,11 @@ async function handleGameEnded(data, {animate = true} = {}) {
   const iWasOrphan = !!myPseudo && orphanPseudos.value.has(myPseudo)
   const iWon = !!myPseudo && winnerPseudos.includes(myPseudo)
 
-  if (isSpectator.value) {
+  // Arrêtée depuis l'administration : ni victoire ni défaite, et le salon est fermé
+  if (data?.ended_by_admin || recap.value?.ended_by_admin) {
+    gameOverTitle.value = '🛑 Partie arrêtée'
+    gameOverMsg.value = "Un administrateur a mis fin à la partie : les scores du moment sont enregistrés, sans gagnant. Le salon est fermé."
+  } else if (isSpectator.value) {
     gameOverTitle.value = '🏁 Partie terminée'
     gameOverMsg.value = winnerPseudos.length
         ? `Victoire de ${winnerPseudos.join(' & ')} !`
