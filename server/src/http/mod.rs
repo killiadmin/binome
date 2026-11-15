@@ -703,6 +703,9 @@ async fn admin_game_destroy(State(st): State<AppState>, Path(p): Params, headers
     }
     st.write(move |tx, _| admin::destroy_game(tx, id(&p, "game")?)).await
 }
+async fn admin_game_end(State(st): State<AppState>, Path(p): Params) -> Response {
+    st.write(move |tx, _| admin::end_game(tx, id(&p, "game")?)).await
+}
 async fn admin_players(State(st): State<AppState>) -> Response {
     st.read(|c, env| admin::players_index(c, env)).await
 }
@@ -809,6 +812,7 @@ pub fn router(state: AppState) -> Router {
         .route("/characters/{character}/image", post(characters_image))
         .route("/admin/games", get(admin_games))
         .route("/admin/games/{game}", get(admin_game).delete(admin_game_destroy))
+        .route("/admin/games/{game}/end", post(admin_game_end))
         .route("/admin/players", get(admin_players))
         .route("/admin/players/{player}/room", axum::routing::delete(admin_player_room))
         .route("/admin/players/{player}", axum::routing::delete(admin_player_destroy))

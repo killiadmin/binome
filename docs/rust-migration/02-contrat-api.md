@@ -28,7 +28,7 @@
 
 ## Couverture
 
-86 routes ; 86 observées par le banc.
+87 routes ; 87 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -365,6 +365,7 @@ $.games[]                                        object
 $.games[].binomes_count                          int
 $.games[].binomes_discovered_count               int
 $.games[].created_at                             date:iso8601
+$.games[].ended_by_admin                         bool
 $.games[].id                                     int
 $.games[].players_count                          int
 $.games[].room_code                              null | string
@@ -465,6 +466,21 @@ Réponse `200` :
 ```
 $                                                object
 $.message                                        string
+```
+
+### `POST /api/admin/games/:game/end`
+
+Terminer une partie en cours : stats sans gagnant, `game.ended` (`ended_by_admin`), salon vidé et fermé (`player.left` sans joueur) — accès : admin
+
+Statuts observés : `200`, `403`, `404`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.game_id                                        int
+$.message                                        string
+$.removed_players                                int
 ```
 
 ### `GET /api/admin/players`
@@ -978,6 +994,7 @@ $.games[]                                        object
 $.games[].binomes_count                          int
 $.games[].binomes_discovered_count               int
 $.games[].created_at                             date:iso8601
+$.games[].ended_by_admin                         bool
 $.games[].id                                     int
 $.games[].players_count                          int
 $.games[].room_code                              null | string
@@ -1454,7 +1471,7 @@ $.current_round.number                           int
 $.draw_number                                    int
 $.game_id                                        int
 $.has_orphan                                     bool
-$.host_id                                        int
+$.host_id                                        int | null
 $.max_character_changes                          int
 $.players                                        array
 $.players[]                                      object
@@ -1540,6 +1557,7 @@ $.eliminations[].by                              string
 $.eliminations[].character                       string
 $.eliminations[].round                           int
 $.eliminations[].target                          string
+$.ended_by_admin                                 bool
 $.exclusions                                     array
 $.exclusions[]                                   object
 $.exclusions[].partner                           null | string

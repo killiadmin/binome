@@ -19,7 +19,7 @@ const PSEUDO_MESSAGES: &[(&str, &str)] = &[
     ("pseudo.max", "Le pseudo ne peut pas dépasser 20 caractères."),
 ];
 
-fn room_channel(id: i64) -> String {
+pub(crate) fn room_channel(id: i64) -> String {
     format!("room.{id}")
 }
 

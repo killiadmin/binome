@@ -26,8 +26,8 @@ const duration = computed(() => {
 const shareText = computed(() => {
   const r = props.recap
   const lines = [
-    `🎮 Binome — partie terminée${duration.value ? ` en ${duration.value}` : ''}`,
-    `🏆 ${r.winners.length ? r.winners.join(' & ') : 'Aucun vainqueur'}`,
+    `🎮 Binome — partie ${r.ended_by_admin ? 'arrêtée' : 'terminée'}${duration.value ? ` ${r.ended_by_admin ? 'après' : 'en'} ${duration.value}` : ''}`,
+    r.ended_by_admin ? '🛑 Arrêtée par un administrateur, sans vainqueur' : `🏆 ${r.winners.length ? r.winners.join(' & ') : 'Aucun vainqueur'}`,
     '',
     ...r.stats.map((s, i) =>
         `${['🥇', '🥈', '🥉'][i] ?? `#${i + 1}`} ${s.player_pseudo} (${s.character_name}) — ${s.score} pts`),

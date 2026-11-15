@@ -70,6 +70,12 @@ const ACCEPTED = [
     /^CHAMP EN TROP +GET \/api\/cosmos 200 +\$\.cosmos\[\]\.(description|image) /,
     /^NOUVEAU +(PUT|DELETE) \/api\/admin\/cosmos\/:cosmos\/sheet \d{3}$/,
     /^NOUVEAU +GET \/api\/cosmos-images\/:cosmos (200 \[binaire\]|404)$/,
+    // Fin de partie par l'administrateur (migration 11, 2026-11-15) : nouvelle route,
+    // `ended_by_admin` dans game.ended, le récap et les listes ; le salon étant fermé,
+    // l'état d'une telle partie a host_id null.
+    /^NOUVEAU +POST \/api\/admin\/games\/:game\/end \d{3}$/,
+    /^CHAMP EN TROP +(GET \/api\/(admin|history)\/games 200 +\$\.games\[\]|GET \/api\/games\/:game\/recap 200 +\$|event game\.ended @game +\$)\.ended_by_admin /,
+    /^TYPE +GET \/api\/games\/:game 200 +\$\.host_id: référence « int », obtenu « int \| null »$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

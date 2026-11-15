@@ -30,6 +30,15 @@ export const adminService = {
     },
 
     /**
+     * Termine une partie en cours (joueurs partis…) : stats du moment enregistrées
+     * sans gagnant, game.ended diffusé, tous les membres retirés du salon.
+     * POST /api/admin/games/{id}/end
+     */
+    endGame(id) {
+        return api.post(`/admin/games/${id}/end`)
+    },
+
+    /**
      * Joueurs inscrits (pseudo, parties jouées, victoires, salon actuel)
      * GET /api/admin/players
      */

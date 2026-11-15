@@ -31,7 +31,7 @@ qu'après l'avoir reçu. L'event `binome.discovered`, écouté par le front, n'e
 |---|---|---|---|
 | `player.joined` | `room.{id}` | Un joueur rejoint le salon | ✓ |
 | `player.ready` | `room.{id}` | Bascule prêt | ✓ |
-| `player.left` | `room.{id}` | Départ (+ `new_host_id` si l'hôte part) | ✓ |
+| `player.left` | `room.{id}` | Départ (+ `new_host_id` si l'hôte part) ; liste vide = salon fermé par l'admin | ✓ |
 | `room.settings.updated` | `room.{id}` | L'hôte change les réglages | ✓ |
 | `game.started` | `room.{id}` + `game.{id}` | Lancement | ✓ |
 | `player.avatar.updated` | `room.{id}` de chaque salon du joueur + `game.{id}` en cours | Photo modifiée / retirée | ✓ |
@@ -50,7 +50,7 @@ qu'après l'avoir reçu. L'event `binome.discovered`, écouté par le front, n'e
 | `turn.skipped` | `game.{id}` | Tour passé par l'hôte (`reason`: `turn` | `accusation` | `draw`) | ✓ |
 | `question.voted` | `game.{id}` | Vote meilleure question (tous les votes du round) | ✓ |
 | `reaction.sent` | `game.{id}` | Réaction rapide (rien n'est stocké) | ✓ |
-| `game.ended` | `game.{id}` | Fin de partie : gagnants, stats, révélation complète | ✓ |
+| `game.ended` | `game.{id}` | Fin de partie : gagnants, stats, révélation complète ; `ended_by_admin` si arrêtée depuis l'administration (aucun gagnant) | ✓ |
 | `chat.message` | `lobby` (public) | Message du chat du hall | ✓ |
 
 ## Payloads
@@ -371,6 +371,7 @@ $.all_binomes[].players[]                        object
 $.all_binomes[].players[].character              string
 $.all_binomes[].players[].pseudo                 string
 $.all_binomes[].universe                         string
+$.ended_by_admin                                 bool
 $.game_id                                        int
 $.stats                                          array
 $.stats[]                                        object

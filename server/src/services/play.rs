@@ -244,9 +244,12 @@ pub fn winners(seated: Vec<Seat>) -> Option<Vec<Seat>> {
     None
 }
 
-fn end_game(tx: &Transaction, game_id: i64, winners: &[Seat], events: &mut Events) -> AppResult<()> {
+/// Clôt la partie : stats enregistrées, rounds fermés, `game.ended` (tout est révélé).
+/// `by_admin` : arrêt décidé depuis l'administration (aucun gagnant, migration 11).
+pub(crate) fn end_game(tx: &Transaction, game_id: i64, winners: &[Seat], by_admin: bool, events: &mut Events) -> AppResult<()> {
     let now = now_db();
-    tx.run("UPDATE games SET status = 'finished', updated_at = ?1 WHERE id = ?2", (&now, game_id))?;
+    let stamp = by_admin.then_some(&now);
+    tx.run("UPDATE games SET status = 'finished', ended_by_admin_at = ?1, updated_at = ?2 WHERE id = ?3", (stamp, &now, game_id))?;
     tx.run("UPDATE rounds SET is_finished = 1, updated_at = ?1 WHERE game_id = ?2 AND is_finished = 0", (&now, game_id))?;
     let winner_ids: Vec<i64> = winners.iter().map(|w| w.player_id).collect();
     let mut stats = score::compute_and_store(tx, game_id, &winner_ids)?;
@@ -278,6 +281,7 @@ fn end_game(tx: &Transaction, game_id: i64, winners: &[Seat], events: &mut Event
             "winners": winners.iter().map(|w| json!({ "id": w.player_id, "pseudo": w.pseudo })).collect::<Vec<_>>(),
             "stats": stats.iter().map(score::Stat::event_json).collect::<Vec<_>>(),
             "all_binomes": binomes_json,
+            "ended_by_admin": by_admin,
         }),
     ));
     Ok(())
@@ -295,7 +299,7 @@ fn eliminate(tx: &Transaction, game_id: i64, target: &Player, by: &Player, event
         json!({ "eliminated_player": brief(target), "eliminated_by": brief(by) }),
     ));
     if let Some(winners) = check_game_over(tx, game_id)? {
-        end_game(tx, game_id, &winners, events)?;
+        end_game(tx, game_id, &winners, false, events)?;
     }
     Ok(())
 }
@@ -876,7 +880,7 @@ pub fn exclude(tx: &Transaction, env: &Env, game_id: i64, target_id: i64, input:
         }),
     )];
     if let Some(winners) = check_game_over(tx, g.id)? {
-        end_game(tx, g.id, &winners, &mut events)?;
+        end_game(tx, g.id, &winners, false, &mut events)?;
     } else if advance {
         if let Some(r) = &r {
             let fresh = round(tx, r.id)?.expect("round");

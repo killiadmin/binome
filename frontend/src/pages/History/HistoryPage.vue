@@ -238,6 +238,10 @@ onMounted(async () => {
             <i class="fa-solid fa-trophy"></i>
             {{ game.winners.join(', ') }}
           </p>
+          <p v-else-if="game.ended_by_admin" class="winners muted">
+            <i class="fa-solid fa-flag-checkered"></i>
+            Arrêtée par un administrateur, sans vainqueur
+          </p>
 
           <!-- Détail -->
           <div v-if="expandedGame === game.id" class="detail">

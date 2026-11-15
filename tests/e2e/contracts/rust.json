@@ -147,6 +147,7 @@
     "$.games[].binomes_count": "int",
     "$.games[].binomes_discovered_count": "int",
     "$.games[].created_at": "date:iso8601",
+    "$.games[].ended_by_admin": "bool",
     "$.games[].id": "int",
     "$.games[].players_count": "int",
     "$.games[].room_code": "null | string",
@@ -426,7 +427,7 @@
     "$.draw_number": "int",
     "$.game_id": "int",
     "$.has_orphan": "bool",
-    "$.host_id": "int",
+    "$.host_id": "int | null",
     "$.max_character_changes": "int",
     "$.players": "array",
     "$.players[]": "object",
@@ -510,6 +511,7 @@
     "$.eliminations[].character": "string",
     "$.eliminations[].round": "int",
     "$.eliminations[].target": "string",
+    "$.ended_by_admin": "bool",
     "$.exclusions": "array",
     "$.exclusions[]": "object",
     "$.exclusions[].partner": "null | string",
@@ -566,6 +568,7 @@
     "$.games[].binomes_count": "int",
     "$.games[].binomes_discovered_count": "int",
     "$.games[].created_at": "date:iso8601",
+    "$.games[].ended_by_admin": "bool",
     "$.games[].id": "int",
     "$.games[].players_count": "int",
     "$.games[].room_code": "null | string",
@@ -1038,6 +1041,24 @@
     "$.token": "string"
   },
   "POST /api/access/characters 422": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/admin/games/:game/end 200": {
+    "$": "object",
+    "$.game_id": "int",
+    "$.message": "string",
+    "$.removed_players": "int"
+  },
+  "POST /api/admin/games/:game/end 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/admin/games/:game/end 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/admin/games/:game/end 409": {
     "$": "object",
     "$.message": "string"
   },
@@ -1893,6 +1914,7 @@
     "$.all_binomes[].players[].character": "string",
     "$.all_binomes[].players[].pseudo": "string",
     "$.all_binomes[].universe": "string",
+    "$.ended_by_admin": "bool",
     "$.game_id": "int",
     "$.stats": "array",
     "$.stats[]": "object",

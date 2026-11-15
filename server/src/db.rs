@@ -32,6 +32,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (8, include_str!("../migrations/0008_boite_a_idees.sql")),
     (9, include_str!("../migrations/0009_effacement.sql")),
     (10, include_str!("../migrations/0010_fiches_univers.sql")),
+    (11, include_str!("../migrations/0011_fin_par_admin.sql")),
 ];
 const READERS: usize = 4;
 
@@ -294,7 +295,9 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 10);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 11);
+            // Migration 11 : les parties existantes ne sont pas marquées « arrêtées par l'admin »
+            assert_eq!(c.one::<Option<String>>("SELECT ended_by_admin_at FROM games WHERE id = 41", [])?, None);
             // Migration 10 : fiche rédigée pour Disney, aucune pour les autres, sans image
             assert!(c.one::<Option<String>>("SELECT description FROM cosmos WHERE slug = 'disney'", [])?.is_some_and(|d| d.contains("Pixar")));
             assert_eq!(c.one::<Option<String>>("SELECT description FROM cosmos WHERE slug = 'pixar'", [])?, None);
@@ -325,7 +328,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 10"));
+        assert!(db.check().unwrap().contains("version du schéma : 11"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
