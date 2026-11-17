@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { characterService } from '../../services/characterService'
+import { adminService } from '../../services/adminService'
 import { BContainer, BFormInput, BFormSelect, BModal } from 'bootstrap-vue-next'
 import ImageCropperModal from '../../components/cropper/ImageCropperModal.vue'
 import ImageDropzone from '../../components/cropper/ImageDropzone.vue'
@@ -20,7 +21,7 @@ const success = ref(null)
 
 // Les filtres sont mémorisés dans le navigateur (simple confort : la page marche sans).
 const FILTERS_STORAGE_KEY = 'characterListFilters'
-const DEFAULT_STATUS_FILTER = { validated: true, pending: true, rejected: false }
+const DEFAULT_STATUS_FILTER = { validated: true, pending: true, inactive: false }
 
 function readSavedFilters() {
   try {
@@ -65,19 +66,44 @@ function toggleCosmosFilter(value) {
     : [...excludedCosmos.value, value]
 }
 
-// 'validated' (relu + non masqué) | 'pending' (proposé, pas encore relu) | 'rejected' (binôme refusé)
+// Binômes désactivés par l'admin (table disabled_binomes, partagée avec les
+// interrupteurs de l'onglet Parties), clé `univers-niveau`.
+const disabledBinomes = ref(new Set())
+// Binômes complets et validés (ceux qu'on peut désactiver / réactiver).
+const switchableBinomes = ref(new Set())
+
+function binomeKey(universeId, level) {
+  return `${universeId}-${level}`
+}
+
+function isBinomeDisabled(c) {
+  return disabledBinomes.value.has(binomeKey(c.universe_id, c.level_affectation))
+}
+
+// Inactif = proposition refusée (`hidden`) ou binôme désactivé : jamais tiré en partie.
+function isInactive(c) {
+  return c.hidden || isBinomeDisabled(c)
+}
+
+// 'validated' (relu, jouable) | 'pending' (proposé, pas encore relu) | 'inactive' (binôme inactif)
 function characterStatus(c) {
+  if (isInactive(c)) return 'inactive'
+  return c.verif_manual ? 'validated' : 'pending'
+}
+
+// Statut tel que le serveur le connaît (modale d'édition) : 'rejected' = masqué.
+function serverStatus(c) {
   if (c.hidden) return 'rejected'
   return c.verif_manual ? 'validated' : 'pending'
 }
 
-// Nombre de niveaux d'affectation distincts par univers (personnages refusés exclus),
+// Nombre de niveaux d'affectation distincts par univers (binômes inactifs exclus),
 // calculé sur tous les personnages pour ne pas varier avec les autres filtres.
 const levelCountByUniverse = computed(() => {
   const levels = new Map()
   for (const c of characters.value) {
     if (!levels.has(c.universe_id)) levels.set(c.universe_id, new Set())
-    if (!c.hidden) levels.get(c.universe_id).add(c.level_affectation)
+    if (!isInactive(c)) levels.get(c.universe_id).add(c.level_affectation)
   }
   return new Map([...levels].map(([id, set]) => [id, set.size]))
 })
@@ -92,7 +118,7 @@ const activeLevelCounts = computed(() =>
 )
 
 function levelCountLabel(n) {
-  if (n === 0) return '0 niveau (tout refusé)'
+  if (n === 0) return '0 niveau (tout inactif)'
   return `${n} niveau${n > 1 ? 'x' : ''}`
 }
 
@@ -176,7 +202,7 @@ function groupByLevel(chars) {
   return [...byLevel.entries()]
     .sort(([a], [b]) => a - b)
     .map(([level, levelCharacters]) => {
-      // Un binôme refusé ne compte pas comme binôme actif.
+      // Un personnage masqué (proposition refusée) ne compte pas dans le binôme.
       const activeCount = levelCharacters.filter(c => !c.hidden).length
       return {
         level,
@@ -184,6 +210,11 @@ function groupByLevel(chars) {
         // Toléré (le jeu en tire 2 au hasard) mais probablement une erreur d'affectation.
         overfullCount: activeCount > 2 ? activeCount : 0,
         rejectedIds: levelCharacters.filter(c => c.hidden).map(c => c.id),
+        universeId: levelCharacters[0].universe_id,
+        universeName: levelCharacters[0].universe_name,
+        // Binôme complet et validé : désactivable (ou réactivable s'il est désactivé).
+        switchable: switchableBinomes.value.has(binomeKey(levelCharacters[0].universe_id, level)),
+        disabled: disabledBinomes.value.has(binomeKey(levelCharacters[0].universe_id, level)),
         characters: [...levelCharacters].sort((a, b) => a.name.localeCompare(b.name)),
       }
     })
@@ -197,8 +228,50 @@ async function restoreRejected(group) {
     success.value = 'Binôme remis en validation : corrige-le puis valide-le depuis « binômes à valider ».'
     await loadCharacters()
     await loadPendingBinomes()
+    await loadBinomeStates()
   } catch (e) {
     error.value = e.response?.data?.message || 'Erreur lors de la remise en validation.'
+  }
+}
+
+// ─── ACTIVATION DES BINÔMES ───────────────────────────────────────────────────
+
+const binomeBusy = ref(null)
+
+async function loadBinomeStates() {
+  try {
+    const { data } = await adminService.getSettings()
+    switchableBinomes.value = new Set(data.binomes.map(b => binomeKey(b.universe_id, b.level_affectation)))
+    disabledBinomes.value = new Set(
+      data.binomes.filter(b => !b.is_enabled).map(b => binomeKey(b.universe_id, b.level_affectation)),
+    )
+  } catch {
+    // Sans cet état, la liste reste utilisable : seuls les boutons manquent.
+    switchableBinomes.value = new Set()
+    disabledBinomes.value = new Set()
+  }
+}
+
+async function toggleBinome(group) {
+  const key = binomeKey(group.universeId, group.level)
+  if (binomeBusy.value) return
+  binomeBusy.value = key
+  error.value = null
+  success.value = null
+  try {
+    const { data } = await adminService.setBinome(group.universeId, group.level, group.disabled)
+    const next = new Set(disabledBinomes.value)
+    if (data.binome.is_enabled) next.delete(key)
+    else next.add(key)
+    disabledBinomes.value = next
+    success.value = data.binome.is_enabled
+      ? `Binôme ${group.universeName} (niveau ${group.level}) réactivé : il peut de nouveau être tiré.`
+      : `Binôme ${group.universeName} (niveau ${group.level}) inactif : il ne sera plus tiré.`
+        + (statusFilter.inactive ? '' : ' Coche « Binômes inactifs » pour le retrouver.')
+  } catch (e) {
+    error.value = e.response?.data?.message || "Erreur lors du changement d'état du binôme."
+  } finally {
+    binomeBusy.value = null
   }
 }
 
@@ -249,7 +322,7 @@ const editSelectedUniverse = computed(
 const editStatusOptions = [
   { value: 'validated', text: 'Validé (jouable)' },
   { value: 'pending', text: 'À valider' },
-  { value: 'rejected', text: 'Binôme refusé' },
+  { value: 'rejected', text: 'Binôme inactif (à repêcher)' },
 ]
 
 // Personnages actifs déjà au niveau visé dans l'univers visé : simple indication,
@@ -279,7 +352,7 @@ function openEditModal(character) {
   editName.value = character.name
   editForbiddenWords.value = [...character.forbidden_words]
   editLevelAffectation.value = character.level_affectation
-  editStatus.value = characterStatus(character)
+  editStatus.value = serverStatus(character)
   editOriginalStatus.value = editStatus.value
   editImageFile.value = null
   editImagePreview.value = null
@@ -348,6 +421,7 @@ const handleUpdateCharacter = async () => {
     await loadUniverses()
     await loadCharacters()
     await loadPendingBinomes()
+    await loadBinomeStates()
   } catch (e) {
     editError.value = e.response?.data?.message || 'Erreur lors de la modification du personnage.'
   } finally {
@@ -373,6 +447,7 @@ const handleDeleteCharacter = async () => {
 
     await loadUniverses()
     await loadCharacters()
+    await loadBinomeStates()
   } catch (e) {
     deleteError.value = e.response?.data?.message || 'Erreur lors de la suppression du personnage.'
   } finally {
@@ -440,6 +515,7 @@ function advanceValidation() {
     validationIndex.value = 0
     loadCharacters()
     loadUniverses()
+    loadBinomeStates()
   } else {
     validationIndex.value += 1
   }
@@ -612,6 +688,7 @@ onMounted(() => {
   loadUniverses()
   loadCosmos()
   loadPendingBinomes({ openIfAny: true })
+  loadBinomeStates()
 })
 </script>
 
@@ -667,7 +744,7 @@ onMounted(() => {
               <input type="checkbox" v-model="statusFilter.pending" /> À valider
             </label>
             <label class="filter-check">
-              <input type="checkbox" v-model="statusFilter.rejected" /> Binômes refusés
+              <input type="checkbox" v-model="statusFilter.inactive" /> Binômes inactifs
             </label>
           </div>
         </div>
@@ -742,14 +819,31 @@ onMounted(() => {
                 <span v-if="group.overfullCount" class="word-badge word-badge--warning" title="Le jeu en tirera 2 au hasard">
                   <i class="fa-solid fa-triangle-exclamation"></i> {{ group.overfullCount }} persos
                 </span>
-                <button
-                    v-if="group.rejectedIds.length"
-                    type="button"
-                    class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm binome-group__restore"
-                    @click="restoreRejected(group)"
-                >
-                  <i class="fa-solid fa-rotate-left"></i> Remettre à valider
-                </button>
+                <span v-if="group.disabled" class="word-badge word-badge--rejected">
+                  <i class="fa-solid fa-power-off"></i> Inactif
+                </span>
+                <div v-if="group.rejectedIds.length || group.switchable" class="binome-group__actions">
+                  <button
+                      v-if="group.switchable"
+                      type="button"
+                      class="cabinet-btn cabinet-btn--sm"
+                      :class="{ 'cabinet-btn--ghost': !group.disabled }"
+                      :disabled="binomeBusy === binomeKey(group.universeId, group.level)"
+                      :title="group.disabled ? 'Le binôme pourra de nouveau être tiré en partie' : 'Le binôme ne sera plus tiré en partie'"
+                      @click="toggleBinome(group)"
+                  >
+                    <i class="fa-solid" :class="group.disabled ? 'fa-play' : 'fa-power-off'"></i>
+                    {{ group.disabled ? 'Réactiver' : 'Désactiver' }}
+                  </button>
+                  <button
+                      v-if="group.rejectedIds.length"
+                      type="button"
+                      class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm"
+                      @click="restoreRejected(group)"
+                  >
+                    <i class="fa-solid fa-rotate-left"></i> Remettre à valider
+                  </button>
+                </div>
               </div>
 
               <div class="character-row" v-for="character in group.characters" :key="character.id">
@@ -761,7 +855,7 @@ onMounted(() => {
                   <div class="character-row__name">
                     {{ character.name }}
                     <span v-if="character.hidden" class="word-badge word-badge--rejected">
-                      <i class="fa-solid fa-xmark"></i> binôme refusé
+                      <i class="fa-solid fa-xmark"></i> binôme inactif
                     </span>
                     <span v-else-if="character.verif_manual === false" class="word-badge word-badge--pending">
                       <i class="fa-solid fa-hourglass-half"></i> à valider
@@ -860,7 +954,8 @@ onMounted(() => {
           <label class="form-label">Statut :</label>
           <BFormSelect v-model="editStatus" :options="editStatusOptions" />
           <small class="form-text text-muted">
-            Un binôme refusé peut être repêché ici. « Validé » exige une image.
+            Un binôme inactif (refusé à la validation) peut être repêché ici. « Validé » exige une image.
+            Pour retirer du jeu un binôme validé, utilise plutôt son bouton « Désactiver ».
           </small>
         </div>
 
@@ -942,8 +1037,8 @@ onMounted(() => {
 
             <p class="text-center text-muted validation-hint">
               Tu peux corriger les mots interdits ici avant d'accepter. En acceptant, tu devras
-              importer une image pour chacun des 2 personnages. Un binôme refusé ne te sera plus reproposé
-              (tu pourras le repêcher depuis la liste, filtre « Binômes refusés »).
+              importer une image pour chacun des 2 personnages. Un binôme refusé devient inactif et ne te sera
+              plus reproposé (tu pourras le repêcher depuis la liste, filtre « Binômes inactifs »).
             </p>
 
             <div class="text-center mt-3 btn-modal">
@@ -1025,6 +1120,14 @@ onMounted(() => {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.6rem;
+}
+
+/* Même largeur que les cartes (filtres, cosmos) : sans elle, le bandeau
+   prenait toute la largeur du container et débordait des cartes. */
+.arcade-alert {
+  max-width: 760px;
+  margin: 0 auto 1rem;
+  overflow-wrap: anywhere;
 }
 
 .arcade-alert--success {
@@ -1120,8 +1223,11 @@ onMounted(() => {
   vertical-align: middle;
 }
 
-.binome-group__restore {
+.binome-group__actions {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .word-badge--lonely {

@@ -302,7 +302,7 @@ fn list_row(env: &Env, r: &rusqlite::Row) -> rusqlite::Result<Value> {
     }))
 }
 
-/// GET /characters — tout le catalogue (refusés compris : le front les filtre), sans data URI.
+/// GET /characters — tout le catalogue (inactifs compris : le front les filtre), sans data URI.
 pub fn characters_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let list = c.all(
         &format!(
@@ -392,13 +392,13 @@ pub fn reject(tx: &Transaction, input: &Input) -> AppResult<Out> {
     for id in &ids {
         tx.run("UPDATE characters SET hidden = 1, updated_at = ?1 WHERE id = ?2", (&now, id))?;
     }
-    Ok(Out::ok(json!({ "message": "Binôme refusé.", "rejected_ids": ids })))
+    Ok(Out::ok(json!({ "message": "Binôme refusé : il passe en inactif.", "rejected_ids": ids })))
 }
 
 pub fn restore(tx: &Transaction, input: &Input) -> AppResult<Out> {
     let ids = ids_where(tx, &ids_field(input)?, "hidden = 1")?;
     if ids.is_empty() {
-        return Err(AppError::unprocessable("Aucun personnage refusé pour ces identifiants."));
+        return Err(AppError::unprocessable("Aucun personnage inactif pour ces identifiants."));
     }
     let now = now_db();
     for id in &ids {

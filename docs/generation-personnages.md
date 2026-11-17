@@ -82,7 +82,7 @@ Le fichier est conservé comme trace ; l'import restant idempotent, le relancer 
 ## Commandes
 
 ```bash
-# Lister l'existant avant de générer (refusés et « à valider » compris)
+# Lister l'existant avant de générer (« [inactif] » et « [à valider] » compris)
 docker exec binome /binome list-characters
 
 # Importer un lot

@@ -37,10 +37,10 @@ const CONTEXT = `CONTEXTE
 - Commande d'import : docker exec binome /binome import-characters /import/<fichier>.json
 - Les personnages importés arrivent en verif_manual=false → je les valide ensuite un par un
   dans la popup de /admin/binomes (relecture + correction des mots interdits + import des images).
-- L'import est idempotent (clé = univers + nom) et ignore automatiquement les personnages déjà refusés.`
+- L'import est idempotent (clé = univers + nom) et ignore automatiquement les personnages déjà refusés (marqués [inactif]).`
 
 const BEFORE = `AVANT DE GÉNÉRER
-- Liste d'abord TOUS les personnages déjà en base, y compris les refusés, pour ne rien reproposer :
+- Liste d'abord TOUS les personnages déjà en base, y compris les inactifs ([inactif]), pour ne rien reproposer :
   ${CMD_LIST}`
 
 const AFTER = `ENSUITE
@@ -124,7 +124,7 @@ RAPPEL
 })
 
 const commands = [
-  { id: 'list', title: 'Lister l\'existant (inclut les refusés)', text: CMD_LIST },
+  { id: 'list', title: 'Lister l\'existant (inclut les inactifs)', text: CMD_LIST },
   { id: 'import', title: 'Importer un lot', text: CMD_IMPORT },
   { id: 'pending', title: 'Compter les binômes en attente', text: CMD_PENDING },
 ]

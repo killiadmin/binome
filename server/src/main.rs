@@ -4,7 +4,7 @@
 //!   binome [serve]                        serveur (défaut)
 //!   binome healthcheck                    sonde HTTP pour Docker (image sans shell ni curl)
 //!   binome import-characters <fichier.json> [--images-dir D] [--skip-existing]
-//!   binome list-characters                catalogue complet (refusés compris)
+//!   binome list-characters                catalogue complet (inactifs compris)
 //!   binome count-pending                  binômes en attente de validation
 //!   binome hash-password [--admin] [--iterations N]
 //!                                         empreinte du mot de passe de suppression, ou

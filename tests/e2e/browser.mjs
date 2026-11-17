@@ -186,6 +186,29 @@ try {
     }))
     const sessions = await Promise.all(pages.map((p) => p.evaluate(() => localStorage.getItem('session'))))
     ok(sessions.every((s) => s === null), 'retour à l\'accueil : plus de session de salon chez les 4 joueurs')
+    // ── Onglet Binômes : bouton « Désactiver » / « Réactiver » par binôme ─────
+    // La popup « Binômes à valider » s'ouvre d'elle-même s'il y en a (base copiée
+    // du service) et ne se ferme pas : clics par dispatchEvent, sous la popup.
+    await admin.goto(`${base}/admin/binomes`)
+    const disableBtn = admin.locator('.binome-group__actions button', { hasText: 'Désactiver' }).first()
+    await disableBtn.waitFor({ state: 'attached', timeout: 8000 })
+    const binomesWidth = await admin.evaluate(() => document.documentElement.scrollWidth)
+    await disableBtn.dispatchEvent('click')
+    const flashMsg = admin.locator('.arcade-alert--success', { hasText: 'inactif' })
+    await flashMsg.waitFor({ state: 'attached', timeout: 8000 })
+    const label = (await flashMsg.textContent()).match(/Binôme (.+) \(niveau (\d+)\)/)
+    const settingsOff = await ctx.api.get('/admin/settings', { admin: true, expect: 200 })
+    const off = settingsOff.data.binomes.find((b) => b.universe_name === label[1] && b.level_affectation === Number(label[2]))
+    await admin.locator('.filter-check', { hasText: 'Binômes inactifs' }).locator('input').dispatchEvent('click')
+    const reactivateBtn = admin.locator('.binome-group__actions button', { hasText: 'Réactiver' }).first()
+    await reactivateBtn.waitFor({ state: 'attached', timeout: 8000 })
+    await reactivateBtn.dispatchEvent('click')
+    await admin.locator('.arcade-alert--success', { hasText: 'réactivé' }).waitFor({ state: 'attached', timeout: 8000 })
+    const settingsOn = await ctx.api.get('/admin/settings', { admin: true, expect: 200 })
+    const on = settingsOn.data.binomes.find((b) => b.universe_id === off?.universe_id && b.level_affectation === off?.level_affectation)
+    ok(off?.is_enabled === false && on?.is_enabled === true && binomesWidth <= 320,
+        `admin : un binôme se désactive puis se réactive depuis l'onglet Binômes (${label[1]} niv. ${label[2]}, ${binomesWidth} px)`)
+
     await admin.goto(`${base}/admin/players`)
     await admin.locator('.player-status').first().waitFor({ timeout: 8000 })
     const playersWidth = await admin.evaluate(() => document.documentElement.scrollWidth)

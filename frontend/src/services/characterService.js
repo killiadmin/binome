@@ -123,7 +123,7 @@ export const characterService = {
     },
 
     /**
-     * Refuser un binôme proposé (masqué définitivement, jamais reproposé)
+     * Refuser un binôme proposé : il devient inactif (masqué, jamais reproposé)
      * POST /api/characters/validation/reject
      */
     rejectBinome(characterIds) {
@@ -131,7 +131,7 @@ export const characterService = {
     },
 
     /**
-     * Repêcher un binôme refusé : il redevient une proposition à valider
+     * Repêcher un binôme inactif (refusé) : il redevient une proposition à valider
      * POST /api/characters/validation/restore
      */
     restoreBinome(characterIds) {

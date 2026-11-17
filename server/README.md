@@ -26,7 +26,7 @@ Sous-commandes du binaire :
 binome serve                                   # défaut
 binome healthcheck                             # pour Docker (image sans shell)
 binome import-characters <f.json> [--images-dir D] [--skip-existing]
-binome list-characters                         # catalogue complet, refusés compris
+binome list-characters                         # catalogue complet, inactifs compris
 binome count-pending                           # binômes en attente de validation
 binome backup <fichier.sqlite>                 # copie cohérente, serveur en marche
 binome check                                   # intégrité, version du schéma, volumes (BINOME_DATABASE)

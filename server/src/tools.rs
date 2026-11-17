@@ -1,7 +1,7 @@
 //! Outils en ligne de commande pour le catalogue de personnages (flux décrit dans
 //! docs/generation-personnages.md et la page admin « Prompts ») :
 //! - `import-characters` : import de personnages en masse (propositions à valider) ;
-//! - `list-characters`   : tout le catalogue, refusés compris (avant de générer un lot) ;
+//! - `list-characters`   : tout le catalogue, inactifs compris (avant de générer un lot) ;
 //! - `count-pending`     : nombre de binômes en attente de validation.
 //!
 //! Et `prune-rooms` : nettoyage des adhésions de salon mortes ; `prune-players` :
@@ -166,19 +166,24 @@ pub fn import_characters(db: &Db, file: &Path, images_dir: Option<&str>, skip_ex
     })
 }
 
-/// `Univers / Nom`, suivi de « [refusé] » ou « [à valider] », trié par univers puis nom.
+/// `Univers / Nom`, suivi de « [inactif] » (proposition refusée ou binôme désactivé
+/// par l'admin) ou « [à valider] », trié par univers puis nom.
 pub fn list_characters(db: &Db) -> AppResult<String> {
     db.with_writer(|conn| {
         let rows = conn.all(
-            "SELECT u.name, c.name, c.hidden, c.verif_manual FROM characters c JOIN universes u ON u.id = c.universe_id
+            "SELECT u.name, c.name,
+                    c.hidden OR EXISTS (SELECT 1 FROM disabled_binomes db
+                                        WHERE db.universe_id = c.universe_id AND db.level_affectation = c.level_affectation),
+                    c.verif_manual
+             FROM characters c JOIN universes u ON u.id = c.universe_id
              ORDER BY u.name, c.name",
             [],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?)),
         )?;
         Ok(rows
             .iter()
-            .map(|(u, n, hidden, verified)| {
-                let state = if *hidden { " [refusé]" } else if !verified { " [à valider]" } else { "" };
+            .map(|(u, n, inactive, verified)| {
+                let state = if *inactive { " [inactif]" } else if !verified { " [à valider]" } else { "" };
                 format!("{u} / {n}{state}")
             })
             .collect::<Vec<_>>()
