@@ -11,7 +11,7 @@ use crate::http::input::{Input, V};
 use crate::realtime::hub::Event;
 use crate::services::common::*;
 use crate::services::profile;
-use crate::services::{Events, Out};
+use crate::services::{Events, Followup, Out};
 
 const PSEUDO_MESSAGES: &[(&str, &str)] = &[
     ("pseudo.required", "Le pseudo est requis."),
@@ -142,7 +142,7 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) -> 
     let (pseudo, room) = (pseudo.expect("validé"), room.expect("validé"));
 
     if room.is_locked {
-        return Err(AppError::forbidden("Ce salon est verrouillé."));
+        return Err(AppError::forbidden("Ce salon est verrouillé : l'hôte n'accepte plus de nouveaux joueurs."));
     }
     let count: i64 = tx.one("SELECT COUNT(*) FROM room_player WHERE room_id = ?1", [room.id])?;
     if count >= room.max_players {
@@ -276,6 +276,74 @@ pub fn settings(tx: &Transaction, room_id: i64, input: &Input) -> AppResult<Out>
     let mut response = json!({ "message": "Configuration mise à jour." });
     response.as_object_mut().expect("objet").extend(body.as_object().expect("objet").clone());
     Ok(Out::ok(response).event(Event::on(room_channel(room.id), "room.settings.updated", body)))
+}
+
+/// PATCH /rooms/{room}/lock — hôte : verrouille / déverrouille l'entrée du salon.
+/// Verrouillé, `POST /rooms/join` est refusé (403) ; les membres restent.
+pub fn lock(tx: &Transaction, room_id: i64, input: &Input) -> AppResult<Out> {
+    let room = room_or_404(tx, room_id)?;
+    let mut v = V::new(input);
+    let pid = v.player(tx, "player_id")?;
+    let locked = v.req_bool("is_locked");
+    v.finish()?;
+    let (pid, locked) = (pid.expect("validé"), locked.expect("validé"));
+    if room.created_by != pid {
+        return Err(AppError::forbidden("Seul l'hôte peut verrouiller le salon."));
+    }
+    if locked != room.is_locked {
+        tx.run("UPDATE rooms SET is_locked = ?1, updated_at = ?2 WHERE id = ?3", (locked, now_db(), room.id))?;
+    }
+    Ok(Out::ok(json!({
+        "message": if locked { "Salon verrouillé : plus personne ne peut entrer." } else { "Salon déverrouillé." },
+        "is_locked": locked,
+    }))
+    .event(Event::on(room_channel(room.id), "room.lock.updated", json!({ "is_locked": locked }))))
+}
+
+/// POST /rooms/{room}/players/{player}/kick — hôte : retire un joueur du salon.
+/// Il peut revenir avec le code, sauf si l'hôte verrouille le salon. Un joueur
+/// qui a une place dans la partie en cours s'exclut depuis la partie
+/// (`play::exclude`), pas d'ici.
+pub fn kick(tx: &Transaction, env: &Env, room_id: i64, target_id: i64, input: &Input) -> AppResult<Out> {
+    let room = room_or_404(tx, room_id)?;
+    let target = player_or_404(tx, target_id)?;
+    let mut v = V::new(input);
+    let pid = v.player(tx, "player_id")?;
+    v.finish()?;
+    let host = player_or_404(tx, pid.expect("validé"))?;
+    if room.created_by != host.id {
+        return Err(AppError::forbidden("Seul l'hôte peut exclure un joueur du salon."));
+    }
+    if target.id == host.id {
+        return Err(AppError::rule("Tu ne peux pas t'exclure toi-même."));
+    }
+    if !is_member(tx, room.id, target.id)? {
+        return Err(AppError::rule(format!("{} n'est pas dans ce salon.", target.pseudo)));
+    }
+    let game_id = current_game_id(tx, room.id)?;
+    if let Some(g) = game_id {
+        if has_seat(tx, g, target.id)? {
+            return Err(AppError::rule(format!(
+                "{} joue la partie en cours : exclus-le depuis la partie s'il est déconnecté, ou attends la fin.",
+                target.pseudo
+            )));
+        }
+    }
+    // L'hôte reste : le salon ne se vide pas et ne change pas d'hôte.
+    tx.run("DELETE FROM room_player WHERE room_id = ?1 AND player_id = ?2", [room.id, target.id])?;
+    let players = players_payload(tx, env, room.id)?;
+    let data = json!({ "player": brief(&target), "kicked_by": brief(&host), "players": players });
+
+    // Le salon l'apprend (l'exclu y est encore abonné à cet instant) ; son canal
+    // privé prévient aussi la page de partie s'il regardait en spectateur.
+    let mut out = Out::ok(json!({ "message": format!("{} a été exclu du salon.", target.pseudo), "players": players }))
+        .event(Event::on(room_channel(room.id), "player.kicked", data.clone()))
+        .event(Event::on(format!("player.{}", target.id), "room.kicked", json!({ "room_id": room.id, "kicked_by": brief(&host) })));
+    out.followups.push(Followup::Evict { channel: room_channel(room.id), player_id: target.id });
+    if let Some(g) = game_id {
+        out.followups.push(Followup::Evict { channel: crate::services::game::game_channel(g), player_id: target.id });
+    }
+    Ok(out)
 }
 
 /// Retire un joueur du salon (`Room::removePlayer`) : salon supprimé s'il se

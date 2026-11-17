@@ -28,7 +28,7 @@
 
 ## Couverture
 
-87 routes ; 87 observées par le banc.
+89 routes ; 89 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -1422,6 +1422,39 @@ Réponse `200` :
 ```
 $                                                object
 $.message                                        string
+```
+
+### `PATCH /api/rooms/:room/lock`
+
+`{ player_id, is_locked }` : verrouiller / déverrouiller l'entrée (`POST /rooms/join` → `403`) ; `room.lock.updated` — accès : hôte
+
+Statuts observés : `200`, `401`, `403`, `404`, `422`
+
+Réponse `200` :
+
+```
+$                                                object
+$.is_locked                                      bool
+$.message                                        string
+```
+
+### `POST /api/rooms/:room/players/:player/kick`
+
+Exclure un joueur du salon (`409` s'il joue la partie en cours) : `player.kicked`, `room.kicked` à l'exclu, désabonné du salon et de la partie — accès : hôte
+
+Statuts observés : `200`, `403`, `404`, `409`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.players                                        array
+$.players[]                                      object
+$.players[].avatar_url                           null
+$.players[].id                                   int
+$.players[].is_ready                             int
+$.players[].pseudo                               string
 ```
 
 ### `GET /api/games/:game`

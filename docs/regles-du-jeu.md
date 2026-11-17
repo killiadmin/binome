@@ -189,6 +189,26 @@ partie `in_progress` seulement, vote des personnages compris ; sinon `409`) :
   supprimé ; `player.left` avec une liste vide renvoie à l'accueil ceux qui étaient restés
   dans le salon. La partie, elle, reste dans l'historique (`room_id` à null, code gardé).
 
+### Modération du salon par l'hôte : verrou et exclusion
+
+Depuis le lobby, l'hôte (et lui seul, `403` sinon) dispose de deux outils :
+
+- **Verrouiller le salon** (`PATCH /rooms/{room}/lock`, `{ player_id, is_locked }`, colonne
+  `rooms.is_locked` présente depuis le schéma initial) : tant qu'il est verrouillé,
+  `POST /rooms/join` est refusé (`403` « Ce salon est verrouillé… »). Les membres restent, la
+  partie peut être lancée ; un joueur qui recharge sa page ou se reconnecte n'est pas concerné
+  (il ne repasse pas par `join`). L'état est diffusé par `room.lock.updated` et renvoyé par
+  `GET /rooms/{room}` (`is_locked`). Le verrou est gardé si l'hôte change.
+- **Exclure un joueur** (`POST /rooms/{room}/players/{player}/kick`, `{ player_id }`) : il est
+  retiré du salon (son profil, lui, est gardé). Tout le salon reçoit `player.kicked` (l'exclu
+  compris, qui revient à l'accueil du hall), l'exclu reçoit aussi `room.kicked` sur son canal
+  privé, puis **le serveur le désabonne** de `room.{id}` — et de `game.{id}` s'il regardait la
+  partie en spectateur : l'autorisation n'étant vérifiée qu'à l'abonnement, il continuerait
+  sinon à recevoir les events. Il peut **revenir avec le code** tant que le salon est ouvert :
+  pour un joueur indésirable, l'hôte exclut **et** verrouille (bouton « Exclure et verrouiller »).
+  Refusé (`409`) pour soi-même, pour un joueur absent du salon, et pour un joueur qui a une place
+  dans la partie en cours : celui-là s'exclut depuis la partie s'il est déconnecté (ci-dessus).
+
 ### Spectateurs
 
 Un joueur qui rejoint un salon dont la partie est déjà lancée n'a pas de personnage.

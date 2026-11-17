@@ -648,7 +648,7 @@ onMounted(async () => {
   resetEcho()
   const {joinGame, joinPlayerChannel, onConnectionChange} = useReverb(myPlayerId.value)
   watchConnection(onConnectionChange)
-  joinPlayerChannel(myPlayerId.value, {onCardWordShared: handleCardWordShared})
+  joinPlayerChannel(myPlayerId.value, {onCardWordShared: handleCardWordShared, onRoomKicked: handleRoomKicked})
   joinGame(gameId, {
     onHere:               handleHere,
     onJoining:            handleJoining,
@@ -1442,6 +1442,12 @@ function resetForms() {
   accusationTarget.value = ''
   accusationCharacter.value = ''
   modalError.value = null
+}
+
+// Spectateur exclu du salon par l'hôte : il ne suit plus la partie.
+function handleRoomKicked() {
+  localStorage.removeItem('session')
+  router.push({name: 'Room', query: {kicked: '1'}})
 }
 
 function backToHome() {

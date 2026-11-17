@@ -125,6 +125,10 @@ remains. Details in `docs/regles-du-jeu.md`.
   /admin/games/{id}/end` closes an in-progress game through `play::end_game` with no winner
   (stats kept, `game.ended` with `ended_by_admin`, `games.ended_by_admin_at`), then deletes its
   room (all members out, `player.left` with an empty list).
+- Host moderation (lobby, `rooms::lock` / `rooms::kick`): `PATCH /rooms/{id}/lock` toggles
+  `rooms.is_locked` (join → 403); `POST /rooms/{id}/players/{player}/kick` removes a member not
+  seated in the running game, emits `player.kicked` (room) + `room.kicked` (`player.{id}`), then
+  `Followup::Evict` unsubscribes them server-side (`Hub::evict`) from `room.{id}` / `game.{id}`.
 - Deleting games (`DELETE /admin/games/{id}`, or a player `?with_games=1`) also requires the
   `X-Delete-Password` header, checked against `BINOME_DELETE_PASSWORD_HASH` (PBKDF2; unset =
   disabled). Only the owner knows these passwords (admin and delete) — never generate or store them yourself.

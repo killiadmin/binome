@@ -72,6 +72,29 @@ export const roomService = {
     },
 
     /**
+     * Verrouiller / déverrouiller l'entrée du salon (hôte uniquement)
+     * PATCH /api/rooms/{room}/lock
+     * body: { player_id, is_locked }
+     */
+    setLocked(roomId, playerId, isLocked) {
+        return api.patch(`/rooms/${roomId}/lock`, {
+            player_id: playerId,
+            is_locked: isLocked,
+        })
+    },
+
+    /**
+     * Exclure un joueur du salon (hôte uniquement)
+     * POST /api/rooms/{room}/players/{player}/kick
+     * body: { player_id }
+     */
+    kick(roomId, playerId, targetId) {
+        return api.post(`/rooms/${roomId}/players/${targetId}/kick`, {
+            player_id: playerId,
+        })
+    },
+
+    /**
      * Partir de la room
      * @param roomId
      * @param playerId

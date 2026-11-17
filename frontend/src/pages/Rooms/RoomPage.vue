@@ -68,6 +68,8 @@ const pendingGameId   = ref(null)
 
 // Partie déjà lancée dans ce salon (arrivée en retard) : on peut la suivre en spectateur.
 const currentGameId = ref(null)
+// Salon verrouillé par l'hôte : plus personne ne peut le rejoindre
+const isLocked = ref(false)
 const showQr = ref(false)
 
 // Photo de profil : le joueur touche son propre jeton pour l'ouvrir
@@ -234,6 +236,13 @@ async function restoreSession() {
 
     const res = await roomService.get(session.roomId)
 
+    // Exclu (ou retiré) pendant l'absence : la session ne vaut plus rien
+    if (!res.data.room.players.some(p => p.id === session.playerId)) {
+      clearSession()
+      error.value = 'Tu ne fais plus partie de ce salon.'
+      return
+    }
+
     roomId.value   = session.roomId
     gameCode.value = session.gameCode
     playerId.value = session.playerId
@@ -245,6 +254,7 @@ async function restoreSession() {
     revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
     bestQuestionVote.value = res.data.room.best_question_vote ?? true
     currentGameId.value = res.data.room.current_game_id ?? null
+    isLocked.value = !!res.data.room.is_locked
 
     resetEcho()
     initLobby(session.roomId)
@@ -373,6 +383,18 @@ function initLobby(id) {
     onError: () => {
       error.value = 'Connexion WebSocket perdue. Recharge la page.'
     },
+    onPlayerKicked: (data) => {
+      if (data.player.id === playerId.value) {
+        resetLocalRoom()
+        error.value = `${data.kicked_by.pseudo} t'a exclu du salon.`
+        return
+      }
+      keepOnline(data.players)
+      if (kickTarget.value?.id === data.player.id) kickTarget.value = null
+    },
+    onRoomLockUpdated: (data) => {
+      isLocked.value = !!data.is_locked
+    },
     onPlayerLeft: (data) => {
       // Retiré par un administrateur (onglet Joueurs) : on quitte le lobby.
       if (!data.players.some(p => p.id === playerId.value)) {
@@ -414,6 +436,7 @@ const handleCreateGame = async () => {
     cosmosId.value = null
     revealToEliminated.value = true
     bestQuestionVote.value = true
+    isLocked.value = false
     players.value = [{
       id: res.data.player.id,
       pseudo: res.data.player.pseudo,
@@ -452,6 +475,7 @@ const handleJoinGame = async () => {
     revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
     bestQuestionVote.value = res.data.room.best_question_vote ?? true
     currentGameId.value = res.data.room.current_game_id ?? null
+    isLocked.value = false   // on ne peut pas entrer dans un salon verrouillé
     isHost.value = false
 
     // Jeton du profil AVANT d'ouvrir le WebSocket : le serveur en déduit le joueur
@@ -499,6 +523,54 @@ const handleStartGame = async () => {
 
 const showLeaveModal = ref(false)
 
+// ─── HÔTE : verrou et exclusion ────────────────────────────────────────────────
+const togglingLock = ref(false)
+
+async function setLocked(locked) {
+  if (!isHost.value || togglingLock.value) return
+  togglingLock.value = true
+  error.value = null
+  try {
+    const res = await roomService.setLocked(roomId.value, playerId.value, locked)
+    isLocked.value = !!res.data.is_locked
+  } catch (e) {
+    error.value = e.response?.data?.message || 'Impossible de changer le verrou du salon.'
+  } finally {
+    togglingLock.value = false
+  }
+}
+
+// Joueur à exclure (modale de confirmation)
+const kickTarget = ref(null)
+const kicking = ref(false)
+const showKickModal = computed({
+  get: () => !!kickTarget.value,
+  set: (v) => { if (!v) kickTarget.value = null },
+})
+
+// La liste renvoyée par le serveur n'a pas la présence : on la garde
+function keepOnline(list) {
+  players.value = list.map(p => ({...p, online: players.value.find(o => o.id === p.id)?.online}))
+}
+
+async function handleKick(alsoLock = false) {
+  const target = kickTarget.value
+  if (!target || kicking.value) return
+  kicking.value = true
+  error.value = null
+  try {
+    const res = await roomService.kick(roomId.value, playerId.value, target.id)
+    keepOnline(res.data.players)
+    kickTarget.value = null
+    if (alsoLock && !isLocked.value) await setLocked(true)
+  } catch (e) {
+    kickTarget.value = null
+    error.value = e.response?.data?.message || "Impossible d'exclure ce joueur."
+  } finally {
+    kicking.value = false
+  }
+}
+
 // ─── Copie du code de la partie (clic sur l'écran LCD pour le partager) ────────
 const codeCopied = ref(false)
 let codeCopiedTimer = null
@@ -538,6 +610,8 @@ function resetLocalRoom() {
   gameCode.value = null
   playerId.value = null
   currentGameId.value = null
+  isLocked.value = false
+  kickTarget.value = null
   showQr.value = false
   players.value = []
   isHost.value = false
@@ -553,6 +627,10 @@ const isCurrentPlayerReady = computed(() => {
 // ─── LIFECYCLE ────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  if (route.query.kicked) {
+    error.value = "L'hôte t'a exclu du salon."
+    router.replace({query: {}})
+  }
   loadCosmosOptions()
   await restoreSession()
   prefillJoinFromLink()
@@ -578,12 +656,17 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
         <p class="arcade-subtitle">Rassemble ton binôme et lance la partie !</p>
       </div>
 
-      <div v-if="error && !showCreateModal && !showJoinModal" class="arcade-alert">
-        <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
-        <router-link v-if="protectedPseudo" :to="{ name: 'Login', query: { pseudo: protectedPseudo } }" class="login-link">
-          Se connecter
-        </router-link>
-      </div>
+      <!-- Même colonne que la carte du salon : le bandeau ne déborde pas du contenu -->
+      <BRow v-if="error && !showCreateModal && !showJoinModal" class="justify-content-center">
+        <BCol cols="12" md="7" lg="6" :style="{ minWidth: 'min(360px, 100%)' }">
+          <div class="arcade-alert page-alert" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
+            <router-link v-if="protectedPseudo" :to="{ name: 'Login', query: { pseudo: protectedPseudo } }" class="login-link">
+              Se connecter
+            </router-link>
+          </div>
+        </BCol>
+      </BRow>
 
       <!-- Boutons principaux : masqués quand un salon est actif, pour libérer l'écran -->
       <div v-if="!gameCode" class="cabinet-buttons">
@@ -630,6 +713,19 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                 <i class="fa-solid fa-qrcode"></i>
                 {{ showQr ? 'Masquer le QR code' : 'QR code pour rejoindre' }}
               </button>
+              <button
+                  v-if="isHost"
+                  type="button"
+                  class="qr-toggle lock-toggle"
+                  :class="{ 'is-locked': isLocked }"
+                  :aria-pressed="isLocked"
+                  :disabled="togglingLock"
+                  :title="isLocked ? 'Rouvrir le salon aux nouveaux joueurs' : 'Empêcher de nouveaux joueurs d\'entrer'"
+                  @click="setLocked(!isLocked)"
+              >
+                <i class="fa-solid" :class="isLocked ? 'fa-lock' : 'fa-lock-open'"></i>
+                {{ isLocked ? 'Salon verrouillé' : 'Verrouiller' }}
+              </button>
             </div>
             <JoinQrCode v-if="showQr" :code="gameCode" />
 
@@ -651,6 +747,9 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
               <span class="pill" :class="gameStatus === 'in_progress' ? 'pill--danger' : 'pill--success'">
                 <span class="pill-dot"></span>
                 {{ getGameStatusText(gameStatus) }}
+              </span>
+              <span v-if="isLocked" class="pill pill--locked">
+                <i class="fa-solid fa-lock"></i> Verrouillé
               </span>
               <span v-if="willHaveOrphan && gameStatus === 'waiting'" class="pill pill--orphan">
                 <i class="fa-solid fa-user-slash"></i> 1 orphelin
@@ -701,6 +800,16 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                     </span>
                   </div>
                   <div class="player-token__name">{{ player.pseudo }}</div>
+                  <button
+                      v-if="isHost && player.id !== playerId"
+                      type="button"
+                      class="player-token__kick"
+                      :aria-label="`Exclure ${player.pseudo} du salon`"
+                      :title="`Exclure ${player.pseudo} du salon`"
+                      @click.stop="kickTarget = player"
+                  >
+                    <i class="fa-solid fa-user-xmark"></i> Exclure
+                  </button>
                 </div>
               </div>
             </div>
@@ -867,6 +976,25 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                   <i class="fa-solid fa-right-from-bracket"></i> Quitter
                 </button>
                 <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="showLeaveModal = false">
+                  Annuler
+                </button>
+              </div>
+            </BModal>
+
+            <BModal v-model="showKickModal" title="Exclure un joueur" no-footer class="arcade-modal">
+              <p class="text-center">Exclure <strong>{{ kickTarget?.pseudo }}</strong> du salon ?</p>
+              <p class="text-center text-muted small">
+                <template v-if="isLocked">Le salon est verrouillé : il ne pourra pas revenir.</template>
+                <template v-else>Il pourra revenir avec le code, sauf si tu verrouilles le salon.</template>
+              </p>
+              <div class="text-center mt-3 btn-modal kick-modal__actions">
+                <button type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" :disabled="kicking" @click="handleKick(false)">
+                  <i class="fa-solid fa-user-xmark"></i> Exclure
+                </button>
+                <button v-if="!isLocked" type="button" class="cabinet-btn cabinet-btn--danger cabinet-btn--sm" :disabled="kicking" @click="handleKick(true)">
+                  <i class="fa-solid fa-lock"></i> Exclure et verrouiller
+                </button>
+                <button type="button" class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm" @click="kickTarget = null">
                   Annuler
                 </button>
               </div>
@@ -1045,6 +1173,10 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
 }
 
 /* ── Boutons "borne d'arcade" ──────────────────────────────────── */
+.page-alert {
+  margin-bottom: 1.25rem;
+}
+
 .cabinet-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -1070,6 +1202,50 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   background: transparent;
   border: 2px solid var(--arcade-blue-grey);
   border-radius: 8px;
+}
+
+.qr-toggle-wrap {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lock-toggle.is-locked {
+  color: #fff;
+  background: var(--arcade-danger);
+  border-color: var(--arcade-danger-dark);
+}
+
+.pill--locked {
+  background: var(--arcade-danger);
+  border-color: var(--arcade-danger-dark);
+}
+
+/* Hôte : exclure un joueur (cible tactile pleine largeur du jeton) */
+.player-token__kick {
+  align-self: stretch;
+  min-height: 32px;
+  margin-top: 0.15rem;
+  padding: 0 0.3rem;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--arcade-danger-dark);
+  background: transparent;
+  border: 2px solid var(--arcade-danger);
+  border-radius: 8px;
+}
+
+.player-token__kick:hover,
+.player-token__kick:focus-visible {
+  color: #fff;
+  background: var(--arcade-danger);
+}
+
+.kick-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .spectate-banner {
