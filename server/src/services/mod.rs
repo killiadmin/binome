@@ -27,6 +27,8 @@ pub mod social;
 pub enum Followup {
     /// Clore le tirage de carte de cette action à l'échéance (`card_draw_deadline`).
     ExpireCardDraw { action_id: i64, deadline: String },
+    /// Désabonner ce joueur de ce canal, après la diffusion des events (exclusion).
+    Evict { channel: String, player_id: i64 },
 }
 
 #[derive(Debug)]

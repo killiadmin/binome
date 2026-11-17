@@ -76,6 +76,10 @@ const ACCEPTED = [
     /^NOUVEAU +POST \/api\/admin\/games\/:game\/end \d{3}$/,
     /^CHAMP EN TROP +(GET \/api\/(admin|history)\/games 200 +\$\.games\[\]|GET \/api\/games\/:game\/recap 200 +\$|event game\.ended @game +\$)\.ended_by_admin /,
     /^TYPE +GET \/api\/games\/:game 200 +\$\.host_id: référence « int », obtenu « int \| null »$/,
+    // Modération du salon par l'hôte (2026-11-17) : verrou de l'entrée et exclusion d'un joueur.
+    /^NOUVEAU +PATCH \/api\/rooms\/:room\/lock \d{3}$/,
+    /^NOUVEAU +POST \/api\/rooms\/:room\/players\/:player\/kick \d{3}$/,
+    /^NOUVEAU +event (player\.kicked @room|room\.kicked @player|room\.lock\.updated @room)$/,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

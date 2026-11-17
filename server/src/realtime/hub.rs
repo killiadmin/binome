@@ -189,6 +189,24 @@ impl Hub {
         self.lock().presence.get(channel).is_some_and(|m| m.contains_key(&player_id))
     }
 
+    /// Désabonne de force toutes les connexions d'un joueur d'un canal (joueur
+    /// exclu d'un salon) : l'autorisation n'étant vérifiée qu'à l'abonnement, il
+    /// recevrait sinon la suite des events. Diffuse son `leaving` de présence.
+    pub fn evict(&self, channel: &str, player_id: i64) {
+        let mut st = self.lock();
+        let conns: Vec<ConnId> = st
+            .subscribers
+            .get(channel)
+            .map(|subs| subs.iter().copied().filter(|id| st.conns.get(id).is_some_and(|c| c.player_id == Some(player_id))).collect())
+            .unwrap_or_default();
+        for id in conns {
+            if let Some(c) = st.conns.get_mut(&id) {
+                c.channels.remove(channel);
+            }
+            Self::detach(&mut st, id, channel, Some(player_id));
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -245,5 +263,35 @@ mod tests {
         assert_eq!(got[0]["event"], "card.word.shared");
         assert_eq!(got[0]["ch"], "player.1");
         assert!(drain(&mut rb).is_empty());
+    }
+
+    #[test]
+    fn evict_removes_every_tab_of_the_player_only() {
+        let hub = Hub::default();
+        let (a, mut ra) = conn(&hub, Some(1));
+        let (b1, mut rb1) = conn(&hub, Some(2));
+        let (b2, mut rb2) = conn(&hub, Some(2));
+        hub.subscribe(a, "room.1", m(1));
+        hub.subscribe(b1, "room.1", m(2));
+        hub.subscribe(b2, "room.1", m(2));
+        hub.subscribe(b1, "player.2", None);
+        drain(&mut ra);
+        hub.evict("room.1", 2);
+        let msgs = drain(&mut ra);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["op"], "leaving");
+        assert_eq!(msgs[0]["member"]["id"], 2);
+        assert!(!hub.is_online("room.1", 2) && hub.is_online("room.1", 1));
+        // Plus rien du salon pour les deux onglets ; le canal privé reste
+        drain(&mut rb1);
+        drain(&mut rb2);
+        hub.publish(&Event::on("room.1".into(), "player.ready", json!({})));
+        assert!(drain(&mut rb1).is_empty() && drain(&mut rb2).is_empty());
+        assert_eq!(drain(&mut ra).len(), 1);
+        hub.publish(&Event::on("player.2".into(), "x", json!({})));
+        assert_eq!(drain(&mut rb1).len(), 1);
+        // Réabonnement possible ensuite (s'il est de nouveau autorisé) : nouveau joining
+        hub.subscribe(b1, "room.1", m(2));
+        assert_eq!(drain(&mut ra)[0]["op"], "joining");
     }
 }

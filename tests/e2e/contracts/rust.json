@@ -981,6 +981,30 @@
     "$.errors.pseudo[]": "string",
     "$.message": "string"
   },
+  "PATCH /api/rooms/:room/lock 200": {
+    "$": "object",
+    "$.is_locked": "bool",
+    "$.message": "string"
+  },
+  "PATCH /api/rooms/:room/lock 401": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/rooms/:room/lock 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/rooms/:room/lock 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/rooms/:room/lock 422": {
+    "$": "object",
+    "$.errors": "object",
+    "$.errors.is_locked": "array",
+    "$.errors.is_locked[]": "string",
+    "$.message": "string"
+  },
   "PATCH /api/rooms/:room/ready 200": {
     "$": "object",
     "$.all_ready": "bool",
@@ -1589,6 +1613,28 @@
     "$.errors.pseudo[]": "string",
     "$.message": "string"
   },
+  "POST /api/rooms/:room/players/:player/kick 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.players": "array",
+    "$.players[]": "object",
+    "$.players[].avatar_url": "null",
+    "$.players[].id": "int",
+    "$.players[].is_ready": "int",
+    "$.players[].pseudo": "string"
+  },
+  "POST /api/rooms/:room/players/:player/kick 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/rooms/:room/players/:player/kick 404": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "POST /api/rooms/:room/players/:player/kick 409": {
+    "$": "object",
+    "$.message": "string"
+  },
   "POST /api/rooms/:room/start 201": {
     "$": "object",
     "$.game_id": "int",
@@ -1989,6 +2035,21 @@
     "$.players[].is_ready": "int",
     "$.players[].pseudo": "string"
   },
+  "event player.kicked @room": {
+    "$": "object",
+    "$.kicked_by": "object",
+    "$.kicked_by.id": "int",
+    "$.kicked_by.pseudo": "string",
+    "$.player": "object",
+    "$.player.id": "int",
+    "$.player.pseudo": "string",
+    "$.players": "array",
+    "$.players[]": "object",
+    "$.players[].avatar_url": "null",
+    "$.players[].id": "int",
+    "$.players[].is_ready": "int",
+    "$.players[].pseudo": "string"
+  },
   "event player.left @room": {
     "$": "object",
     "$.new_host_id": "int | null",
@@ -2029,6 +2090,17 @@
     "$.reaction.id": "int",
     "$.reaction.name": "string",
     "$.reaction.url": "null"
+  },
+  "event room.kicked @player": {
+    "$": "object",
+    "$.kicked_by": "object",
+    "$.kicked_by.id": "int",
+    "$.kicked_by.pseudo": "string",
+    "$.room_id": "int"
+  },
+  "event room.lock.updated @room": {
+    "$": "object",
+    "$.is_locked": "bool"
   },
   "event room.settings.updated @room": {
     "$": "object",

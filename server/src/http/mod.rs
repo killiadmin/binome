@@ -47,6 +47,7 @@ impl AppState {
         for f in out.followups {
             match f {
                 Followup::ExpireCardDraw { action_id, deadline } => timers::schedule_card_expiry(self.clone(), action_id, &deadline),
+                Followup::Evict { channel, player_id } => self.hub.evict(&channel, player_id),
             }
         }
         (out.status, Json(out.body)).into_response()
@@ -189,6 +190,12 @@ async fn rooms_settings(State(st): State<AppState>, Path(p): Params, input: Inpu
 }
 async fn rooms_ready(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
     st.write(move |tx, env| rooms::ready(tx, env, id(&p, "room")?, &input)).await
+}
+async fn rooms_lock(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, _| rooms::lock(tx, id(&p, "room")?, &input)).await
+}
+async fn rooms_kick(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    st.write(move |tx, env| rooms::kick(tx, env, id(&p, "room")?, id(&p, "player")?, &input)).await
 }
 async fn rooms_leave(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
     st.write(move |tx, env| rooms::leave(tx, env, id(&p, "room")?, &input)).await
@@ -857,6 +864,8 @@ pub fn router(state: AppState) -> Router {
         .route("/rooms/{room}/ready", patch(rooms_ready))
         .route("/rooms/{room}/start", post(rooms_start))
         .route("/rooms/{room}/leave", axum::routing::delete(rooms_leave))
+        .route("/rooms/{room}/lock", patch(rooms_lock))
+        .route("/rooms/{room}/players/{player}/kick", post(rooms_kick))
         .route("/games/{game}", get(games_show))
         .route("/games/{game}/me", get(games_me))
         .route("/games/{game}/recap", get(games_recap))

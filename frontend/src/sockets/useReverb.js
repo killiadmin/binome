@@ -232,6 +232,8 @@ export function useReverb(playerId = null) {
         if (callbacks.onRoomSettingsUpdated) channel.listen('.room.settings.updated', callbacks.onRoomSettingsUpdated)
         if (callbacks.onGameStarted) channel.listen('.game.started', callbacks.onGameStarted)
         if (callbacks.onPlayerLeft) channel.listen('.player.left', callbacks.onPlayerLeft)
+        if (callbacks.onPlayerKicked) channel.listen('.player.kicked', callbacks.onPlayerKicked)
+        if (callbacks.onRoomLockUpdated) channel.listen('.room.lock.updated', callbacks.onRoomLockUpdated)
         if (callbacks.onPlayerAvatarUpdated) channel.listen('.player.avatar.updated', callbacks.onPlayerAvatarUpdated)
 
         return channel
@@ -325,6 +327,7 @@ export function useReverb(playerId = null) {
         })
 
         if (callbacks.onCardWordShared) channel.listen('.card.word.shared', callbacks.onCardWordShared)
+        if (callbacks.onRoomKicked) channel.listen('.room.kicked', callbacks.onRoomKicked)
 
         return channel
     }

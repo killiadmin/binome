@@ -33,6 +33,9 @@ qu'après l'avoir reçu. L'event `binome.discovered`, écouté par le front, n'e
 | `player.ready` | `room.{id}` | Bascule prêt | ✓ |
 | `player.left` | `room.{id}` | Départ (+ `new_host_id` si l'hôte part) ; liste vide = salon fermé par l'admin | ✓ |
 | `room.settings.updated` | `room.{id}` | L'hôte change les réglages | ✓ |
+| `room.lock.updated` | `room.{id}` | L'hôte verrouille / déverrouille l'entrée du salon | ✓ |
+| `player.kicked` | `room.{id}` | L'hôte exclut un joueur (l'exclu le reçoit aussi, avant d'être désabonné) | ✓ |
+| `room.kicked` | `player.{id}` de l'exclu | Exclusion du salon (page de partie d'un spectateur) | ✓ |
 | `game.started` | `room.{id}` + `game.{id}` | Lancement | ✓ |
 | `player.avatar.updated` | `room.{id}` de chaque salon du joueur + `game.{id}` en cours | Photo modifiée / retirée | ✓ |
 | `character.vote.cast` | `game.{id}` | Un vote de personnage ; aussi au dernier vote unanime | ✓ |
@@ -107,6 +110,41 @@ $.cosmos_id                                      int | null
 $.cosmos_name                                    null | string
 $.game_mode                                      string
 $.reveal_to_eliminated                           bool
+```
+
+### `room.lock.updated` (@room)
+
+```
+$                                                object
+$.is_locked                                      bool
+```
+
+### `player.kicked` (@room)
+
+```
+$                                                object
+$.kicked_by                                      object
+$.kicked_by.id                                   int
+$.kicked_by.pseudo                               string
+$.player                                         object
+$.player.id                                      int
+$.player.pseudo                                  string
+$.players                                        array
+$.players[]                                      object
+$.players[].avatar_url                           null
+$.players[].id                                   int
+$.players[].is_ready                             int
+$.players[].pseudo                               string
+```
+
+### `room.kicked` (@player)
+
+```
+$                                                object
+$.kicked_by                                      object
+$.kicked_by.id                                   int
+$.kicked_by.pseudo                               string
+$.room_id                                        int
 ```
 
 ### `game.started` (@room)
