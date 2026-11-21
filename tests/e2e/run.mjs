@@ -38,6 +38,7 @@ const SCENARIOS = {
     catalog: (ctx) => catalog(ctx),
     game8: (ctx) => fullGame(ctx, { size: 8, rich: true }),
     game7: (ctx) => fullGame(ctx, { size: 7, rich: false, redraw: true }),
+    game3: (ctx) => fullGame(ctx, { size: 3, rich: false, redraw: false }),
     profile: (ctx) => profile(ctx),
     controls: (ctx) => controls(ctx),
     admins: (ctx) => admins(ctx),

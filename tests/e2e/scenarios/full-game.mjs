@@ -135,44 +135,36 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         await b.sub(`player.${b.id}`)
     }
 
-    // Spectateur : rejoint le salon après le lancement
-    let spectator = null
     if (rich) {
-        spectator = new Bot(ctx, 'spec')
-        const res = await api.post('/rooms/join', { body: { pseudo: spectator.pseudo, code: room.code }, expect: 200 })
-        spectator.setId(res.data.player.id)
-        ctx.check(res.data.room.current_game_id === gameId, 'spectateur : current_game_id renvoyé au join')
-        await spectator.connect()
-        await spectator.sub(roomCh)
-        const members = await spectator.sub(gameCh)
-        ctx.check(members.length >= size, 'spectateur : presence game → les joueurs connectés')
-        await spectator.sub(`player.${spectator.id}`)
-        await ctx.refused(404, 'GET', '/games/:game/me', { params: { game: gameId }, query: { player_id: spectator.id } }, '/me d\'un spectateur')
+        // Pas de spectateurs : une fois la partie lancée, le code ne fait plus entrer personne
+        const late = new Bot(ctx, 'late')
+        const refusedLate = await ctx.refused(409, 'POST', '/rooms/join', { body: { pseudo: late.pseudo, code: room.code } }, 'arrivée par le code après le lancement')
+        ctx.check(/déjà commencé/.test(refusedLate.data?.message ?? ''), 'arrivée après le lancement : message « partie déjà commencée »', refusedLate.data)
+        const roomNow = (await api.get('/rooms/:room', { params: { room: room.id }, expect: 200 })).data.room
+        ctx.check(roomNow.players.length === size, 'arrivée refusée : le salon ne compte que les joueurs de la partie')
 
-        // Autorisations de canaux
-        const rejected = await spectator.rt.subscribe(`player.${host.id}`).then(() => null, (e) => e)
-        ctx.check(rejected && rejected.status === 403, 'canal privé player.{id} d\'un autre joueur refusé (403)')
+        // Autorisations de canaux (joueur d'un autre salon)
         const outsider = new Bot(ctx, 'out')
         const o = await api.post('/rooms', { body: { pseudo: outsider.pseudo }, expect: 201 })
         outsider.setId(o.data.player.id)
         await outsider.connect()
+        const rejected = await outsider.rt.subscribe(`player.${host.id}`).then(() => null, (e) => e)
+        ctx.check(rejected && rejected.status === 403, 'canal privé player.{id} d\'un autre joueur refusé (403)')
+        await ctx.refused(404, 'GET', '/games/:game/me', { params: { game: gameId }, query: { player_id: outsider.id } }, '/me d\'un joueur hors de la partie')
         const refusedGame = await outsider.rt.subscribe(gameCh).then(() => null, (e) => e)
         ctx.check(refusedGame && refusedGame.status === 403, 'presence game.{id} refusée à un joueur hors du salon (403)')
         const refusedRoom = await outsider.rt.subscribe(roomCh).then(() => null, (e) => e)
         ctx.check(refusedRoom && refusedRoom.status === 403, 'presence room.{id} refusée à un joueur hors du salon (403)')
-        await api.delete('/rooms/:room/leave', { params: { room: o.data.room.id }, body: { player_id: outsider.id }, expect: 200 })
-        outsider.rt.close()
-
         // ── Identité signée (checklist point 5) : un player_id n'est cru qu'avec son jeton
         const victim = bots[1]
         const forged = `${victim.id}.${'0'.repeat(64)}`
-        const asSpectator = { 'X-Profile-Token': api.tokens.get(spectator.id) }
+        const asOutsider = { 'X-Profile-Token': api.tokens.get(outsider.id) }
         const me = (extra) => ({ params: { game: gameId }, query: { player_id: victim.id }, ...extra })
         await ctx.refused(401, 'GET', '/games/:game/me', me({ auth: false }), '/me d\'un joueur sans jeton')
         await ctx.refused(401, 'GET', '/games/:game/me', me({ headers: { 'X-Profile-Token': forged } }), '/me avec un jeton falsifié')
-        await ctx.refused(403, 'GET', '/games/:game/me', me({ headers: asSpectator }), '/me d\'un autre joueur avec son propre jeton')
-        await ctx.refused(403, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: host.id, reaction_id: 1 }, headers: asSpectator }, 'action au nom d\'un autre joueur')
-        await ctx.refused(403, 'PATCH', '/rooms/:room/ready', { params: { room: room.id }, body: { player_id: victim.id }, headers: asSpectator }, 'salon : prêt au nom d\'un autre joueur')
+        await ctx.refused(403, 'GET', '/games/:game/me', me({ headers: asOutsider }), '/me d\'un autre joueur avec son propre jeton')
+        await ctx.refused(403, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: host.id, reaction_id: 1 }, headers: asOutsider }, 'action au nom d\'un autre joueur')
+        await ctx.refused(403, 'PATCH', '/rooms/:room/ready', { params: { room: room.id }, body: { player_id: victim.id }, headers: asOutsider }, 'salon : prêt au nom d\'un autre joueur')
         // WebSocket : le joueur vient du jeton, jamais d'un identifiant fourni
         const wsForged = await ctx.connect('ws-forge', null, forged)
         const r1 = await wsForged.subscribe(`player.${victim.id}`).then(() => null, (e) => e)
@@ -185,9 +177,11 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
         const r3 = await legacy.subscribe(gameCh).then(() => null, (e) => e)
         ctx.check(r3?.status === 403, 'WebSocket : sans jeton, presence game.{id} refusée (403)')
         legacy.close()
+        await api.delete('/rooms/:room/leave', { params: { room: o.data.room.id }, body: { player_id: outsider.id }, expect: 200 })
+        outsider.rt.close()
     }
 
-    const watchers = () => [...bots, ...(spectator ? [spectator] : [])].filter((b) => !b.offline)
+    const watchers = () => bots.filter((b) => !b.offline)
     const byId = (id) => bots.find((b) => b.id === id)
 
     // ── VOTE DES PERSONNAGES ────────────────────────────────────────────────
@@ -437,7 +431,7 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
                 await everyone(watchers(), gameCh, 'card.draw.finished', { pred: (d) => d.action_id === id, since: mk })
                 const recipients = watchers().filter((b) => b !== t.cur && b !== target)
                 const shared = await everyone(recipients, (b) => `player.${b.id}`, 'card.word.shared', { pred: (d) => d.action_id === id, since: mk })
-                ctx.check(shared.every((e) => e.data.word === drawn.data.word && e.data.target.id === target.id), `card.word.shared : reçu par les ${recipients.length} autres (spectateur compris)`)
+                ctx.check(shared.every((e) => e.data.word === drawn.data.word && e.data.target.id === target.id), `card.word.shared : reçu par les ${recipients.length} autres`)
                 await sleep(300)
                 ctx.check(target.rt.received('card.word.shared', { since: mk.get(target) }).length === 0, 'card.word.shared : JAMAIS reçu par la cible')
                 ctx.check(t.cur.rt.received('card.word.shared', { since: mk.get(t.cur) }).length === 0, 'card.word.shared : pas renvoyé au questionneur')
@@ -547,11 +541,6 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
                 await api.post('/games/:game/reactions', { params: { game: gameId }, body: { player_id: t.cur.id, reaction_id: unicode.id }, expect: 200 })
                 const [rs] = await everyone(watchers(), gameCh, 'reaction.sent', { since: mk })
                 ctx.check(rs.data.reaction.id === unicode.id && rs.data.reaction.emoji === unicode.emoji && rs.data.player.id === t.cur.id, 'reaction.sent : emoji Unicode diffusé')
-                if (spectator) {
-                    mk = marks(watchers())
-                    await api.post('/games/:game/reactions', { params: { game: gameId }, body: { player_id: spectator.id, reaction_id: unicode.id }, expect: 200 })
-                    await everyone(watchers(), gameCh, 'reaction.sent', { pred: (d) => d.player.id === spectator.id, since: mk })
-                }
                 await ctx.refused(404, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: t.cur.id, reaction_id: 999999999 } }, 'réaction inexistante')
 
                 // Photo retirée en pleine partie : diffusée sur le salon ET la partie
@@ -718,7 +707,7 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
     ctx.check(adminGames.some((g) => g.id === gameId), 'admin : la partie est listée')
 
     // Tout le monde quitte le salon
-    const everyoneInRoom = [...bots, ...(spectator ? [spectator] : [])]
+    const everyoneInRoom = bots
     for (const [i, b] of everyoneInRoom.entries()) {
         const res = await api.delete('/rooms/:room/leave', { params: { room: room.id }, body: { player_id: b.id }, expect: 200 })
         if (i === everyoneInRoom.length - 1) ctx.check(/supprimé/.test(res.data.message), 'dernier départ : salon supprimé')

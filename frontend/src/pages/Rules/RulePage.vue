@@ -37,7 +37,8 @@ export default {
           blocks: [
             {
               ul: [
-                "Nombre de joueurs : minimum 4, pair ou impair",
+                "Nombre de joueurs : de 3 à 12, pair ou impair",
+                "Seuls les joueurs présents au lancement jouent : une fois la partie commencée, personne ne peut plus rejoindre le salon avec le code",
                 "Chaque joueur reçoit un personnage secret",
                 {
                   text: "Chaque personnage a :",

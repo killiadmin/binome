@@ -28,12 +28,6 @@ export async function adminEnd(ctx) {
     const gameCh = `game.${gameId}`
     for (const b of bots) await b.sub(gameCh)
 
-    // Un spectateur reste dans le salon (membre sans place dans la partie)
-    const spectator = new Bot(ctx, 'espec')
-    spectator.setId((await api.post('/rooms/join', { body: { pseudo: spectator.pseudo, code: room.code }, expect: 200 })).data.player.id)
-    await spectator.connect()
-    await spectator.sub(roomCh)
-
     let m = marks(bots)
     for (const b of bots) {
         const character = (await api.get('/games/:game/me', { params: { game: gameId }, query: { player_id: b.id }, expect: 200 })).data.character
@@ -47,10 +41,10 @@ export async function adminEnd(ctx) {
     await ctx.refused(404, 'POST', route, { params: { game: 999999999 }, admin: true }, 'fin d\'une partie inexistante')
 
     // ── Fin de partie ────────────────────────────────────────────────────────
-    const everybody = [...bots, spectator]
+    const everybody = bots
     m = marks(everybody)
     const res = await api.post(route, { params: { game: gameId }, admin: true, expect: 200 })
-    ctx.check(res.data.game_id === gameId && res.data.removed_players === 5, 'fin admin : les 5 membres retirés du salon', res.data)
+    ctx.check(res.data.game_id === gameId && res.data.removed_players === 4, 'fin admin : les 4 membres retirés du salon', res.data)
 
     const ended = await everyone(bots, gameCh, 'game.ended', { since: m })
     const ev = ended[0].data
@@ -59,7 +53,7 @@ export async function adminEnd(ctx) {
     ctx.check(ev.all_binomes.flatMap((b) => b.players).every((p) => typeof p.character === 'string'), 'game.ended : personnages révélés')
 
     const left = await everyone(everybody, roomCh, 'player.left', { since: m })
-    ctx.check(left.every((e) => e.data.players.length === 0 && e.data.new_host_id === null), 'player.left : salon vidé (tous, spectateur compris)')
+    ctx.check(left.every((e) => e.data.players.length === 0 && e.data.new_host_id === null), 'player.left : salon vidé (tous les membres)')
 
     // ── État après coup ──────────────────────────────────────────────────────
     await ctx.refused(404, 'GET', '/rooms/:room', { params: { room: room.id } }, 'salon fermé après la fin admin')

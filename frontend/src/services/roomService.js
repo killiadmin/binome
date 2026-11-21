@@ -1,5 +1,10 @@
 import { api } from './api'
 
+// Joueurs d'une partie : minimum pour la lancer, maximum d'un salon.
+// Mêmes valeurs que MIN_PLAYERS / MAX_PLAYERS côté serveur (services/common.rs).
+export const MIN_PLAYERS = 3
+export const MAX_PLAYERS = 12
+
 export const roomService = {
     /**
      * Créer un salon
@@ -10,7 +15,7 @@ export const roomService = {
         return api.post('/rooms', {
             pseudo,
             is_private:  options.isPrivate  ?? false,
-            max_players: options.maxPlayers  ?? 12,
+            max_players: options.maxPlayers  ?? MAX_PLAYERS,
         })
     },
 

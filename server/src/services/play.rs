@@ -927,6 +927,12 @@ mod tests {
         assert_eq!(over(vec![seat(1, 1, false), seat(1, 2, false), seat(2, 3, true), seat(2, 4, true)]), Some(vec![1, 2]));
         // Une paire intacte + un rescapé : continue
         assert_eq!(over(vec![seat(1, 1, false), seat(1, 2, false), seat(2, 3, false), seat(2, 4, true)]), None);
+        // À 3 joueurs (un binôme + l'orphelin) : tout le monde en vie, la partie continue
+        assert_eq!(over(vec![seat(1, 1, false), seat(1, 2, false), seat(3, 5, false)]), None);
+        // À 3 : l'orphelin tombe, le binôme intact gagne
+        assert_eq!(over(vec![seat(1, 1, false), seat(1, 2, false), seat(3, 5, true)]), Some(vec![1, 2]));
+        // À 3 : un membre du binôme tombe, rescapé + orphelin intact : continue
+        assert_eq!(over(vec![seat(1, 1, false), seat(1, 2, true), seat(3, 5, false)]), None);
         // Orphelin en vie seul face à des rescapés éliminés : il gagne
         assert_eq!(over(vec![seat(1, 1, true), seat(1, 2, true), seat(3, 5, false)]), Some(vec![5]));
         // Aucune équipe intacte, un seul rescapé : il gagne seul

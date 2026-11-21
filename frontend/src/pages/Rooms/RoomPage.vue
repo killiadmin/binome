@@ -1,7 +1,7 @@
 <script setup>
 import {ref, onMounted, onUnmounted, computed, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
-import {roomService} from '../../services/roomService'
+import {roomService, MIN_PLAYERS, MAX_PLAYERS} from '../../services/roomService'
 import {characterService} from '../../services/characterService'
 import {gameService} from '../../services/gameService'
 import {useReverb} from '../../sockets/useReverb'
@@ -66,8 +66,11 @@ const gameStarting = ref(false)
 const showRejoinModal = ref(false)
 const pendingGameId   = ref(null)
 
-// Partie déjà lancée dans ce salon (arrivée en retard) : on peut la suivre en spectateur.
-const currentGameId = ref(null)
+// Places du salon (de MIN_PLAYERS à MAX_PLAYERS). Pas de spectateurs : une fois la
+// partie lancée, le serveur refuse toute nouvelle arrivée par le code.
+const maxPlayers = ref(MAX_PLAYERS)
+const isFull = computed(() => players.value.length >= maxPlayers.value)
+const missingPlayers = computed(() => Math.max(0, MIN_PLAYERS - players.value.length))
 // Salon verrouillé par l'hôte : plus personne ne peut le rejoindre
 const isLocked = ref(false)
 const showQr = ref(false)
@@ -97,7 +100,7 @@ const pairsNeeded = computed(() => Math.max(1, Math.ceil(players.value.length / 
 
 // Nombre impair : le dernier joueur tiré au sort jouera sans binôme.
 const willHaveOrphan = computed(
-    () => players.value.length >= 4 && players.value.length % 2 !== 0
+    () => players.value.length >= MIN_PLAYERS && players.value.length % 2 !== 0
 )
 
 const selectedCosmos = computed(
@@ -109,6 +112,10 @@ const selectedCosmosFeasible = computed(
 )
 
 const startBlockedReason = computed(() => {
+  if (missingPlayers.value > 0) {
+    const n = missingPlayers.value
+    return `Il faut au moins ${MIN_PLAYERS} joueurs pour démarrer (encore ${n} joueur${n > 1 ? 's' : ''}).`
+  }
   if (gameMode.value !== 'cosmos') return null
   if (!cosmosId.value) return 'Choisis un cosmos pour démarrer.'
   if (!selectedCosmosFeasible.value) {
@@ -253,7 +260,7 @@ async function restoreSession() {
     cosmosId.value = res.data.room.cosmos_id ?? null
     revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
     bestQuestionVote.value = res.data.room.best_question_vote ?? true
-    currentGameId.value = res.data.room.current_game_id ?? null
+    maxPlayers.value = res.data.room.max_players ?? MAX_PLAYERS
     isLocked.value = !!res.data.room.is_locked
 
     resetEcho()
@@ -267,15 +274,6 @@ async function restoreSession() {
 function handleRejoinGame() {
   showRejoinModal.value = false
   router.push({ name: 'RoundPage', params: { gameId: pendingGameId.value } })
-}
-
-// Arrivé après le lancement : pas de personnage, on suit la partie en spectateur.
-// Le gameId est sauvé en session comme pour un joueur, le refresh et la modale
-// « Partie en cours » fonctionnent donc de la même façon.
-function handleWatchGame() {
-  gameId.value = currentGameId.value
-  saveSession()
-  router.push({ name: 'RoundPage', params: { gameId: currentGameId.value } })
 }
 
 // Lien de partage / QR code : /rooms?code=XXXXXX ouvre directement la modale
@@ -432,6 +430,7 @@ const handleCreateGame = async () => {
     playerId.value = res.data.player.id
     hostId.value = res.data.player.id
     isHost.value = true
+    maxPlayers.value = res.data.room.max_players ?? MAX_PLAYERS
     gameMode.value = enabledModes.value.includes('random') ? 'random' : enabledModes.value[0]
     cosmosId.value = null
     revealToEliminated.value = true
@@ -474,7 +473,7 @@ const handleJoinGame = async () => {
     cosmosId.value = res.data.room.cosmos_id ?? null
     revealToEliminated.value = res.data.room.reveal_to_eliminated ?? true
     bestQuestionVote.value = res.data.room.best_question_vote ?? true
-    currentGameId.value = res.data.room.current_game_id ?? null
+    maxPlayers.value = res.data.room.max_players ?? MAX_PLAYERS
     isLocked.value = false   // on ne peut pas entrer dans un salon verrouillé
     isHost.value = false
 
@@ -609,7 +608,7 @@ function resetLocalRoom() {
   roomId.value = null
   gameCode.value = null
   playerId.value = null
-  currentGameId.value = null
+  maxPlayers.value = MAX_PLAYERS
   isLocked.value = false
   kickTarget.value = null
   showQr.value = false
@@ -729,20 +728,12 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
             </div>
             <JoinQrCode v-if="showQr" :code="gameCode" />
 
-            <div v-if="currentGameId" class="spectate-banner">
-              <p class="spectate-banner__text">
-                <i class="fa-solid fa-circle-play"></i>
-                Une partie est déjà en cours dans ce salon.
-                Tu joueras à la prochaine — en attendant, tu peux la regarder.
-              </p>
-              <button type="button" class="cabinet-btn cabinet-btn--sm" @click="handleWatchGame">
-                <i class="fa-solid fa-eye"></i> Regarder en spectateur
-              </button>
-            </div>
-
             <div class="status-pills">
               <span class="pill">
-                <i class="fa-solid fa-users"></i> {{ players.length }} joueur{{ players.length > 1 ? 's' : '' }}
+                <i class="fa-solid fa-users"></i> {{ players.length }} / {{ maxPlayers }} joueurs
+              </span>
+              <span v-if="isFull && gameStatus === 'waiting'" class="pill pill--locked">
+                <i class="fa-solid fa-user-lock"></i> Complet
               </span>
               <span class="pill" :class="gameStatus === 'in_progress' ? 'pill--danger' : 'pill--success'">
                 <span class="pill-dot"></span>
@@ -755,6 +746,12 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                 <i class="fa-solid fa-user-slash"></i> 1 orphelin
               </span>
             </div>
+
+            <p v-if="gameStatus === 'waiting'" class="limits-hint">
+              <i class="fa-solid fa-circle-info"></i>
+              De {{ MIN_PLAYERS }} à {{ maxPlayers }} joueurs. Seuls les joueurs présents au lancement jouent :
+              une fois la partie commencée, personne ne peut plus entrer avec le code.
+            </p>
 
             <p v-if="willHaveOrphan && gameStatus === 'waiting'" class="orphan-hint">
               <i class="fa-solid fa-circle-info"></i>
@@ -1006,7 +1003,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
                   v-if="isHost && gameStatus === 'waiting' && !startingGame"
                   type="button"
                   class="play-btn"
-                  :disabled="players.length < 2 || !!startBlockedReason"
+                  :disabled="!!startBlockedReason"
                   @click="handleStartGame"
               >
                 <i class="fa-solid fa-play"></i> Démarrer la partie
@@ -1185,7 +1182,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   margin-bottom: 2.5rem;
 }
 
-/* ── QR code & spectateur ─────────────────────────────────────── */
+/* ── QR code ──────────────────────────────────────────────────── */
 .qr-toggle-wrap {
   display: flex;
   justify-content: center;
@@ -1246,26 +1243,6 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.5rem;
-}
-
-.spectate-banner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 1.25rem;
-  padding: 0.75rem;
-  text-align: center;
-  background: rgba(224, 163, 28, 0.15);
-  border: 2px solid var(--arcade-gold);
-  border-radius: 8px;
-}
-
-.spectate-banner__text {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--arcade-blue-grey-dark);
 }
 
 /* ── Plateau / carte de salon ─────────────────────────────────── */
@@ -1489,6 +1466,7 @@ const getGameStatusClass = (s) => s === 'in_progress' ? 'text-danger' : 'text-su
   color: var(--arcade-blue-grey-dark);
 }
 
+.limits-hint,
 .orphan-hint {
   margin: 0.6rem 0 0;
   font-size: 0.8rem;

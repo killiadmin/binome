@@ -35,8 +35,8 @@ pub fn start(tx: &Transaction, _env: &Env, room_id: i64, input: &Input) -> AppRe
     }
 
     let players = room_players(tx, room.id)?;
-    if players.len() < 4 {
-        return Err(AppError::unprocessable("Il faut au minimum 4 joueurs pour démarrer."));
+    if (players.len() as i64) < MIN_PLAYERS {
+        return Err(AppError::unprocessable("Il faut au minimum 3 joueurs pour démarrer."));
     }
     if !players.iter().all(|p| p.2) {
         return Err(AppError::unprocessable("Tous les joueurs doivent être prêts."));

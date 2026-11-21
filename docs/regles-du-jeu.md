@@ -10,7 +10,12 @@
 Deviner le personnage secret des autres joueurs avant que son propre binome soit découvert.
 
 ### Mise en place
-- Nombre de joueurs : **minimum 4**, pair ou impair
+- Nombre de joueurs : **de 3 à 12**, pair ou impair (`MIN_PLAYERS` / `MAX_PLAYERS`,
+  `server/src/services/common.rs`, repris par `frontend/src/services/roomService.js`). Un salon
+  a de 3 à 12 places (`rooms.max_players`, 12 par défaut) ; la partie se lance dès 3 joueurs
+  prêts. À 3, un binôme affronte l'orphelin.
+- **Seuls les joueurs présents au lancement jouent** : une fois la partie en cours,
+  `POST /rooms/join` est refusé (`409` « La partie a déjà commencé… »), même salon ouvert.
 - Au début de chaque partie, chaque joueur reçoit un **personnage secret** tiré d'un univers (ex : Disney, Marvel…)
 - Les joueurs sont regroupés en **binomes** de 2 personnes partageant le même univers, **à leur insu**
 - Chaque personnage possède **3 mots interdits**
@@ -209,12 +214,14 @@ Depuis le lobby, l'hôte (et lui seul, `403` sinon) dispose de deux outils :
   Refusé (`409`) pour soi-même, pour un joueur absent du salon, et pour un joueur qui a une place
   dans la partie en cours : celui-là s'exclut depuis la partie s'il est déconnecté (ci-dessus).
 
-### Spectateurs
+### Pas de spectateurs (2026-11-21)
 
-Un joueur qui rejoint un salon dont la partie est déjà lancée n'a pas de personnage.
-`GET /rooms/{room}` et `POST /rooms/join` renvoient `current_game_id` : le front lui propose de
-suivre la partie. Le canal `game.{id}` accepte les membres du salon, et la même règle s'applique
-aux réactions. Les spectateurs reçoivent aussi les mots montrés après un tirage de carte.
+On ne peut plus rejoindre un salon dont la partie est lancée (`409` sur `POST /rooms/join`) :
+tous les membres du salon ont donc une place dans la partie, et un joueur assis ne peut pas
+quitter le salon avant la fin. Les éliminés continuent de suivre la partie (ce sont des joueurs).
+Le serveur garde le chemin « membre du salon sans place » (canal `game.{id}`, réactions, mots
+montrés après un tirage, `room_game_id` de `/profile/current`, page de partie côté front) :
+il ne sert plus, mais permettrait de rouvrir les spectateurs en levant ce seul refus.
 
 Les réactions sont toutes en base (`custom_reactions`) : les emojis Unicode d'origine y ont été
 repris, l'admin peut en ajouter ou en supprimer. Un emoji Unicode doit être **un seul graphème**.

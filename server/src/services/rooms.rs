@@ -86,14 +86,14 @@ pub fn store(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) ->
         PSEUDO_MESSAGES[0],
         PSEUDO_MESSAGES[1],
         PSEUDO_MESSAGES[2],
-        ("max_players.min", "Il faut au minimum 4 joueurs."),
+        ("max_players.min", "Il faut au minimum 3 joueurs."),
         ("max_players.max", "Le salon ne peut pas dépasser 12 joueurs."),
     ]);
     let pseudo = v.req_str("pseudo", Some(2), Some(20));
     let is_private = v.opt_bool("is_private");
     let max = v.opt_int("max_players");
-    v.min_int("max_players", max, 4);
-    v.max_int("max_players", max, 12);
+    v.min_int("max_players", max, MIN_PLAYERS);
+    v.max_int("max_players", max, MAX_PLAYERS);
     v.finish()?;
     let pseudo = pseudo.expect("validé");
 
@@ -103,7 +103,7 @@ pub fn store(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) ->
     let code = generate_code(tx)?;
     let now = now_db();
     let is_private = is_private.unwrap_or(false);
-    let max = max.unwrap_or(12);
+    let max = max.unwrap_or(MAX_PLAYERS);
     let room_id = tx.insert(
         "INSERT INTO rooms (code, is_private, max_players, game_mode, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         (&code, is_private, max, crate::services::controls::default_mode(tx)?, player.id, &now),
@@ -144,6 +144,10 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) -> 
     if room.is_locked {
         return Err(AppError::forbidden("Ce salon est verrouillé : l'hôte n'accepte plus de nouveaux joueurs."));
     }
+    // Pas de spectateurs : seuls les joueurs présents au lancement suivent la partie
+    if current_game_id(tx, room.id)?.is_some() {
+        return Err(AppError::rule("La partie a déjà commencé dans ce salon : attends la fin pour la rejoindre."));
+    }
     let count: i64 = tx.one("SELECT COUNT(*) FROM room_player WHERE room_id = ?1", [room.id])?;
     if count >= room.max_players {
         return Err(AppError::rule("Ce salon est complet."));
@@ -169,6 +173,7 @@ pub fn join(tx: &Transaction, env: &Env, input: &Input, token: Option<&str>) -> 
         "room": {
             "id": room.id,
             "code": room.code,
+            "max_players": room.max_players,
             "game_mode": room.game_mode,
             "cosmos_id": room.cosmos_id,
             "cosmos_name": cosmos_name(tx, room.cosmos_id)?,
@@ -230,7 +235,7 @@ pub fn ready(tx: &Transaction, env: &Env, room_id: i64, input: &Input) -> AppRes
         "message": if ready { "Tu es prêt !" } else { "Tu n'es plus prêt." },
         "is_ready": ready,
         "all_ready": all_ready,
-        "can_start": all_ready && list.len() >= 4,
+        "can_start": all_ready && list.len() as i64 >= MIN_PLAYERS,
         "players": players,
     }))
     .event(event))

@@ -1,4 +1,4 @@
-// Hors partie : transfert d'hôte, lancement à moins de 4, chat du hall, emojis joueurs.
+// Hors partie : transfert d'hôte, limites de joueurs (3 à 12), chat du hall, emojis joueurs.
 
 import { Bot, everyone, marks } from '../lib/bots.mjs'
 import { jpegDataUri } from '../lib/http.mjs'
@@ -28,25 +28,32 @@ export async function lobby(ctx) {
     ctx.check(/supprimé/.test(last.data.message), 'dernier départ : salon supprimé')
     g.rt.close()
 
-    // ── Lancement refusé à moins de 4 joueurs ────────────────────────────────
+    // ── Limites de joueurs : salon de 3 à 12 places, lancement dès 3 ─────────
     const trio = ['t1', 't2', 't3'].map((n) => new Bot(ctx, n))
-    const tc = await api.post('/rooms', { body: { pseudo: trio[0].pseudo }, expect: 201 })
+    await ctx.refused(422, 'POST', '/rooms', { body: { pseudo: trio[0].pseudo, max_players: 2 } }, 'salon de 2 places')
+    await ctx.refused(422, 'POST', '/rooms', { body: { pseudo: trio[0].pseudo, max_players: 13 } }, 'salon de 13 places')
+    const dflt = await api.post('/rooms', { body: { pseudo: ctx.pseudo('td') }, expect: 201 })
+    ctx.check(dflt.data.room.max_players === 12, 'salon : 12 places par défaut', dflt.data.room)
+    await api.delete('/rooms/:room/leave', { params: { room: dflt.data.room.id }, body: { player_id: dflt.data.player.id }, expect: 200 })
+    const tc = await api.post('/rooms', { body: { pseudo: trio[0].pseudo, max_players: 3 }, expect: 201 })
     trio[0].setId(tc.data.player.id)
-    for (const b of trio.slice(1)) b.setId((await api.post('/rooms/join', { body: { pseudo: b.pseudo, code: tc.data.room.code }, expect: 200 })).data.player.id)
-    for (const b of trio) await api.patch('/rooms/:room/ready', { params: { room: tc.data.room.id }, body: { player_id: b.id }, expect: 200 })
-    await ctx.refused(422, 'POST', '/rooms/:room/start', { params: { room: tc.data.room.id }, body: { player_id: trio[0].id } }, 'lancer à 3 joueurs')
+    trio[1].setId((await api.post('/rooms/join', { body: { pseudo: trio[1].pseudo, code: tc.data.room.code }, expect: 200 })).data.player.id)
+    for (const b of trio.slice(0, 2)) await api.patch('/rooms/:room/ready', { params: { room: tc.data.room.id }, body: { player_id: b.id }, expect: 200 })
+    await ctx.refused(422, 'POST', '/rooms/:room/start', { params: { room: tc.data.room.id }, body: { player_id: trio[0].id } }, 'lancer à 2 joueurs')
 
-    // Un 4e joueur : la partie démarre, puis l'admin la supprime en cours de route
-    const fourth = new Bot(ctx, 't4')
-    fourth.setId((await api.post('/rooms/join', { body: { pseudo: fourth.pseudo, code: tc.data.room.code }, expect: 200 })).data.player.id)
-    await api.patch('/rooms/:room/ready', { params: { room: tc.data.room.id }, body: { player_id: fourth.id }, expect: 200 })
+    // Un 3e joueur remplit le salon (3 places) : un 4e est refusé, la partie démarre à 3,
+    // puis l'admin la supprime en cours de route
+    const third = await api.post('/rooms/join', { body: { pseudo: trio[2].pseudo, code: tc.data.room.code }, expect: 200 })
+    trio[2].setId(third.data.player.id)
+    ctx.check(third.data.room.max_players === 3, 'join : max_players renvoyé', third.data.room)
+    await ctx.refused(409, 'POST', '/rooms/join', { body: { pseudo: ctx.pseudo('t4'), code: tc.data.room.code } }, 'rejoindre un salon complet')
+    await api.patch('/rooms/:room/ready', { params: { room: tc.data.room.id }, body: { player_id: trio[2].id }, expect: 200 })
     const started = await api.post('/rooms/:room/start', { params: { room: tc.data.room.id }, body: { player_id: trio[0].id }, expect: 201 })
     await ctx.refused(403, 'DELETE', '/admin/games/:game', { params: { game: started.data.game_id }, admin: true }, 'supprimer une partie sans le mot de passe de suppression')
     await ctx.refused(403, 'DELETE', '/admin/games/:game', { params: { game: started.data.game_id }, admin: true, headers: { 'X-Delete-Password': 'mauvais mot de passe' } }, 'supprimer une partie avec un mauvais mot de passe')
     const del = await api.delete('/admin/games/:game', { params: { game: started.data.game_id }, admin: true, deletion: true, expect: 200 })
     ctx.check(/supprimée/.test(del.data.message), 'admin : partie en cours supprimée')
     await ctx.refused(404, 'GET', '/games/:game', { params: { game: started.data.game_id } }, 'partie supprimée')
-    trio.push(fourth)
     await ctx.refused(422, 'POST', '/rooms', { body: { pseudo: 'x' } }, 'pseudo trop court')
     await ctx.refused(422, 'POST', '/rooms/join', { body: { pseudo: ctx.pseudo('zz'), code: 'ZZZZZZ' } }, 'code de salon inexistant')
     await ctx.refused(404, 'GET', '/rooms/:room', { params: { room: 999999999 } }, 'salon inexistant')

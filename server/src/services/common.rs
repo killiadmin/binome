@@ -201,6 +201,11 @@ pub fn reaction_url(env: &Env, id: i64, is_unicode: bool, created_at: Option<&st
 
 // ─── Parties ────────────────────────────────────────────────────────────────
 
+/// Joueurs d'une partie : minimum pour la lancer, maximum d'un salon (et défaut).
+/// À 3, un binôme affronte l'orphelin. Garder `frontend/src/services/roomService.js` aligné.
+pub const MIN_PLAYERS: i64 = 3;
+pub const MAX_PLAYERS: i64 = 12;
+
 /// Demandes de changement de personnage par joueur et par partie : au-delà, il
 /// garde le personnage tiré (sauf retirage demandé par un autre joueur).
 pub const MAX_CHARACTER_CHANGES: i64 = 2;

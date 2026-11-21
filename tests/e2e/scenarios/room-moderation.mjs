@@ -2,7 +2,7 @@
 //   PATCH /rooms/{room}/lock                      verrouille / déverrouille l'entrée
 //   POST  /rooms/{room}/players/{player}/kick     exclut un joueur du salon
 // L'exclu reçoit `player.kicked` (salon) et `room.kicked` (canal privé), puis
-// le serveur le désabonne du salon (et de la partie en cours s'il la regardait).
+// le serveur le désabonne du salon. Pas de spectateurs : une partie lancée ferme l'entrée.
 
 import { Bot, everyone, marks, sleep } from '../lib/bots.mjs'
 
@@ -95,7 +95,7 @@ export async function roomModeration(ctx) {
     await api.patch(lockRoute, { params: p, body: { player_id: host.id, is_locked: true }, expect: 200 })
     await ctx.refused(403, 'POST', '/rooms/join', { body: { pseudo: b.pseudo, code: room.code } }, 'l\'exclu ne revient pas dans un salon verrouillé')
 
-    // ── Partie en cours : joueur assis protégé, spectateur exclu ─────────────
+    // ── Partie en cours : joueur assis protégé, entrée fermée ────────────────
     await api.patch(lockRoute, { params: p, body: { player_id: host.id, is_locked: false }, expect: 200 })
     await join(late)
     await late.connect()
@@ -109,25 +109,15 @@ export async function roomModeration(ctx) {
     ctx.created.games.add(gameId)
     const gameCh = `game.${gameId}`
 
-    const spectator = new Bot(ctx, 'mspec')
-    await join(spectator)
-    await spectator.connect()
-    await spectator.sub(roomCh)
-    await spectator.sub(gameCh)
-    await spectator.sub(`player.${spectator.id}`)
     await host.sub(gameCh)
 
+    // Salon ouvert mais partie lancée : personne n'entre (pas de spectateurs)
+    const watcher = new Bot(ctx, 'mspec')
+    await ctx.refused(409, 'POST', '/rooms/join', { body: { pseudo: watcher.pseudo, code: room.code } }, 'rejoindre par le code une partie déjà lancée')
+
     await ctx.refused(409, 'POST', kickRoute, { params: { ...p, player: a.id }, body: { player_id: host.id } }, 'exclure du salon un joueur de la partie en cours')
-    m = marks([host, spectator])
-    await api.post(kickRoute, { params: { ...p, player: spectator.id }, body: { player_id: host.id }, expect: 200 })
-    await spectator.rt.waitFor((e) => e.event === 'room.kicked', { since: m.get(spectator), what: 'room.kicked (spectateur)' })
-    await host.rt.waitFor((e) => e.event === 'presence:leaving' && e.channel === gameCh && e.data.id === spectator.id, { since: m.get(host), what: 'leaving du spectateur (partie)' })
-    ctx.check(true, 'spectateur exclu : désabonné de la partie aussi')
-    let resubGame = null
-    try { await spectator.rt.subscribe(gameCh) } catch (e) { resubGame = e.status }
-    ctx.check(resubGame === 403, 'le spectateur exclu ne peut plus regarder la partie → 403', resubGame)
 
     // ── Nettoyage : fin admin (vide et ferme le salon) ───────────────────────
     await api.post('/admin/games/:game/end', { params: { game: gameId }, admin: true, expect: 200 })
-    for (const x of [...everybody, late, spectator]) x.rt?.close()
+    for (const x of [...everybody, late]) x.rt?.close()
 }
