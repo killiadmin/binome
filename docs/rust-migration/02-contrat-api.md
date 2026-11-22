@@ -503,7 +503,9 @@ $.players[].has_password                         bool
 $.players[].id                                   int
 $.players[].in_game                              bool
 $.players[].is_admin                             bool
+$.players[].is_online                            bool
 $.players[].is_validated                         bool
+$.players[].last_seen_at                         date:iso8601 | null
 $.players[].pseudo                               string
 $.players[].room_code                            null | string
 $.players[].score                                int
@@ -1317,6 +1319,7 @@ $.room.cosmos_name                               null
 $.room.current_game_id                           int | null
 $.room.game_mode                                 string
 $.room.id                                        int
+$.room.max_players                               int
 $.room.players                                   array
 $.room.players[]                                 object
 $.room.players[].avatar_url                      null | string
@@ -1342,7 +1345,7 @@ $.room.code                                      string
 $.room.cosmos_id                                 null
 $.room.cosmos_name                               null
 $.room.created_by                                int
-$.room.current_game_id                           null
+$.room.current_game_id                           int | null
 $.room.game_mode                                 string
 $.room.id                                        int
 $.room.is_locked                                 bool

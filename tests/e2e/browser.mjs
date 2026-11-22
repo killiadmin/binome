@@ -213,6 +213,13 @@ try {
     await admin.locator('.player-status').first().waitFor({ timeout: 8000 })
     const playersWidth = await admin.evaluate(() => document.documentElement.scrollWidth)
     ok(gamesWidth <= 320 && playersWidth <= 320, `admin : pas de défilement horizontal en 320 px (parties ${gamesWidth}, joueurs ${playersWidth})`)
+    // Dernière connexion sur chaque fiche ; l'admin, connecté, est « en ligne »
+    const seen = await admin.locator('.player-seen').allInnerTexts()
+    const cards = await admin.locator('.player-card').count()
+    const dated = seen.filter((t) => /Dernière connexion : (en ce moment|\d{2}\/\d{2}\/\d{4} à \d{2}:\d{2}|jamais)/.test(t)).length
+    const onlineTags = await admin.locator('.tag--online').count()
+    ok(cards > 0 && dated === cards && onlineTags >= 1,
+        `admin : dernière connexion (jour et heure) sur chaque fiche (${dated}/${cards}), ${onlineTags} joueur(s) en ligne`)
 
     // ── Administrateur désigné : nommé depuis l'onglet Joueurs, accès par son profil ─
     const delegatePseudo = ctx.pseudo('Adj')

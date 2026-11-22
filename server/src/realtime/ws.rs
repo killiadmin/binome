@@ -114,6 +114,9 @@ async fn session(socket: WebSocket, state: AppState, player_id: Option<i64>) {
     let (mut sink, mut stream) = socket.split();
     let (out, mut inbox) = mpsc::unbounded_channel::<Arc<str>>();
     let conn = state.hub.register(player_id, out.clone());
+    if let Some(pid) = player_id {
+        state.touch(pid, false);
+    }
 
     // Écriture : messages du hub + pings périodiques
     let writer = tokio::spawn(async move {
@@ -169,4 +172,8 @@ async fn session(socket: WebSocket, state: AppState, player_id: Option<i64>) {
 
     state.hub.unregister(conn);
     writer.abort();
+    // Dernière connexion = départ du joueur
+    if let Some(pid) = player_id {
+        state.touch(pid, true);
+    }
 }

@@ -31,6 +31,7 @@ const SORTS = {
   games: 'Parties',
   wins: 'Victoires',
   recent: 'Récents',
+  seen: 'Connexion',
 }
 
 const filteredPlayers = computed(() => {
@@ -44,6 +45,8 @@ const filteredPlayers = computed(() => {
     games: (a, b) => b.games_count - a.games_count,
     wins: (a, b) => b.wins - a.wins || b.score - a.score,
     recent: (a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+    // Connectés d'abord, puis de la connexion la plus récente à la plus ancienne
+    seen: (a, b) => b.is_online - a.is_online || (b.last_seen_at ?? '').localeCompare(a.last_seen_at ?? ''),
   }
   return list.sort(by[sort.value])
 })
@@ -159,6 +162,15 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+// Dernière connexion : jour et heure (heure locale du navigateur)
+function fmtDateTime(iso) {
+  if (!iso) return 'jamais'
+  const d = new Date(iso)
+  const day = d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  return `${day} à ${time}`
+}
+
 onMounted(loadPlayers)
 </script>
 
@@ -218,6 +230,7 @@ onMounted(loadPlayers)
               {{ p.pseudo }}
               <span v-if="p.room_code" class="tag tag--room">salon {{ p.room_code }}</span>
               <span v-if="p.in_game" class="tag tag--game">en partie</span>
+              <span v-if="p.is_online" class="tag tag--online">en ligne</span>
             </div>
             <div class="player-status">
               <span v-if="p.admin_role === 'owner'" class="tag tag--admin"><i class="fa-solid fa-crown"></i> propriétaire</span>
@@ -231,7 +244,13 @@ onMounted(loadPlayers)
               <span><i class="fa-solid fa-gamepad"></i> {{ p.games_count }} partie{{ p.games_count > 1 ? 's' : '' }}</span>
               <span><i class="fa-solid fa-trophy"></i> {{ p.wins }}</span>
               <span><i class="fa-solid fa-star"></i> {{ p.score }} pts</span>
-              <span><i class="fa-solid fa-calendar"></i> {{ fmtDate(p.created_at) }}</span>
+              <span title="Création du profil"><i class="fa-solid fa-calendar"></i> {{ fmtDate(p.created_at) }}</span>
+            </div>
+            <div class="player-seen" :title="p.is_online ? 'Connecté en ce moment' : 'Dernière connexion'">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+              Dernière connexion :
+              <template v-if="p.is_online">en ce moment</template>
+              <template v-else>{{ fmtDateTime(p.last_seen_at) }}</template>
             </div>
           </div>
           <!-- Un joueur en pleine partie n'est ni retirable ni supprimable :
@@ -508,6 +527,13 @@ onMounted(loadPlayers)
 
 .tag--room { background: var(--arcade-gold); color: var(--arcade-dark); }
 .tag--game { background: var(--arcade-success); color: #fff; }
+.tag--online { background: var(--arcade-blue-grey); color: var(--arcade-beige); }
+
+.player-seen {
+  color: var(--arcade-taupe);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
 
 /* Statut du profil : sécurisé / public, validé / à valider */
 .player-status {

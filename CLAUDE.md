@@ -119,8 +119,9 @@ remains. Details in `docs/regles-du-jeu.md`.
   custom emojis, lobby messages and idea votes deleted; `game_stats` / `ideas.author_name`
   renamed. A player with no game rows is deleted outright. Used by `DELETE /profile` (self,
   password required if set), `DELETE /admin/players/{id}` (default) and the daily purge of
-  profiles inactive for 24 months (`players.last_seen_at`, written at most once a day per player
-  by the `identify` middleware and at login). Keep `LegalPage.vue` in line with this behaviour.
+  profiles inactive for 24 months (`players.last_seen_at`, written at most every 5 minutes per
+  player by the `identify` middleware and at WebSocket connect, always at WebSocket disconnect and
+  at login; shown as « Dernière connexion » with an « en ligne » flag in /admin/players). Keep `LegalPage.vue` in line with this behaviour.
 - Admin end of game (migration 11, `admin::end_game`, button on /admin/games): `POST
   /admin/games/{id}/end` closes an in-progress game through `play::end_game` with no winner
   (stats kept, `game.ended` with `ended_by_admin`, `games.ended_by_admin_at`), then deletes its

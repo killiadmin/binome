@@ -47,7 +47,7 @@ pub(crate) fn players_in_progress_games(c: &impl Q) -> AppResult<HashSet<i64>> {
 /// GET /admin/players
 pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     let players = c.all(
-        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at, admin_granted_at IS NOT NULL FROM players
+        "SELECT id, pseudo, created_at, updated_at, password_hash IS NOT NULL, validated_at, admin_granted_at IS NOT NULL, last_seen_at FROM players
          WHERE deleted_at IS NULL ORDER BY pseudo, id",
         [],
         |r| {
@@ -59,6 +59,7 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
                 r.get::<_, bool>(4)?,
                 r.get::<_, Option<String>>(5)?,
                 r.get::<_, bool>(6)?,
+                r.get::<_, Option<String>>(7)?,
             ))
         },
     )?;
@@ -77,9 +78,10 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
     }
     let in_game = players_in_progress_games(c)?;
     let avatars = avatar_urls(c, env, players.iter().map(|p| p.1.as_str()))?;
+    let online = env.hub.connected_players();
     let list: Vec<_> = players
         .iter()
-        .map(|(id, pseudo, created, updated, has_password, validated_at, granted)| {
+        .map(|(id, pseudo, created, updated, has_password, validated_at, granted, seen)| {
             let is_admin = profile::is_admin_pseudo(env, pseudo);
             let role = if is_admin {
                 Some("owner")
@@ -105,6 +107,8 @@ pub fn players_index(c: &impl Q, env: &Env) -> AppResult<Out> {
                 "validated_at": clock::iso(validated_at.as_deref()),
                 "created_at": clock::iso(created.as_deref()),
                 "updated_at": clock::iso(updated.as_deref()),
+                "last_seen_at": clock::iso(seen.as_deref()),
+                "is_online": online.contains(id),
             })
         })
         .collect();

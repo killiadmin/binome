@@ -185,6 +185,11 @@ impl Hub {
         }
     }
 
+    /// Joueurs ayant au moins une connexion WebSocket ouverte.
+    pub fn connected_players(&self) -> HashSet<i64> {
+        self.lock().conns.values().filter_map(|c| c.player_id).collect()
+    }
+
     pub fn is_online(&self, channel: &str, player_id: i64) -> bool {
         self.lock().presence.get(channel).is_some_and(|m| m.contains_key(&player_id))
     }

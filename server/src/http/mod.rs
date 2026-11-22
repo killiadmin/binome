@@ -75,16 +75,19 @@ impl AppState {
         }
     }
 
-    /// Activité du joueur (`players.last_seen_at`, durée de conservation) : écrite
-    /// au plus une fois par jour et par joueur, en tâche de fond.
-    fn touch(&self, player_id: i64) {
-        let today = crate::clock::now().unix_timestamp().div_euclid(86_400);
+    /// Activité du joueur (`players.last_seen_at` : dernière connexion affichée aux
+    /// admins, durée de conservation) : écrite au plus une fois toutes les
+    /// `SEEN_EVERY` secondes par joueur, en tâche de fond. `force` : écrite quoi
+    /// qu'il arrive (fin de connexion WebSocket).
+    pub(crate) fn touch(&self, player_id: i64, force: bool) {
+        const SEEN_EVERY: i64 = 300;
+        let slot = crate::clock::now().unix_timestamp().div_euclid(SEEN_EVERY);
         {
             let mut seen = self.last_seen.lock().unwrap_or_else(|p| p.into_inner());
-            if seen.get(&player_id) == Some(&today) {
+            if !force && seen.get(&player_id) == Some(&slot) {
                 return;
             }
-            seen.insert(player_id, today);
+            seen.insert(player_id, slot);
         }
         let db = self.db.clone();
         tokio::spawn(async move {
@@ -134,7 +137,7 @@ async fn identify(State(st): State<AppState>, mut req: Request, next: Next) -> R
             let env = st.env();
             match st.db.read(move |c| profile::authenticate(c, &env, Some(&token))).await {
                 Ok(Some(p)) => {
-                    st.touch(p.id);
+                    st.touch(p.id, false);
                     Caller::Player(p.id)
                 }
                 Ok(None) => Caller::Invalid,

@@ -16,8 +16,8 @@ pub struct AppState {
     pub limiter: Arc<RateLimiter>,
     /// Clé de signature des jetons de profil (table `app_secrets`).
     pub profile_secret: Arc<Vec<u8>>,
-    /// Dernier jour (n° depuis l'époque Unix) où l'activité de chaque joueur a été
-    /// écrite (`players.last_seen_at`) : au plus une écriture par joueur et par jour.
+    /// Dernière tranche de 5 minutes (n° depuis l'époque Unix) où l'activité de chaque
+    /// joueur a été écrite (`players.last_seen_at`) : au plus une écriture par tranche.
     pub last_seen: Arc<Mutex<HashMap<i64, i64>>>,
 }
 

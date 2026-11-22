@@ -80,6 +80,8 @@ const ACCEPTED = [
     /^NOUVEAU +PATCH \/api\/rooms\/:room\/lock \d{3}$/,
     /^NOUVEAU +POST \/api\/rooms\/:room\/players\/:player\/kick \d{3}$/,
     /^NOUVEAU +event (player\.kicked @room|room\.kicked @player|room\.lock\.updated @room)$/,
+    // Dernière connexion des joueurs dans l'admin (2026-11-22) : date + connecté en ce moment.
+    /^CHAMP EN TROP +GET \/api\/admin\/players 200 +\$\.players\[\]\.(last_seen_at|is_online) /,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 
