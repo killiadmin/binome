@@ -28,7 +28,7 @@
 
 ## Couverture
 
-89 routes ; 89 observées par le banc.
+91 routes ; 91 observées par le banc.
 Toutes les routes sont observées.
 
 ## Routes
@@ -533,7 +533,7 @@ $.player.is_validated                            bool
 
 ### `PATCH /api/admin/players/:player/validation`
 
-`{ validated }` : valider un profil (historique, emojis image) — accès : admin
+`{ validated }` : valider un profil (historique, emojis publics) — accès : admin
 
 Statuts observés : `200`, `403`, `404`, `409`
 
@@ -722,6 +722,7 @@ $.reactions[].created_by                         null | string
 $.reactions[].emoji                              null | string
 $.reactions[].id                                 int
 $.reactions[].is_enabled                         bool
+$.reactions[].is_public                          bool
 $.reactions[].name                               string
 $.reactions[].url                                null | string
 ```
@@ -743,13 +744,14 @@ $.reaction.created_by                            null
 $.reaction.emoji                                 string
 $.reaction.id                                    int
 $.reaction.is_enabled                            bool
+$.reaction.is_public                             bool
 $.reaction.name                                  string
 $.reaction.url                                   null
 ```
 
 ### `PATCH /api/admin/reactions/:reaction`
 
-Renommer / masquer — accès : admin
+Renommer / masquer / `{ is_public }` — accès : admin
 
 Statuts observés : `200`
 
@@ -760,12 +762,13 @@ $                                                object
 $.message                                        string
 $.reaction                                       object
 $.reaction.created_at                            date:eloquent
-$.reaction.created_by                            null
-$.reaction.emoji                                 string
+$.reaction.created_by                            null | string
+$.reaction.emoji                                 null | string
 $.reaction.id                                    int
 $.reaction.is_enabled                            bool
+$.reaction.is_public                             bool
 $.reaction.name                                  string
-$.reaction.url                                   null
+$.reaction.url                                   null | string
 ```
 
 ### `DELETE /api/admin/reactions/:reaction`
@@ -931,7 +934,7 @@ $.message                                        string
 
 ### `GET /api/reactions`
 
-Réactions actives (Unicode puis images ; images pour un profil validé seulement) — accès : public
+Barre de réactions : Unicode, images publiques, puis les images privées du joueur du jeton — accès : public
 
 Statuts observés : `200`
 
@@ -944,13 +947,14 @@ $.reactions[]                                    object
 $.reactions[].created_by                         null | string
 $.reactions[].emoji                              null | string
 $.reactions[].id                                 int
+$.reactions[].is_public                          bool
 $.reactions[].name                               string
 $.reactions[].url                                null | string
 ```
 
 ### `POST /api/reactions`
 
-Un joueur crée un emoji image (JPEG carré 64–256 px ≤ 60 ko, 10/pseudo) — accès : player_id validé · 5/min
+Un joueur crée un emoji image (JPEG carré 64–256 px ≤ 60 ko, 10/pseudo), privé sauf `is_public` (profil validé, `403` sinon) — accès : player_id · 5/min
 
 Statuts observés : `201`, `403`, `422`
 
@@ -963,8 +967,53 @@ $.reaction                                       object
 $.reaction.created_by                            string
 $.reaction.emoji                                 null
 $.reaction.id                                    int
+$.reaction.is_public                             bool
 $.reaction.name                                  string
 $.reaction.url                                   string
+```
+
+### `PATCH /api/reactions/:reaction`
+
+Le créateur rend son emoji `{ is_public }` (public : profil validé) ; `403` pour l'emoji d'un autre — accès : player_id (créateur) · 20/min
+
+Statuts observés : `200`, `403`, `404`
+
+Réponse `200` :
+
+```
+$                                                object
+$.message                                        string
+$.reaction                                       object
+$.reaction.created_at                            date:eloquent
+$.reaction.created_by                            string
+$.reaction.emoji                                 null
+$.reaction.id                                    int
+$.reaction.is_enabled                            bool
+$.reaction.is_public                             bool
+$.reaction.name                                  string
+$.reaction.url                                   string
+```
+
+### `GET /api/profile/reactions`
+
+Mes emojis image, masqués compris (`is_public`, `is_enabled`) — accès : profil
+
+Statuts observés : `200`, `401`
+
+Réponse `200` :
+
+```
+$                                                object
+$.reactions                                      array
+$.reactions[]                                    object
+$.reactions[].created_at                         date:eloquent
+$.reactions[].created_by                         string
+$.reactions[].emoji                              null
+$.reactions[].id                                 int
+$.reactions[].is_enabled                         bool
+$.reactions[].is_public                          bool
+$.reactions[].name                               string
+$.reactions[].url                                string
 ```
 
 ### `GET /api/reactions/:reaction/image`
@@ -1673,7 +1722,7 @@ $.message                                        string
 
 ### `POST /api/games/:game/reactions`
 
-Réaction rapide → `reaction.sent` — accès : joueur ou spectateur · 30/min
+Réaction rapide → `reaction.sent` ; emoji privé : son créateur seul (`403`) — accès : joueur ou spectateur · 30/min
 
 Statuts observés : `200`, `403`, `404`
 

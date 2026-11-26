@@ -70,8 +70,8 @@ export async function controls(ctx) {
     // ── Validation des profils ──────────────────────────────────────────────
     await ctx.refused(401, 'GET', '/history/leaderboard', {}, 'historique sans profil')
     await ctx.refused(403, 'GET', '/history/leaderboard', { headers: tok(token) }, 'historique d\'un profil non validé')
-    await ctx.refused(403, 'POST', '/reactions', { body: { player_id: pid, name: 'Non', image: jpegDataUri('square-64.jpg') } }, 'emoji d\'un profil non validé')
-    ctx.check((await api.get('/reactions', { headers: tok(token), expect: 200 })).data.reactions.every((r) => r.emoji !== null), 'profil non validé : pas d\'emojis personnalisés')
+    await ctx.refused(403, 'POST', '/reactions', { body: { player_id: pid, name: 'Non', image: jpegDataUri('square-64.jpg'), is_public: true } }, 'emoji public d\'un profil non validé')
+    ctx.check((await api.get('/reactions', { headers: tok(token), expect: 200 })).data.reactions.every((r) => r.is_public || r.created_by === pseudo), 'barre : emojis publics et les siens seulement')
 
     const validated = await api.patch('/admin/players/:player/validation', { params: { player: pid }, body: { validated: true }, admin: true, expect: 200 })
     ctx.check(validated.data.player.is_validated === true && typeof validated.data.player.validated_at === 'string', 'validation : profil validé et daté')

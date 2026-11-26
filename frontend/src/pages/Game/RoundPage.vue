@@ -752,6 +752,8 @@ async function sendReaction(reaction) {
   } catch (e) {
     if (e.response?.status === 429) showNotice('Doucement sur les réactions 😅')
     else if (e.response?.status === 404) showNotice('Cet emoji n\'est plus disponible.')
+    // Emoji rendu privé par son créateur depuis l'ouverture de la barre
+    else if (e.response?.status === 403) showNotice(e.response.data?.message || 'Cet emoji est privé.')
   }
 }
 

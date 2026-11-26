@@ -225,9 +225,23 @@ il ne sert plus, mais permettrait de rouvrir les spectateurs en levant ce seul r
 
 Les réactions sont toutes en base (`custom_reactions`) : les emojis Unicode d'origine y ont été
 repris, l'admin peut en ajouter ou en supprimer. Un emoji Unicode doit être **un seul graphème**.
-Les **emojis personnalisés** (images créées par les joueurs) sont réservés aux profils
-**validés** par l'administrateur : ni visibles dans la barre, ni envoyables, ni créables sans
-validation (`403`). Les emojis Unicode restent ouverts à tous.
+Les **emojis personnalisés** (images créées par les joueurs, migration 12) sont **privés** ou
+**publics** :
+
+| | Dans la barre de | Peut l'envoyer | Le voit passer en partie |
+|---|---|---|---|
+| Privé (à la création) | son créateur | son créateur seul (`403` sinon) | tous les joueurs de la partie |
+| Public | tous les joueurs | tous les joueurs | tous les joueurs de la partie |
+
+- **Tout joueur** crée des emojis (bouton « + » de la barre, ou « Mes emojis » sur le profil),
+  10 actifs au plus par pseudo, 5 créations par minute.
+- **Rendre un emoji public** (case à la création, ou `PATCH /reactions/{id}` depuis le profil)
+  est réservé aux profils **validés** par l'administrateur (`403`). Le créateur peut toujours
+  le rendre privé à nouveau ; l'admin peut changer n'importe lequel (onglet Emojis).
+- Un emoji redevenu privé reste dans la barre des autres jusqu'à sa prochaine ouverture, mais
+  leur envoi est refusé tout de suite. La validation retirée à un profil ne change pas ses
+  emojis déjà publics (l'admin les rend privés ou les masque).
+- Les emojis Unicode, ceux de l'admin et ceux créés avant la migration 12 sont publics.
 
 ### Chat commun du hall (`lobby`)
 

@@ -82,6 +82,13 @@ const ACCEPTED = [
     /^NOUVEAU +event (player\.kicked @room|room\.kicked @player|room\.lock\.updated @room)$/,
     // Dernière connexion des joueurs dans l'admin (2026-11-22) : date + connecté en ce moment.
     /^CHAMP EN TROP +GET \/api\/admin\/players 200 +\$\.players\[\]\.(last_seen_at|is_online) /,
+    // Emojis privés / publics (migration 12, 2026-11-25) : `is_public` dans les réactions, le
+    // créateur change la visibilité (PATCH /reactions/:reaction). Le banc envoie et modifie
+    // désormais des emojis image (url / created_by remplis, emoji null).
+    /^CHAMP EN TROP +(GET|POST|PATCH) \/api\/(admin\/)?reactions(\/:reaction)? 20[01] +\$\.reactions?(\[\])?\.is_public /,
+    /^CHAMP EN TROP +event reaction\.sent @game +\$\.reaction\.is_public /,
+    /^NOUVEAU +PATCH \/api\/reactions\/:reaction \d{3}$/,
+    /^TYPE +(PATCH \/api\/admin\/reactions\/:reaction 200|event reaction\.sent @game) +\$\.reaction\.(created_by|emoji|url): /,
 ]
 const issues = compareCatalogs(strip(load(refName)), strip(load(candName))).filter((i) => !ACCEPTED.some((re) => re.test(i)))
 

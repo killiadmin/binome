@@ -3,14 +3,14 @@ import {ref, watch, onMounted, onUnmounted} from 'vue'
 import {isImmersive, toggleImmersive, exitImmersive} from '../../composables/useImmersiveMode'
 import {reactionService} from '../../services/reactionService'
 import ReactionEditor from './ReactionEditor.vue'
-import {isValidatedProfile} from '../../services/profile'
 
 // Réactions rapides : un bouton flottant qui déplie la barre d'emojis, et une
 // couche d'animation où montent les réactions reçues (les siennes comprises,
 // elles reviennent par le broadcast comme celles des autres).
 // Toutes les réactions viennent de GET /reactions (gérées dans l'onglet
-// Emojis de l'admin) : emojis Unicode puis images créées par les joueurs,
-// et enfin le bouton « + » pour en créer une (ReactionEditor).
+// Emojis de l'admin) : emojis Unicode, images publiques et mes images
+// privées (cadenas, moi seul peux les envoyer), et enfin le bouton « + »
+// pour en créer une (ReactionEditor).
 
 // Délai minimal entre deux envois, en plus du throttle serveur.
 const COOLDOWN_MS = 1200
@@ -52,6 +52,11 @@ function send(reaction) {
   setTimeout(() => { coolingDown.value = false }, COOLDOWN_MS)
 }
 
+function reactionTitle(r) {
+  if (!r.created_by) return r.name
+  return r.is_public ? `${r.name} — par ${r.created_by}` : `${r.name} — privé, toi seul peux l'envoyer`
+}
+
 function onCreated(reaction) {
   available.value = [...available.value, reaction]
 }
@@ -86,16 +91,17 @@ onUnmounted(exitImmersive)
           class="reaction-bar__btn"
           :disabled="coolingDown"
           :aria-label="`Réagir ${r.name}`"
-          :title="r.created_by ? `${r.name} — par ${r.created_by}` : r.name"
+          :title="reactionTitle(r)"
           @click="send({ reaction_id: r.id })"
       >
         <img v-if="r.url" :src="r.url" :alt="r.name" class="reaction-bar__img" loading="lazy" />
         <template v-else>{{ r.emoji }}</template>
+        <i v-if="!r.is_public" class="fa-solid fa-lock reaction-bar__lock" aria-hidden="true"></i>
       </button>
       <p v-if="loadFailed" class="reaction-bar__empty">Réactions indisponibles</p>
-      <!-- Emojis personnalisés : profils validés par l'administrateur seulement -->
+      <!-- Tout joueur crée des emojis privés ; les rendre publics demande un profil validé -->
       <button
-          v-if="isValidatedProfile"
+          v-if="playerId"
           type="button"
           class="reaction-bar__btn reaction-bar__btn--add"
           aria-label="Créer un emoji"
@@ -279,6 +285,7 @@ onUnmounted(exitImmersive)
 }
 
 .reaction-bar__btn {
+  position: relative;
   width: 44px;
   height: 44px;
   padding: 0;
@@ -297,6 +304,18 @@ onUnmounted(exitImmersive)
   height: 34px;
   border-radius: 50%;
   object-fit: cover;
+  pointer-events: none;
+}
+
+.reaction-bar__lock {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  font-size: 0.6rem;
+  padding: 2px;
+  border-radius: 50%;
+  color: var(--arcade-beige);
+  background: var(--arcade-blue-grey-dark);
   pointer-events: none;
 }
 

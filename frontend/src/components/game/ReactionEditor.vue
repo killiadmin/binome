@@ -5,11 +5,14 @@ import ImageCropperModal from '../cropper/ImageCropperModal.vue'
 import {reactionService} from '../../services/reactionService'
 import {adminService} from '../../services/adminService'
 import {canTakePhoto, readAsDataUrl, usePhotoCapture} from '../../composables/usePhotoCapture'
+import {isValidatedProfile} from '../../services/profile'
 
 // Création d'un emoji de réaction : selfie ou image de la bibliothèque,
-// recadrage carré (JPEG 128 px, ~8 ko), puis un nom. L'emoji est aussitôt
-// disponible pour tous les joueurs ; un administrateur peut le masquer.
-// Réutilisé par l'onglet Emojis de l'admin (prop `admin`).
+// recadrage carré (JPEG 128 px, ~8 ko), puis un nom. L'emoji d'un joueur naît
+// privé (lui seul l'envoie, tout le monde le voit passer) ; un profil validé
+// peut cocher « Public » pour le mettre dans la barre de tous. Un
+// administrateur peut le masquer. Réutilisé par l'onglet Emojis de l'admin
+// (prop `admin`) : là, il est toujours public.
 
 const OUTPUT_SIZE = 128
 const QUALITY = 0.85
@@ -31,6 +34,7 @@ const {
 
 const preview = ref(null) // data URI recadrée, envoyée telle quelle
 const name = ref('')
+const isPublic = ref(false)
 const saving = ref(false)
 
 async function onCropped(file) {
@@ -44,7 +48,7 @@ async function save() {
   try {
     const reaction = props.admin
         ? (await adminService.createReaction({name: name.value.trim(), image: preview.value})).data.reaction
-        : await reactionService.create(props.playerId, name.value.trim(), preview.value)
+        : await reactionService.create(props.playerId, name.value.trim(), preview.value, isPublic.value && isValidatedProfile.value)
     emit('created', reaction)
     show.value = false
   } catch (e) {
@@ -64,6 +68,7 @@ watch(show, (open) => {
   error.value = null
   preview.value = null
   name.value = ''
+  isPublic.value = false
 })
 </script>
 
@@ -88,9 +93,15 @@ watch(show, (open) => {
           <i v-else class="fa-regular fa-face-grin-stars"></i>
         </div>
         <p class="reaction-editor__hint">
-          {{ admin ? 'Prends une photo' : 'Prends-toi en photo' }} ou choisis une image :
-          elle rejoindra la barre de réactions de tous les joueurs. Ne prends personne en photo
-          sans son accord.
+          <template v-if="admin">
+            Prends une photo ou choisis une image : elle rejoindra la barre de réactions de tous
+            les joueurs.
+          </template>
+          <template v-else>
+            Prends-toi en photo ou choisis une image. Ton emoji est privé : toi seul peux
+            l'envoyer, et tout le monde le voit passer en partie.
+          </template>
+          Ne prends personne en photo sans son accord.
           <router-link :to="{ name: 'Legal' }" target="_blank">Tes données</router-link>
         </p>
 
@@ -113,6 +124,15 @@ watch(show, (open) => {
           <label class="reaction-editor__label" for="reaction-name">Nom de l'emoji</label>
           <input id="reaction-name" v-model="name" type="text" maxlength="20"
                  class="form-control" placeholder="ex : Killian choqué" autocomplete="off" />
+          <template v-if="!admin">
+            <label v-if="isValidatedProfile" class="reaction-editor__public">
+              <input v-model="isPublic" type="checkbox" />
+              <span>Public : les autres joueurs pourront aussi l'envoyer</span>
+            </label>
+            <p v-else class="reaction-editor__note">
+              Pour le rendre public, l'administrateur doit d'abord valider ton profil.
+            </p>
+          </template>
           <button type="submit" class="cabinet-btn cabinet-btn--sm" :disabled="saving || !name.trim()">
             <BSpinner v-if="saving" small /><i v-else class="fa-solid fa-check"></i> Créer l'emoji
           </button>
@@ -201,6 +221,28 @@ watch(show, (open) => {
 .reaction-editor__label {
   font-weight: 700;
   font-size: 0.85rem;
+}
+
+.reaction-editor__public {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reaction-editor__public input {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.reaction-editor__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6c6259;
 }
 
 .reaction-editor__webcam {

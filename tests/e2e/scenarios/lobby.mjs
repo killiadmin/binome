@@ -89,20 +89,39 @@ export async function lobby(ctx) {
     ctx.check(history.some((m) => m.id === msg.data.message.id) && history.length <= 50, 'chat : historique (50 max) contient les messages')
     visitor.close()
 
-    // ── Emojis créés par un joueur ──────────────────────────────────────────
-    const author = trio[0]
-    // Emojis personnalisés réservés aux profils validés par l'admin (migration 6)
-    await ctx.refused(403, 'POST', '/reactions', { body: { player_id: author.id, name: 'Refusé', image: jpegDataUri('square-64.jpg') } }, 'emoji créé par un profil non validé')
-    await api.patch('/admin/players/:player/validation', { params: { player: author.id }, body: { validated: true }, admin: true, expect: 200 })
+    // ── Emojis créés par un joueur (privés / publics, migration 12) ─────────
+    const [author, neighbour] = trio
+    const bar = async (b) => (await api.get('/reactions', { headers: b ? { 'X-Profile-Token': api.tokens.get(b.id) } : {}, expect: 200 })).data.reactions
+    // Tout joueur crée un emoji, privé par défaut ; public : profil validé seulement
+    await ctx.refused(403, 'POST', '/reactions', { body: { player_id: author.id, name: 'Refusé', image: jpegDataUri('square-64.jpg'), is_public: true } }, 'emoji public créé par un profil non validé')
     const r = await api.post('/reactions', { body: { player_id: author.id, name: 'Carré', image: jpegDataUri('square-64.jpg') }, expect: 201 })
     ctx.created.reactions.add(r.data.reaction.id)
     ctx.check(r.data.reaction.created_by === author.pseudo && r.data.reaction.emoji === null && r.data.reaction.url.startsWith('/binome/api/reactions/'), 'emoji joueur : URL d\'image versionnée')
+    ctx.check(r.data.reaction.is_public === false, 'emoji joueur : privé à la création')
     await ctx.refused(422, 'POST', '/reactions', { body: { player_id: author.id, name: 'Trop grand', image: jpegDataUri('square-512.jpg') } }, 'emoji > 256 px')
     await ctx.refused(422, 'POST', '/reactions', { body: { player_id: author.id, name: 'Rectangle', image: jpegDataUri('rect-80x40.jpg') } }, 'emoji non carré')
-    const list = (await api.get('/reactions', { headers: { 'X-Profile-Token': api.tokens.get(author.id) }, expect: 200 })).data.reactions
-    ctx.check(list.some((x) => x.id === r.data.reaction.id), 'GET /reactions : l\'emoji est disponible pour les profils validés')
-    const anonymous = (await api.get('/reactions', { expect: 200 })).data.reactions
-    ctx.check(anonymous.every((x) => x.emoji !== null), 'GET /reactions sans profil validé : pas d\'emojis personnalisés')
+    const list = await bar(author)
+    ctx.check(list.some((x) => x.id === r.data.reaction.id), 'GET /reactions : l\'emoji privé est dans la barre de son créateur')
+    ctx.check(!(await bar(neighbour)).some((x) => x.id === r.data.reaction.id), 'GET /reactions : emoji privé absent de la barre des autres')
+    const anonymous = await bar(null)
+    ctx.check(anonymous.every((x) => x.is_public === true), 'GET /reactions sans profil : emojis publics seulement')
+    const mine = (await api.get('/profile/reactions', { headers: { 'X-Profile-Token': api.tokens.get(author.id) }, expect: 200 })).data.reactions
+    ctx.check(mine.length === 1 && mine[0].id === r.data.reaction.id && mine[0].is_enabled === true, 'GET /profile/reactions : mes emojis')
+    await ctx.refused(401, 'GET', '/profile/reactions', {}, 'mes emojis sans profil')
+
+    // Rendre public : le créateur seul, et seulement une fois validé
+    const visibility = (b, isPublic) => ({ params: { reaction: r.data.reaction.id }, body: { player_id: b.id, is_public: isPublic } })
+    await ctx.refused(403, 'PATCH', '/reactions/:reaction', visibility(author, true), 'rendre public sans profil validé')
+    await ctx.refused(403, 'PATCH', '/reactions/:reaction', visibility(neighbour, false), 'changer l\'emoji d\'un autre')
+    await api.patch('/admin/players/:player/validation', { params: { player: author.id }, body: { validated: true }, admin: true, expect: 200 })
+    const pub = await api.patch('/reactions/:reaction', { ...visibility(author, true), expect: 200 })
+    ctx.check(pub.data.reaction.is_public === true, 'emoji rendu public par son créateur validé')
+    ctx.check((await bar(neighbour)).some((x) => x.id === r.data.reaction.id), 'GET /reactions : emoji public dans la barre des autres')
+    const back = await api.patch('/reactions/:reaction', { ...visibility(author, false), expect: 200 })
+    ctx.check(back.data.reaction.is_public === false && !(await bar(neighbour)).some((x) => x.id === r.data.reaction.id), 'emoji redevenu privé : retiré de la barre des autres')
+    const admin = await api.patch('/admin/reactions/:reaction', { params: { reaction: r.data.reaction.id }, body: { is_public: true }, admin: true, expect: 200 })
+    ctx.check(admin.data.reaction.is_public === true, 'admin : rendre un emoji public')
+    await ctx.refused(404, 'PATCH', '/reactions/:reaction', { params: { reaction: 999999999 }, body: { player_id: author.id, is_public: false } }, 'emoji inexistant')
     const firstImage = list.findIndex((x) => x.emoji === null)
     ctx.check(firstImage === -1 || list.slice(firstImage).every((x) => x.emoji === null), 'GET /reactions : Unicode d\'abord, puis images')
     const signed = Object.fromEntries(new URL(r.data.reaction.url, 'http://x').searchParams)

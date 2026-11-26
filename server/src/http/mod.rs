@@ -377,6 +377,15 @@ async fn reactions_store(State(st): State<AppState>, input: Input) -> Response {
     }
     st.write(move |tx, env| social::reaction_store(tx, env, &input)).await
 }
+async fn reactions_visibility(State(st): State<AppState>, Path(p): Params, input: Input) -> Response {
+    if let Some(r) = st.throttle("reaction-visibility", &raw_player_key(&input), 20) {
+        return r;
+    }
+    st.write(move |tx, env| social::reaction_visibility(tx, env, id(&p, "reaction")?, &input)).await
+}
+async fn profile_reactions(State(st): State<AppState>, input: Input) -> Response {
+    st.read(move |c, env| social::my_reactions(c, env, input.1)).await
+}
 async fn reactions_image(State(st): State<AppState>, Path(p): Params, axum::extract::Query(q): ImageQuery) -> Response {
     let secret = st.profile_secret.clone();
     match st.db.read(move |c| social::reaction_image(c, &secret, id(&p, "reaction")?, q.get("s").map(String::as_str))).await {
@@ -845,8 +854,10 @@ pub fn router(state: AppState) -> Router {
         .route("/profile/login", post(profile_login))
         .route("/profile/password", axum::routing::put(profile_password_set).delete(profile_password_remove))
         .route("/profile/password-prompt", post(profile_prompt))
+        .route("/profile/reactions", get(profile_reactions))
         .route("/cosmos", get(cosmos_index))
         .route("/reactions", get(reactions_index).post(reactions_store))
+        .route("/reactions/{reaction}", patch(reactions_visibility))
         .route("/reactions/{reaction}/image", get(reactions_image))
         .route("/history/games", get(history_games))
         .route("/history/games/{game}", get(history_game))

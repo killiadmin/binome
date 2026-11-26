@@ -91,7 +91,7 @@ async function removeFromRoom(player) {
   }
 }
 
-// Validation manuelle : sans elle, pas d'historique ni d'emojis personnalisés.
+// Validation manuelle : sans elle, pas d'historique ni d'emojis publics.
 async function toggleValidation(player) {
   if (busy[player.id] || player.admin_role) return
   busy[player.id] = true
@@ -180,7 +180,7 @@ onMounted(loadPlayers)
     <p class="page-subtitle">
       Pseudos inscrits sur l'application : ceux qui ont joué au moins une partie
       et ceux présents dans un salon. Valide un profil pour lui ouvrir l'historique
-      et les emojis personnalisés, retire un joueur de son salon ou supprime-le.
+      et le droit de rendre ses emojis publics, retire un joueur de son salon ou supprime-le.
       <template v-if="isAdminProfile">Tu peux aussi désigner un administrateur parmi les profils sécurisés ;
       il ne pourra pas en désigner d'autres.</template>
     </p>

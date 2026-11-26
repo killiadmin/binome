@@ -61,7 +61,7 @@ src/
 │   │   ├── AdminGamesPage.vue    # Parties : lister / consulter / supprimer
 │   │   ├── AdminPromptsPage.vue  # Prompts de génération de personnages à copier
 │   │   ├── AdminPlayersPage.vue  # Joueurs inscrits : recherche, tri, stats ; retirer du salon / supprimer
-│   │   └── AdminReactionsPage.vue # Toutes les réactions : ajouter (emoji ou image), renommer, masquer, supprimer
+│   │   └── AdminReactionsPage.vue # Toutes les réactions : ajouter (emoji ou image), renommer, public / privé, masquer, supprimer
 │   ├── Characters/
 │   │   ├── CharacterPage.vue      # Créer un personnage (univers/cosmos existant ou nouveau)
 │   │   └── CharacterListPage.vue  # Liste triée cosmos → univers → binômes, filtres, édition/suppression, validation des propositions
@@ -78,7 +78,7 @@ src/
 │
 ├── services/
 │   ├── adminService.js         # Appels API de l'espace admin (parties, joueurs, emojis)
-│   ├── reactionService.js      # Emojis créés par les joueurs (liste / création)
+│   ├── reactionService.js      # Emojis créés par les joueurs (liste, création, mes emojis, public / privé)
 │   ├── api.js                  # Instance Axios configurée
 │   ├── charactersAccess.js     # Déverrouillage par mot de passe des pages personnages (token en session)
 │   ├── characterService.js     # Appels API personnages/univers/cosmos + validation
@@ -541,10 +541,13 @@ Page de jeu principale. Gère :
   `binome:notes:{gameId}:{playerId}`, jamais envoyé au serveur ; les notes des autres parties
   sont purgées au chargement. Éditable depuis la fiche d'un joueur ou la modale `GameNotepad`.
 - **Réactions** : `QuickReactions.vue` affiche les réactions actives de `GET /reactions`
-  (emojis Unicode puis images, toutes gérées dans `/admin/reactions`), rechargées à chaque
-  ouverture de la barre ; envoi par `{ reaction_id }`, 1,2 s de délai local entre deux envois
-  + throttle serveur. Le bouton « + » ouvre `ReactionEditor.vue` : selfie ou image de la
-  bibliothèque, recadrage carré 128 px, nom — l'emoji est aussitôt disponible pour tous.
+  (emojis Unicode, images publiques, puis mes images privées marquées d'un cadenas ; toutes
+  gérées dans `/admin/reactions`), rechargées à chaque ouverture de la barre ; envoi par
+  `{ reaction_id }`, 1,2 s de délai local entre deux envois + throttle serveur. Le bouton « + »
+  (tout joueur) ouvre `ReactionEditor.vue` : selfie ou image de la bibliothèque, recadrage carré
+  128 px, nom, et case « Public » pour un profil validé — sinon l'emoji est privé (son créateur
+  seul l'envoie). La page profil (« Mes emojis », `GET /profile/reactions`) les rend publics /
+  privés (`PATCH /reactions/{id}`).
   La couche d'animation passe
   au-dessus des modales (z-index 1060) pour rester visible sur l'écran de fin.
 - **Fin de partie** : `handleGameEnded()` charge `GET /games/{game}/recap` (avec reprises : l'event

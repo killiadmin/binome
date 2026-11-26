@@ -33,6 +33,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (9, include_str!("../migrations/0009_effacement.sql")),
     (10, include_str!("../migrations/0010_fiches_univers.sql")),
     (11, include_str!("../migrations/0011_fin_par_admin.sql")),
+    (12, include_str!("../migrations/0012_emojis_prives.sql")),
 ];
 const READERS: usize = 4;
 
@@ -285,7 +286,8 @@ mod tests {
                  INSERT INTO games (id, room_id, status) VALUES (41, 7, 'finished');
                  INSERT INTO game_stats (game_id, player_pseudo, character_name, score) VALUES (41, 'Hote', 'X', 9);
                  INSERT INTO games (id, room_id, status) VALUES (50, 7, 'finished');
-                 DELETE FROM games WHERE id = 50;",
+                 DELETE FROM games WHERE id = 50;
+                 INSERT INTO custom_reactions (id, name, image, created_by_pseudo) VALUES (3, 'Hote rit', 'data:x', 'Hote');",
             )
             .unwrap();
             // Avant migration : la cascade emporterait les parties
@@ -295,7 +297,9 @@ mod tests {
 
         let db = Db::open(&path).unwrap();
         db.with_writer(|c| {
-            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 11);
+            assert_eq!(c.one::<i64>("PRAGMA user_version", [])?, 12);
+            // Migration 12 : les emojis d'avant étaient partagés avec tous, ils restent publics
+            assert_eq!(c.one::<i64>("SELECT is_public FROM custom_reactions WHERE id = 3", [])?, 1);
             // Migration 11 : les parties existantes ne sont pas marquées « arrêtées par l'admin »
             assert_eq!(c.one::<Option<String>>("SELECT ended_by_admin_at FROM games WHERE id = 41", [])?, None);
             // Migration 10 : fiche rédigée pour Disney, aucune pour les autres, sans image
@@ -328,7 +332,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(db.check().unwrap().contains("version du schéma : 11"));
+        assert!(db.check().unwrap().contains("version du schéma : 12"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

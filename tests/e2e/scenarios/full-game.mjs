@@ -543,6 +543,17 @@ export async function fullGame(ctx, { size = 8, rich = true, redraw = rich } = {
                 ctx.check(rs.data.reaction.id === unicode.id && rs.data.reaction.emoji === unicode.emoji && rs.data.player.id === t.cur.id, 'reaction.sent : emoji Unicode diffusé')
                 await ctx.refused(404, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: t.cur.id, reaction_id: 999999999 } }, 'réaction inexistante')
 
+                // Emoji privé (migration 12) : créé sans validation, envoyé par son créateur
+                // et vu de tous ; un autre joueur ne peut pas l'envoyer
+                const mine = (await api.post('/reactions', { body: { player_id: t.cur.id, name: 'Privé E2E', image: jpegDataUri('square-64.jpg') }, expect: 201 })).data.reaction
+                ctx.created.reactions.add(mine.id)
+                mk = marks(watchers())
+                await api.post('/games/:game/reactions', { params: { game: gameId }, body: { player_id: t.cur.id, reaction_id: mine.id }, expect: 200 })
+                const [priv] = await everyone(watchers(), gameCh, 'reaction.sent', { pred: (d) => d.reaction.id === mine.id, since: mk })
+                ctx.check(priv.data.reaction.is_public === false && priv.data.reaction.url === mine.url, 'reaction.sent : emoji privé de son créateur diffusé à tous')
+                const other = bots.find((b) => b.id !== t.cur.id)
+                await ctx.refused(403, 'POST', '/games/:game/reactions', { params: { game: gameId }, body: { player_id: other.id, reaction_id: mine.id } }, 'emoji privé envoyé par un autre joueur')
+
                 // Photo retirée en pleine partie : diffusée sur le salon ET la partie
                 mk = marks(watchers())
                 const del = await api.delete('/players/:player/avatar', { params: { player: host.id }, body: { player_id: host.id }, expect: 200 })

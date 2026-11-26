@@ -6,8 +6,10 @@ import ReactionEditor from '../../components/game/ReactionEditor.vue'
 
 // Toutes les réactions de la barre en partie : emojis Unicode et images
 // (créées par les joueurs via QuickReactions → ReactionEditor, actives dès
-// leur création, ou ajoutées ici). On les ajoute, renomme, masque (retirées
-// de la barre, image conservée) ou supprime.
+// leur création, ou ajoutées ici). Une image de joueur naît privée (seul son
+// créateur l'envoie) ; lui, s'il est validé, ou l'admin la rend publique. On
+// les ajoute, renomme, rend publiques / privées, masque (retirées de la
+// barre, image conservée) ou supprime.
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +19,7 @@ const error = ref(null)
 const success = ref(null)
 
 const filter = ref('all')
-const FILTERS = { all: 'Tous', enabled: 'Actifs', disabled: 'Masqués' }
+const FILTERS = { all: 'Tous', enabled: 'Actifs', private: 'Privés', disabled: 'Masqués' }
 
 const busy = reactive({})
 
@@ -39,6 +41,7 @@ const deleting = ref(false)
 const filteredReactions = computed(() => {
   if (filter.value === 'enabled') return reactions.value.filter((r) => r.is_enabled)
   if (filter.value === 'disabled') return reactions.value.filter((r) => !r.is_enabled)
+  if (filter.value === 'private') return reactions.value.filter((r) => !r.is_public)
   return reactions.value
 })
 
@@ -109,6 +112,12 @@ async function toggle(reaction) {
   }
 }
 
+async function togglePublic(reaction) {
+  if (await update(reaction, { is_public: !reaction.is_public })) {
+    flash(`« ${reaction.name} » ${reaction.is_public ? 'rendu privé' : 'rendu public'}.`)
+  }
+}
+
 function startRename(reaction) {
   editingId.value = reaction.id
   editName.value = reaction.name
@@ -161,9 +170,11 @@ onMounted(loadReactions)
     <h1 class="page-title">Emojis</h1>
     <p class="page-subtitle">
       Réactions de la barre en partie. Les joueurs peuvent aussi créer les leurs
-      (photo ou image, bouton <i class="fa-solid fa-plus"></i> de la barre) : elles
-      sont actives tout de suite. Un emoji masqué disparaît de la barre mais reste
-      lisible dans les réactions déjà envoyées.
+      (photo ou image, bouton <i class="fa-solid fa-plus"></i> de la barre ou page
+      profil) : elles naissent <strong>privées</strong> (seul le créateur peut les
+      envoyer, tout le monde les voit passer). Un profil validé peut rendre les
+      siennes publiques ; tu peux le faire pour n'importe laquelle. Un emoji masqué
+      disparaît de la barre mais reste lisible dans les réactions déjà envoyées.
     </p>
 
     <section class="add">
@@ -228,6 +239,7 @@ onMounted(loadReactions)
         </form>
         <div v-else class="reaction-name">
           {{ r.name }}
+          <span v-if="!r.is_public" class="tag">privé</span>
           <span v-if="!r.is_enabled" class="tag">masqué</span>
         </div>
 
@@ -239,6 +251,12 @@ onMounted(loadReactions)
           <button type="button" class="icon-btn" :disabled="busy[r.id]" aria-label="Renommer" title="Renommer"
                   @click="startRename(r)">
             <i class="fa-solid fa-pen"></i>
+          </button>
+          <button v-if="r.url" type="button" class="icon-btn" :disabled="busy[r.id]"
+                  :aria-label="r.is_public ? 'Rendre privé' : 'Rendre public'"
+                  :title="r.is_public ? 'Rendre privé (seul le créateur pourra l\'envoyer)' : 'Rendre public (dans la barre de tous)'"
+                  @click="togglePublic(r)">
+            <i class="fa-solid" :class="r.is_public ? 'fa-lock' : 'fa-globe'"></i>
           </button>
           <button type="button" class="icon-btn" :disabled="busy[r.id]"
                   :aria-label="r.is_enabled ? 'Masquer' : 'Réactiver'"
@@ -433,6 +451,12 @@ onMounted(loadReactions)
   justify-content: center;
   gap: 0.25rem;
   width: 100%;
+}
+
+/* Quatre boutons pour une image (public / privé en plus) : passent à la ligne
+   dans une carte de 150 px */
+.reaction-actions {
+  flex-wrap: wrap;
 }
 
 .input {

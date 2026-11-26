@@ -105,14 +105,6 @@ pub fn require_validated(c: &impl Q, env: &Env, caller: Caller, what: &str) -> A
     }
 }
 
-/// Le joueur `caller` a-t-il un profil validé ? (sans erreur, pour filtrer)
-pub fn caller_validated(c: &impl Q, env: &Env, caller: Caller) -> AppResult<bool> {
-    Ok(match caller {
-        Caller::Player(id) => profile::by_id(c, id)?.is_some_and(|p| p.is_validated(env)),
-        _ => false,
-    })
-}
-
 // ─── Administration ─────────────────────────────────────────────────────────
 
 /// GET /admin/settings — modes, cosmos et binômes, avec leur état.

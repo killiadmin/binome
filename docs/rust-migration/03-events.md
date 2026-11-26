@@ -389,11 +389,12 @@ $.player                                         object
 $.player.id                                      int
 $.player.pseudo                                  string
 $.reaction                                       object
-$.reaction.created_by                            null
-$.reaction.emoji                                 string
+$.reaction.created_by                            null | string
+$.reaction.emoji                                 null | string
 $.reaction.id                                    int
+$.reaction.is_public                             bool
 $.reaction.name                                  string
-$.reaction.url                                   null
+$.reaction.url                                   null | string
 ```
 
 ### `game.ended` (@game)

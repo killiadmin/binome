@@ -8,9 +8,11 @@ import {resumeFromProfile} from '../../services/gameSession'
 import {resetEcho} from '../../sockets/useReverb'
 import PlayerAvatar from '../../components/player/PlayerAvatar.vue'
 import AvatarEditor from '../../components/player/AvatarEditor.vue'
+import ReactionEditor from '../../components/game/ReactionEditor.vue'
+import {reactionService} from '../../services/reactionService'
 
-// Page du profil connecté : photo, pseudo, mot de passe, partie en cours et
-// parties jouées. Accessible seulement connecté (garde du routeur).
+// Page du profil connecté : photo, pseudo, mot de passe, partie en cours,
+// parties jouées et emojis créés (privés / publics). Accessible seulement connecté (garde du routeur).
 
 const router = useRouter()
 
@@ -44,7 +46,10 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadEmojis()
+})
 
 // ─── Partie / salon en cours ──────────────────────────────────────────────────
 function resume() {
@@ -56,6 +61,47 @@ function resume() {
 
 // ─── Photo ────────────────────────────────────────────────────────────────────
 const showAvatarEditor = ref(false)
+
+// ─── Mes emojis ───────────────────────────────────────────────────────────────
+// Un emoji naît privé (moi seul l'envoie) ; un profil validé peut le rendre
+// public (dans la barre de tous). L'admin peut en masquer.
+const emojis = ref([])
+const emojisLoading = ref(true)
+const emojiError = ref(null)
+const emojiMessage = ref(null)
+const emojiBusy = ref(null)
+const showReactionEditor = ref(false)
+
+async function loadEmojis() {
+  emojisLoading.value = true
+  try {
+    emojis.value = await reactionService.mine()
+  } catch {
+    emojiError.value = 'Impossible de charger tes emojis.'
+  } finally {
+    emojisLoading.value = false
+  }
+}
+
+async function togglePublic(emoji) {
+  if (emojiBusy.value) return
+  emojiBusy.value = emoji.id
+  emojiError.value = null
+  emojiMessage.value = null
+  try {
+    const data = await reactionService.setPublic(emoji.id, player.value.id, !emoji.is_public)
+    emojis.value = emojis.value.map((e) => (e.id === emoji.id ? data.reaction : e))
+    emojiMessage.value = data.message
+  } catch (e) {
+    emojiError.value = e.response?.status === 429 ? 'Doucement : réessaie dans une minute.' : firstError(e)
+  } finally {
+    emojiBusy.value = null
+  }
+}
+
+function onEmojiCreated(reaction) {
+  emojis.value = [...emojis.value, {...reaction, is_enabled: true}]
+}
 
 // ─── Pseudo ───────────────────────────────────────────────────────────────────
 const editingPseudo = ref(false)
@@ -223,8 +269,8 @@ function gameStatus(g) {
                   <span v-else class="pixel-chip pixel-chip--danger">🔓 Public</span>
                 </template>
                 <template v-if="!player.admin_role">
-                  <span v-if="player.is_validated" class="pixel-chip" title="Historique et emojis personnalisés ouverts">✔ Validé</span>
-                  <span v-else class="pixel-chip" title="L'administrateur doit valider ton profil pour ouvrir l'historique et les emojis personnalisés">⏳ En attente de validation</span>
+                  <span v-if="player.is_validated" class="pixel-chip" title="Historique et emojis publics ouverts">✔ Validé</span>
+                  <span v-else class="pixel-chip" title="L'administrateur doit valider ton profil pour ouvrir l'historique et les emojis publics">⏳ En attente de validation</span>
                 </template>
               </div>
             </template>
@@ -365,6 +411,50 @@ function gameStatus(g) {
         </ul>
       </section>
 
+      <!-- Emojis créés -->
+      <section v-if="player" class="board-card profile-card">
+        <h2 class="board-card__title">Mes emojis</h2>
+
+        <p class="text-center small mb-3">
+          Un emoji est privé à sa création : toi seul peux l'envoyer, tout le monde le voit passer en partie.
+          <template v-if="player.is_validated">Rendu public, il rejoint la barre de tous les joueurs.</template>
+          <template v-else>L'administrateur doit valider ton profil pour que tu puisses en rendre un public.</template>
+        </p>
+        <p v-if="emojiMessage" class="text-success text-center small">{{ emojiMessage }}</p>
+        <p v-if="emojiError" class="text-danger text-center small">{{ emojiError }}</p>
+
+        <p v-if="emojisLoading" class="text-center mb-0"><i class="fa-solid fa-spinner fa-spin"></i></p>
+        <p v-else-if="!emojis.length" class="text-center mb-3">Aucun emoji pour l'instant.</p>
+        <ul v-else class="emojis">
+          <li v-for="e in emojis" :key="e.id" class="emojis__row" :class="{ 'is-hidden': !e.is_enabled }">
+            <img :src="e.url" :alt="e.name" class="emojis__img" loading="lazy" />
+            <div class="emojis__main">
+              <span class="emojis__name">{{ e.name }}</span>
+              <div class="emojis__chips">
+                <span v-if="e.is_public" class="pixel-chip pixel-chip--gold">Public</span>
+                <span v-else class="pixel-chip">🔒 Privé</span>
+                <span v-if="!e.is_enabled" class="pixel-chip pixel-chip--danger" title="Masqué par l'administrateur">Masqué</span>
+              </div>
+            </div>
+            <button
+                v-if="e.is_public || player.is_validated"
+                type="button"
+                class="cabinet-btn cabinet-btn--ghost cabinet-btn--sm emojis__toggle"
+                :disabled="emojiBusy === e.id"
+                @click="togglePublic(e)"
+            >
+              {{ e.is_public ? 'Rendre privé' : 'Rendre public' }}
+            </button>
+          </li>
+        </ul>
+
+        <div class="text-center">
+          <button type="button" class="cabinet-btn cabinet-btn--sm" @click="showReactionEditor = true">
+            <i class="fa-solid fa-plus"></i> Créer un emoji
+          </button>
+        </div>
+      </section>
+
       <!-- Suppression du profil -->
       <section v-if="player && !player.is_admin" class="board-card profile-card">
         <h2 class="board-card__title">Supprimer mon profil</h2>
@@ -415,6 +505,7 @@ function gameStatus(g) {
         :player="player"
         @updated="url => updateProfilePlayer({ avatar_url: url })"
     />
+    <ReactionEditor v-if="player" v-model="showReactionEditor" :player-id="player.id" @created="onEmojiCreated" />
   </div>
 </template>
 
@@ -639,6 +730,67 @@ function gameStatus(g) {
 .games__score {
   font-weight: 700;
   font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* ── Mes emojis ───────────────────────────────────────────── */
+.emojis {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.emojis__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-top: 2px dashed rgba(0, 0, 0, 0.12);
+}
+
+.emojis__row.is-hidden .emojis__img {
+  opacity: 0.45;
+}
+
+.emojis__img {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Moins de 130 px pour le nom (écran de 320 px) : le bouton passe dessous */
+.emojis__main {
+  flex: 1 1 130px;
+  min-width: 0;
+  text-align: left;
+}
+
+.emojis__name {
+  display: block;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emojis__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.emojis__chips .pixel-chip {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.emojis__toggle {
+  flex-shrink: 0;
+  margin-left: auto;
   white-space: nowrap;
 }
 </style>

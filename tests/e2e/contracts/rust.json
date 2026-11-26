@@ -266,6 +266,7 @@
     "$.reactions[].emoji": "null | string",
     "$.reactions[].id": "int",
     "$.reactions[].is_enabled": "bool",
+    "$.reactions[].is_public": "bool",
     "$.reactions[].name": "string",
     "$.reactions[].url": "null | string"
   },
@@ -762,6 +763,23 @@
     "$": "object",
     "$.message": "string"
   },
+  "GET /api/profile/reactions 200": {
+    "$": "object",
+    "$.reactions": "array",
+    "$.reactions[]": "object",
+    "$.reactions[].created_at": "date:eloquent",
+    "$.reactions[].created_by": "string",
+    "$.reactions[].emoji": "null",
+    "$.reactions[].id": "int",
+    "$.reactions[].is_enabled": "bool",
+    "$.reactions[].is_public": "bool",
+    "$.reactions[].name": "string",
+    "$.reactions[].url": "string"
+  },
+  "GET /api/profile/reactions 401": {
+    "$": "object",
+    "$.message": "string"
+  },
   "GET /api/reactions 200": {
     "$": "object",
     "$.reactions": "array",
@@ -769,6 +787,7 @@
     "$.reactions[].created_by": "null | string",
     "$.reactions[].emoji": "null | string",
     "$.reactions[].id": "int",
+    "$.reactions[].is_public": "bool",
     "$.reactions[].name": "string",
     "$.reactions[].url": "null | string"
   },
@@ -918,12 +937,13 @@
     "$.message": "string",
     "$.reaction": "object",
     "$.reaction.created_at": "date:eloquent",
-    "$.reaction.created_by": "null",
-    "$.reaction.emoji": "string",
+    "$.reaction.created_by": "null | string",
+    "$.reaction.emoji": "null | string",
     "$.reaction.id": "int",
     "$.reaction.is_enabled": "bool",
+    "$.reaction.is_public": "bool",
     "$.reaction.name": "string",
-    "$.reaction.url": "null"
+    "$.reaction.url": "null | string"
   },
   "PATCH /api/admin/settings/game-modes/:mode 200": {
     "$": "object",
@@ -981,6 +1001,27 @@
     "$.errors": "object",
     "$.errors.pseudo": "array",
     "$.errors.pseudo[]": "string",
+    "$.message": "string"
+  },
+  "PATCH /api/reactions/:reaction 200": {
+    "$": "object",
+    "$.message": "string",
+    "$.reaction": "object",
+    "$.reaction.created_at": "date:eloquent",
+    "$.reaction.created_by": "string",
+    "$.reaction.emoji": "null",
+    "$.reaction.id": "int",
+    "$.reaction.is_enabled": "bool",
+    "$.reaction.is_public": "bool",
+    "$.reaction.name": "string",
+    "$.reaction.url": "string"
+  },
+  "PATCH /api/reactions/:reaction 403": {
+    "$": "object",
+    "$.message": "string"
+  },
+  "PATCH /api/reactions/:reaction 404": {
+    "$": "object",
     "$.message": "string"
   },
   "PATCH /api/rooms/:room/lock 200": {
@@ -1097,6 +1138,7 @@
     "$.reaction.emoji": "string",
     "$.reaction.id": "int",
     "$.reaction.is_enabled": "bool",
+    "$.reaction.is_public": "bool",
     "$.reaction.name": "string",
     "$.reaction.url": "null"
   },
@@ -1563,6 +1605,7 @@
     "$.reaction.created_by": "string",
     "$.reaction.emoji": "null",
     "$.reaction.id": "int",
+    "$.reaction.is_public": "bool",
     "$.reaction.name": "string",
     "$.reaction.url": "string"
   },
@@ -2090,11 +2133,12 @@
     "$.player.id": "int",
     "$.player.pseudo": "string",
     "$.reaction": "object",
-    "$.reaction.created_by": "null",
-    "$.reaction.emoji": "string",
+    "$.reaction.created_by": "null | string",
+    "$.reaction.emoji": "null | string",
     "$.reaction.id": "int",
+    "$.reaction.is_public": "bool",
     "$.reaction.name": "string",
-    "$.reaction.url": "null"
+    "$.reaction.url": "null | string"
   },
   "event room.kicked @player": {
     "$": "object",

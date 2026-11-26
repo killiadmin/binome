@@ -107,7 +107,13 @@ remains. Details in `docs/regles-du-jeu.md`.
   (`app_settings.game_modes`), `cosmos.is_enabled` (new cosmos are born disabled), disabled
   binomes (`disabled_binomes`, universe + level) — the draw uses `controls::PLAYABLE_CHARACTER`.
   Profiles are validated by hand (`players.validated_at`, tab /admin/players): history routes and
-  image emojis require a validated profile (`controls::require_validated`); admin always is.
+  making an image emoji public require a validated profile (`controls::require_validated`); admin
+  always is.
+- Private / public emojis (migration 12, `custom_reactions.is_public`): any player creates image
+  emojis, born private — in the creator's bar only and sendable only by them (`created_by_pseudo`),
+  yet everyone in the game sees `reaction.sent`. A validated creator makes them public
+  (`POST /reactions {is_public}`, `PATCH /reactions/{id}`; mine via `GET /profile/reactions`), the
+  admin too (`PATCH /admin/reactions/{id}`). Unicode, admin and pre-migration emojis are public.
 - Universe sheets (migration 10, `catalog::cosmos_sheet_*`, tab /admin/univers): a short
   presentation per cosmos (`cosmos.description`, `cosmos.image` data URI 16/9, versioned by
   `sheet_updated_at`), public in `GET /cosmos` and `GET /cosmos-images/{id}`; shown in the lobby

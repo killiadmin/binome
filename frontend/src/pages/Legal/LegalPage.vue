@@ -82,8 +82,10 @@ const UPDATED_AT = '14 novembre 2026'
 
           <dt>Emojis personnalisés</dt>
           <dd>
-            Une image et un nom, ajoutés à la barre de réactions de tous les joueurs. Le pseudo de leur
-            créateur est conservé. Ne prends personne en photo sans son accord.
+            Une image et un nom. Un emoji est privé à sa création : toi seul peux l'envoyer, et les
+            joueurs de la partie le voient quand tu l'envoies. Rendu public, il rejoint la barre de
+            réactions de tous les joueurs. Le pseudo de leur créateur est conservé. Ne prends personne
+            en photo sans son accord.
           </dd>
         </dl>
         <p>

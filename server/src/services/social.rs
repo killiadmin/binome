@@ -219,7 +219,7 @@ fn decode_after_comma(data: &str) -> AppResult<Vec<u8>> {
 
 // ─── Emojis de réaction ─────────────────────────────────────────────────────
 
-const REACTION_COLS: &str = "id, name, emoji, created_by_pseudo, is_enabled, created_at, updated_at";
+const REACTION_COLS: &str = "id, name, emoji, created_by_pseudo, is_enabled, created_at, updated_at, is_public";
 /// Ordre de la barre : emojis Unicode d'abord, puis images, par ancienneté.
 const BAR_ORDER: &str = "ORDER BY (emoji IS NULL), id";
 
@@ -233,6 +233,7 @@ fn reaction_public(env: &Env, r: &rusqlite::Row) -> rusqlite::Result<Value> {
         "url": reaction_url(env, id, emoji.is_some(), r.get::<_, Option<String>>(5)?.as_deref(), updated.as_deref()),
         "emoji": emoji,
         "created_by": r.get::<_, Option<String>>(3)?,
+        "is_public": r.get::<_, bool>(7)?,
     }))
 }
 
@@ -243,10 +244,36 @@ fn reaction_admin(env: &Env, r: &rusqlite::Row) -> rusqlite::Result<Value> {
     Ok(v)
 }
 
-/// GET /reactions — les emojis personnalisés (images) seulement pour un profil validé.
+/// GET /reactions — la barre : emojis Unicode et publics, plus les emojis privés
+/// du joueur qui demande (lui seul peut les envoyer, migration 12).
 pub fn reactions_index(c: &impl Q, env: &Env, caller: Caller) -> AppResult<Out> {
-    let images = if controls::caller_validated(c, env, caller)? { "" } else { "AND emoji IS NOT NULL" };
-    let list = c.all(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE is_enabled = 1 {images} {BAR_ORDER}"), [], |r| reaction_public(env, r))?;
+    let pseudo = caller_pseudo(c, caller)?;
+    let list = c.all(
+        &format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE is_enabled = 1 AND (is_public = 1 OR created_by_pseudo = ?1) {BAR_ORDER}"),
+        [pseudo],
+        |r| reaction_public(env, r),
+    )?;
+    Ok(Out::ok(json!({ "reactions": list })))
+}
+
+fn caller_pseudo(c: &impl Q, caller: Caller) -> AppResult<Option<String>> {
+    Ok(match caller {
+        Caller::Player(id) => player(c, id)?.map(|p| p.pseudo),
+        Caller::Anonymous | Caller::Invalid => None,
+    })
+}
+
+/// GET /profile/reactions — les emojis image créés par le joueur connecté,
+/// masqués compris (page profil, « Mes emojis »).
+pub fn my_reactions(c: &impl Q, env: &Env, caller: Caller) -> AppResult<Out> {
+    let Some(pseudo) = caller_pseudo(c, caller)? else {
+        return Err(AppError::Status(axum::http::StatusCode::UNAUTHORIZED, "Connecte-toi à ton profil.".into()));
+    };
+    let list = c.all(
+        &format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE emoji IS NULL AND created_by_pseudo = ?1 ORDER BY id"),
+        [pseudo],
+        |r| reaction_admin(env, r),
+    )?;
     Ok(Out::ok(json!({ "reactions": list })))
 }
 
@@ -280,16 +307,23 @@ fn image_rule(v: &mut V, field: &str, data: Option<&String>) {
     }
 }
 
-/// POST /reactions — un joueur crée un emoji image, aussitôt disponible pour tous.
+/// Rendre un emoji public : profil validé par l'administrateur seulement.
+const PUBLIC_EMOJI: &str = "Un emoji public";
+
+/// POST /reactions — un joueur crée un emoji image. Privé par défaut (lui seul
+/// l'a dans sa barre) ; `is_public` le met dans la barre de tous (profil validé).
 pub fn reaction_store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<Out> {
     let mut v = V::new(input);
     let pid = v.player(tx, "player_id")?;
     let name = v.req_str("name", None, Some(20));
     let data = v.req_str("image", None, None);
+    let public = v.opt_bool("is_public").unwrap_or(false);
     image_rule(&mut v, "image", data.as_ref());
     v.finish()?;
     let p = player_or_404(tx, pid.expect("validé"))?;
-    controls::require_validated(tx, env, input.1, "La création d'emojis")?;
+    if public {
+        controls::require_validated(tx, env, input.1, PUBLIC_EMOJI)?;
+    }
     let count: i64 = tx.one("SELECT COUNT(*) FROM custom_reactions WHERE is_enabled = 1 AND created_by_pseudo = ?1", [&p.pseudo])?;
     if count >= 10 {
         return Err(AppError::field("name", "Tu as déjà créé 10 emojis."));
@@ -300,11 +334,36 @@ pub fn reaction_store(tx: &Transaction, env: &Env, input: &Input) -> AppResult<O
     }
     let now = now_db();
     let id = tx.insert(
-        "INSERT INTO custom_reactions (name, image, created_by_pseudo, is_enabled, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
-        (name.expect("validé").trim(), &data, &p.pseudo, &now),
+        "INSERT INTO custom_reactions (name, image, created_by_pseudo, is_enabled, is_public, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?5)",
+        rusqlite::params![name.expect("validé").trim(), &data, &p.pseudo, public, &now],
     )?;
     let reaction = tx.opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1"), [id], |r| reaction_public(env, r))?.expect("créé");
     Ok(Out::created(json!({ "message": "Emoji créé.", "reaction": reaction })))
+}
+
+/// PATCH /reactions/{reaction} — le créateur rend son emoji public (profil
+/// validé) ou privé. Ce qui est déjà dans la barre des autres y reste jusqu'à
+/// sa prochaine ouverture, mais l'envoi est refusé dès maintenant.
+pub fn reaction_visibility(tx: &Transaction, env: &Env, id: i64, input: &Input) -> AppResult<Out> {
+    let mut v = V::new(input);
+    let pid = v.player(tx, "player_id")?;
+    let public = v.req_bool("is_public");
+    v.finish()?;
+    let p = player_or_404(tx, pid.expect("validé"))?;
+    if !tx.exists("SELECT 1 FROM custom_reactions WHERE id = ?1 AND emoji IS NULL", [id])? {
+        return Err(AppError::NotFound);
+    }
+    if !tx.exists("SELECT 1 FROM custom_reactions WHERE id = ?1 AND created_by_pseudo = ?2", (id, &p.pseudo))? {
+        return Err(AppError::forbidden("Tu ne peux changer que tes propres emojis."));
+    }
+    let public = public.expect("validé");
+    if public {
+        controls::require_validated(tx, env, input.1, PUBLIC_EMOJI)?;
+    }
+    tx.run("UPDATE custom_reactions SET is_public = ?1, updated_at = ?2 WHERE id = ?3", (public, now_db(), id))?;
+    let reaction = tx.opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1"), [id], |r| reaction_admin(env, r))?.expect("existe");
+    let message = if public { "Emoji public : tous les joueurs peuvent l'envoyer." } else { "Emoji privé : toi seul peux l'envoyer." };
+    Ok(Out::ok(json!({ "message": message, "reaction": reaction })))
 }
 
 /// POST /games/{game}/reactions — joueurs ET spectateurs ; rien n'est stocké.
@@ -314,15 +373,17 @@ pub fn react(tx: &Transaction, env: &Env, game_id: i64, input: &Input) -> AppRes
     let pid = v.player(tx, "player_id")?;
     let rid = v.req_int("reaction_id");
     v.finish()?;
+    let rid = rid.expect("validé");
     let p = player_or_404(tx, pid.expect("validé"))?;
     if !can_watch(tx, &g, p.id)? {
         return Err(AppError::forbidden("Tu ne participes pas à cette partie."));
     }
     let reaction = tx
-        .opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1 AND is_enabled = 1"), [rid.expect("validé")], |r| reaction_public(env, r))?
+        .opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1 AND is_enabled = 1"), [rid], |r| reaction_public(env, r))?
         .ok_or_else(|| AppError::Status(axum::http::StatusCode::NOT_FOUND, "Cet emoji n'est plus disponible.".into()))?;
-    if reaction["emoji"].is_null() {
-        controls::require_validated(tx, env, input.1, "L'envoi d'emojis personnalisés")?;
+    // Emoji privé : seul son créateur l'envoie (tout le monde le voit passer)
+    if reaction["is_public"] == false && !tx.exists("SELECT 1 FROM custom_reactions WHERE id = ?1 AND created_by_pseudo = ?2", (rid, &p.pseudo))? {
+        return Err(AppError::forbidden("Cet emoji est privé : seul son créateur peut l'envoyer."));
     }
     Ok(Out::message("Réaction envoyée.").event(Event::on(game_channel(g.id), "reaction.sent", json!({ "player": brief(&p), "reaction": reaction }))))
 }
@@ -362,14 +423,14 @@ pub fn admin_reaction_store(tx: &Transaction, env: &Env, input: &Input) -> AppRe
         if tx.exists("SELECT 1 FROM custom_reactions WHERE emoji = ?1", [&e])? {
             return Err(AppError::field("emoji", "Cet emoji existe déjà."));
         }
-        tx.insert("INSERT INTO custom_reactions (name, emoji, is_enabled, created_at, updated_at) VALUES (?1, ?2, 1, ?3, ?3)", (name.trim(), &e, &now))?
+        tx.insert("INSERT INTO custom_reactions (name, emoji, is_enabled, is_public, created_at, updated_at) VALUES (?1, ?2, 1, 1, ?3, ?3)", (name.trim(), &e, &now))?
     } else {
         let data = data.expect("validé");
         if let Some(err) = reaction_image_error(&data) {
             return Err(AppError::field("image", err));
         }
         tx.insert(
-            "INSERT INTO custom_reactions (name, image, created_by_pseudo, is_enabled, created_at, updated_at) VALUES (?1, ?2, 'Admin', 1, ?3, ?3)",
+            "INSERT INTO custom_reactions (name, image, created_by_pseudo, is_enabled, is_public, created_at, updated_at) VALUES (?1, ?2, 'Admin', 1, 1, ?3, ?3)",
             (name.trim(), &data, &now),
         )?
     };
@@ -384,6 +445,7 @@ pub fn admin_reaction_update(tx: &Transaction, env: &Env, id: i64, input: &Input
     let mut v = V::new(input);
     let name = v.opt_str("name", None, Some(20));
     let enabled = v.opt_bool("is_enabled");
+    let public = v.opt_bool("is_public");
     v.finish()?;
     let now = now_db();
     if let Some(n) = &name {
@@ -391,6 +453,9 @@ pub fn admin_reaction_update(tx: &Transaction, env: &Env, id: i64, input: &Input
     }
     if let Some(e) = enabled {
         tx.run("UPDATE custom_reactions SET is_enabled = ?1, updated_at = ?2 WHERE id = ?3", (e, &now, id))?;
+    }
+    if let Some(p) = public {
+        tx.run("UPDATE custom_reactions SET is_public = ?1, updated_at = ?2 WHERE id = ?3", (p, &now, id))?;
     }
     let reaction = tx.opt(&format!("SELECT {REACTION_COLS} FROM custom_reactions WHERE id = ?1"), [id], |r| reaction_admin(env, r))?.expect("existe");
     Ok(Out::ok(json!({ "message": "Emoji mis à jour.", "reaction": reaction })))
